@@ -1,5 +1,10 @@
 import Foundation
-import PipelineKit
+// import PipelineKit  // Temporarily disabled due to build issues
+
+// Temporary Command protocol for standalone development
+public protocol Command: Sendable {
+    associatedtype Result: Sendable
+}
 
 /// Command for generating text embeddings
 public struct EmbedTextCommand: Command {

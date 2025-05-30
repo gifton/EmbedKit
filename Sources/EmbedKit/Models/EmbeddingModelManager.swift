@@ -52,7 +52,7 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
             name: identifier,
             version: "1.0",
             embeddingDimensions: await embedder.dimensions,
-            maxSequenceLength: await embedder.configuration.maxSequenceLength,
+            maxSequenceLength: embedder.configuration.maxSequenceLength,
             vocabularySize: 30522, // Default
             modelType: "coreml",
             additionalInfo: [:]

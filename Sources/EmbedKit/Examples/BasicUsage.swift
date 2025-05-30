@@ -1,5 +1,5 @@
 import Foundation
-import PipelineKit
+// import PipelineKit  // Temporarily disabled due to build issues
 
 /// Example demonstrating basic EmbedKit usage
 public struct EmbedKitExample {

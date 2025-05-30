@@ -1,7 +1,14 @@
 import Foundation
-import PipelineKit
+// import PipelineKit  // Temporarily disabled due to build issues
 import Logging
 import AsyncAlgorithms
+
+// Temporary CommandHandler protocol for standalone development
+public protocol CommandHandler: Sendable {
+    associatedtype CommandType: Command
+    
+    func handle(_ command: CommandType) async throws -> CommandType.Result
+}
 
 /// Handler for text embedding commands
 public actor EmbedTextHandler: CommandHandler {
