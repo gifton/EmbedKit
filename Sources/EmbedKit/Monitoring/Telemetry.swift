@@ -431,7 +431,7 @@ public extension TelemetrySystem {
             severity: success ? .info : .error,
             metadata: tags
         )
-        await recordEvent(event)
+        recordEvent(event)
     }
     
     /// Record cache metrics
@@ -440,20 +440,20 @@ public extension TelemetrySystem {
         hit: Bool,
         keySize: Int = 0,
         valueSize: Int = 0
-    ) async {
+    ) {
         let tags = [
             "operation": operation,
             "result": hit ? "hit" : "miss"
         ]
         
-        await incrementCounter("cache.operations", tags: tags)
+        incrementCounter("cache.operations", tags: tags)
         
         if keySize > 0 {
-            await recordHistogram("cache.key_size", value: Double(keySize), tags: tags)
+            recordHistogram("cache.key_size", value: Double(keySize), tags: tags)
         }
         
         if valueSize > 0 {
-            await recordHistogram("cache.value_size", value: Double(valueSize), tags: tags)
+            recordHistogram("cache.value_size", value: Double(valueSize), tags: tags)
         }
     }
 }

@@ -137,7 +137,7 @@ public struct EmbeddingBenchmark {
         print("\nBatch Speedup: \(String(format: "%.2fx", batchWithout.averageDuration / batchWith.averageDuration))")
         
         // Cache hit rate (if available)
-        if let cachedEmbedder = embedderWithFeatures as? CoreMLTextEmbedder {
+        if let _ = embedderWithFeatures as? CoreMLTextEmbedder {
             // Run again to test cache
             let cachedResult = try await benchmarkSingleEmbedding(
                 embedder: embedderWithFeatures,

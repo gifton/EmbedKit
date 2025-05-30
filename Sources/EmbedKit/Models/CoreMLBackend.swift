@@ -1,5 +1,5 @@
 import Foundation
-import CoreML
+@preconcurrency import CoreML
 import Accelerate
 import OSLog
 
@@ -78,20 +78,11 @@ public actor CoreMLBackend: ModelBackend {
             throw EmbeddingError.modelNotLoaded
         }
         
-        // Prepare input features
-        let inputFeatures = try prepareInput(input, for: model)
+        // Create helper and run prediction
+        let helper = CoreMLPredictionHelper()
         
-        // Run prediction
-        let output = try model.prediction(from: inputFeatures)
-        
-        // Extract embeddings from output
-        let embeddings = try extractEmbeddings(from: output, model: model)
-        
-        return ModelOutput(
-            tokenEmbeddings: embeddings,
-            attentionWeights: nil,
-            metadata: [:]
-        )
+        // CoreML operations are synchronous, so we just call them directly
+        return try helper.predict(input: input, model: model)
     }
     
     public func inputDimensions() async -> (sequence: Int, features: Int)? {
@@ -166,6 +157,28 @@ public actor CoreMLBackend: ModelBackend {
             vocabularySize: 30522, // Default BERT vocab size
             modelType: "coreml",
             additionalInfo: [:]
+        )
+    }
+    
+}
+
+// MARK: - Helper for non-isolated predictions
+
+struct CoreMLPredictionHelper {
+    func predict(input: TokenizedInput, model: MLModel) throws -> ModelOutput {
+        // Prepare input features
+        let inputFeatures = try prepareInput(input, for: model)
+        
+        // Run prediction
+        let output = try model.prediction(from: inputFeatures)
+        
+        // Extract embeddings from output
+        let embeddings = try extractEmbeddings(from: output, model: model)
+        
+        return ModelOutput(
+            tokenEmbeddings: embeddings,
+            attentionWeights: nil,
+            metadata: [:]
         )
     }
     

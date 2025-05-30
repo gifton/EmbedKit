@@ -167,7 +167,7 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
     ) async throws -> ModelMetadata {
         logger.info("Loading model version \\(version.semanticVersion)")
         
-        guard let modelURL = await registry.getModelURL(for: version) else {
+        guard let _ = await registry.getModelURL(for: version) else {
             throw ModelVersionError.modelFileNotFound("Version \\(version.semanticVersion)")
         }
         
@@ -194,7 +194,7 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
             name: version.identifier,
             version: version.semanticVersion,
             embeddingDimensions: await embedder.dimensions,
-            maxSequenceLength: await embedder.configuration.maxSequenceLength,
+            maxSequenceLength: embedder.configuration.maxSequenceLength,
             vocabularySize: 30522,
             modelType: "coreml",
             additionalInfo: version.metadata

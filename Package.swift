@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "EmbedKit",
     platforms: [
-        .iOS(.v16),
+        .iOS(.v17),
         .macOS(.v13),
         .tvOS(.v16),
         .watchOS(.v9)
@@ -19,7 +19,7 @@ let package = Package(
     ],
     dependencies: [
         // Local dependency on PipelineKit - temporarily disabled
-        // .package(path: "../PipelineKit"),
+         .package(path: "../PipelineKit"),
         // For structured logging
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         // For collections utilities
@@ -33,7 +33,7 @@ let package = Package(
         .target(
             name: "EmbedKit",
             dependencies: [
-                // .product(name: "PipelineKit", package: "PipelineKit"), // Temporarily disabled
+                .product(name: "PipelineKit", package: "PipelineKit"), // Temporarily disabled
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
