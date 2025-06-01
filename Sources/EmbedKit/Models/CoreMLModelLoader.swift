@@ -221,9 +221,9 @@ public struct TokenizerConfigLoader {
         let configData = try Data(contentsOf: configURL)
         let config = try JSONDecoder().decode(RawTokenizerConfig.self, from: configData)
         
-        var specialTokens: SpecialTokens?
+        var specialTokens: TokenizerSpecialTokens?
         if let specialData = try? Data(contentsOf: specialTokensURL) {
-            specialTokens = try? JSONDecoder().decode(SpecialTokens.self, from: specialData)
+            specialTokens = try? JSONDecoder().decode(TokenizerSpecialTokens.self, from: specialData)
         }
         
         return TokenizerConfig(
@@ -248,10 +248,10 @@ public struct TokenizerConfig {
     public let vocabSize: Int
     public let maxLength: Int
     public let vocab: [String: Int]
-    public let specialTokens: SpecialTokens?
+    public let specialTokens: TokenizerSpecialTokens?
 }
 
-public struct SpecialTokens: Codable {
+private struct TokenizerSpecialTokens: Codable {
     public let padTokenId: Int?
     public let unkTokenId: Int?
     public let clsTokenId: Int?

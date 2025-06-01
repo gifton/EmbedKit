@@ -37,7 +37,8 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
-            ]
+            ],
+            exclude: ["PipelineIntegration/README.md"]
         ),
         .testTarget(
             name: "EmbedKitTests",

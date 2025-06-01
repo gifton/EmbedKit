@@ -65,10 +65,11 @@ class EmbeddingModelConverter:
         """Create a traced version of the model suitable for Core ML conversion."""
         
         class EmbeddingWrapper(torch.nn.Module):
-            def __init__(self, model, pooling_strategy="mean"):
+            def __init__(self, model, pooling_strategy="mean", normalize=True):
                 super().__init__()
                 self.model = model
                 self.pooling_strategy = pooling_strategy
+                self.normalize = normalize
                 
             def forward(self, input_ids, attention_mask):
                 # Get model outputs
@@ -94,13 +95,17 @@ class EmbeddingModelConverter:
                     pooled = torch.max(token_embeddings, 1)[0]
                 
                 # Normalize if configured
-                if self.config.get("normalize", True):
+                if self.normalize:
                     pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
                 
                 return pooled
         
         # Create wrapper model
-        wrapper = EmbeddingWrapper(self.model, self.config.get("pooling", "mean"))
+        wrapper = EmbeddingWrapper(
+            self.model, 
+            self.config.get("pooling", "mean"),
+            self.config.get("normalize", True)
+        )
         wrapper.eval()
         
         # Create sample inputs

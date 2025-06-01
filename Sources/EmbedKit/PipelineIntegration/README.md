@@ -1,6 +1,6 @@
 # EmbedKit PipelineKit Integration
 
-This directory contains the comprehensive PipelineKit integration for EmbedKit, providing a command-driven, middleware-enhanced pipeline for text embedding operations.
+This directory contains the comprehensive PipelineKit integration for EmbedKit, providing a command-driven, middleware-enhanced pipeline for text embedding operations with elegant operator syntax support.
 
 ## Overview
 
@@ -10,6 +10,7 @@ The integration provides:
 - **Handlers**: Specialized handlers that process commands using EmbedKit's text embedders
 - **Middleware**: Cross-cutting concerns like caching, GPU acceleration, validation, and telemetry
 - **Pipeline**: A fully configured pipeline that combines all components
+- **Operators**: Fluent operator syntax for elegant pipeline construction
 - **Examples**: Comprehensive examples demonstrating various use cases
 
 ## Architecture
@@ -18,11 +19,82 @@ The integration provides:
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │   Command   │────▶│  Middleware  │────▶│   Handler   │
 └─────────────┘     └──────────────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │   EmbedKit   │
-                    └──────────────┘
+                          │
+                          ▼
+                   ┌──────────────┐
+                   │   EmbedKit   │
+                   └──────────────┘
+```
+
+## Operator Syntax
+
+PipelineKit provides elegant operator syntax for building pipelines:
+
+### Basic Operators
+
+```swift
+// Create pipeline with operators
+let pipeline = try await pipeline(for: embedHandler)
+    <+ validationMiddleware      // Add middleware
+    <+ cacheMiddleware          // Chain middleware
+    <+ telemetryMiddleware      // Continue chaining
+    .build()                    // Build final pipeline
+```
+
+### Priority Operators
+
+```swift
+// Add middleware with execution priorities
+let pipeline = try await pipeline(for: handler)
+    <++ middleware(validationMiddleware, priority: .validation)
+    <++ middleware(authMiddleware, priority: .authentication)  
+    <++ middleware(cacheMiddleware, priority: .normal)
+    <++ middleware(telemetryMiddleware, priority: .monitoring)
+    .build()
+```
+
+### Pipeline Composition
+
+```swift
+// Sequential composition
+let composed = pipeline1 |> pipeline2  // Execute pipeline1, then pipeline2
+
+// Parallel composition  
+let parallel = pipeline1 || pipeline2  // Execute both, return first result
+
+// Error handling
+let safe = pipeline |! { error in
+    await handleError(error)
+}
+
+// Conditional execution
+let conditional = pipeline |? { 
+    await checkCondition()
+}
+```
+
+### Real-World Example
+
+```swift
+// Production-ready pipeline with operators
+let productionPipeline = try await pipeline(for: embedHandler)
+    // Critical middleware with priorities
+    <++ middleware(validationMiddleware, priority: .validation)
+    <++ middleware(rateLimitMiddleware, priority: .critical)
+    
+    // Performance optimization
+    <+ cacheMiddleware
+    <++ middleware(gpuAccelerationMiddleware, priority: .processing)
+    
+    // Monitoring
+    <++ middleware(telemetryMiddleware, priority: .monitoring)
+    <+ monitoringMiddleware
+    .build()
+    
+// Add error handling and health checks
+let safePipeline = productionPipeline 
+    |! { error in await telemetry.recordError(error) }
+    |? { await healthCheck.isSystemHealthy() }
 ```
 
 ## Components
@@ -77,6 +149,39 @@ let pipeline = try await EmbeddingPipeline(
 // Embed text
 let result = try await pipeline.embed("Hello, world!")
 print("Embedding dimensions: \(result.embedding.dimensions)")
+```
+
+### Using Operators
+
+```swift
+// Build pipeline with operators
+let pipeline = try await pipeline(for: embedHandler)
+    <++ middleware(validationMiddleware, priority: .validation)
+    <+ cacheMiddleware
+    <++ middleware(gpuMiddleware, priority: .processing)
+    <+ telemetryMiddleware
+    .build()
+
+// Execute command
+let command = EmbedTextCommand(text: "Hello, operators!")
+let result = try await pipeline.execute(command, metadata: DefaultCommandMetadata())
+```
+
+### Conditional Pipeline Building
+
+```swift
+var builder = pipeline(for: handler)
+    <++ middleware(validationMiddleware, priority: .validation)
+
+if enableCache {
+    builder = builder <+ cacheMiddleware
+}
+
+if enableGPU {
+    builder = builder <++ middleware(gpuMiddleware, priority: .processing)
+}
+
+let pipeline = try await builder.build()
 ```
 
 ### Batch Processing
@@ -141,6 +246,23 @@ let minimal = try await EmbeddingPipelineFactory.minimal(
 )
 ```
 
+### Operator-Based Factory
+
+```swift
+// High-performance pipeline using operators
+let pipeline = try await EmbeddingPipelineOperatorFactory.highPerformance(
+    embedder: embedder,
+    modelManager: modelManager
+)
+
+// Custom pipeline with operators
+let customPipeline = try await pipeline(for: handler)
+    <++ middleware(validationMiddleware, priority: .validation)
+    <+ (enableCache ? cacheMiddleware : nil)
+    <++ middleware(telemetryMiddleware, priority: .monitoring)
+    .build()
+```
+
 ## Error Handling
 
 The pipeline provides comprehensive error handling:
@@ -156,6 +278,15 @@ do {
     // Handle embedding-specific errors
 } catch {
     // Handle other errors
+}
+```
+
+With operators:
+
+```swift
+let safePipeline = pipeline |! { error in
+    logger.error("Pipeline error: \(error)")
+    await metrics.recordError(error)
 }
 ```
 
@@ -191,6 +322,57 @@ All components are thread-safe and designed for concurrent usage:
 - Middleware properly handles concurrent requests
 - Cache and telemetry systems are thread-safe
 
+## Advanced Patterns
+
+### Production Pipeline Pattern
+
+```swift
+func createProductionPipeline(config: AppConfig) async throws -> any Pipeline {
+    var builder = pipeline(for: createHandler(config))
+        // Always validate
+        <++ middleware(validationMiddleware, priority: .validation)
+    
+    // Add auth if required
+    if config.requiresAuth {
+        builder = builder <++ middleware(authMiddleware, priority: .authentication)
+    }
+    
+    // Add rate limiting by tier
+    switch config.tier {
+    case .free:
+        builder = builder <++ middleware(rateLimiter(10), priority: .critical)
+    case .pro:
+        builder = builder <++ middleware(rateLimiter(100), priority: .critical)
+    case .enterprise:
+        // No rate limiting
+        break
+    }
+    
+    // Performance features
+    builder = builder
+        <+ cacheMiddleware
+        <++ middleware(gpuMiddleware, priority: .processing)
+        <++ middleware(telemetryMiddleware, priority: .monitoring)
+    
+    // Build and add safety
+    return try await builder.build()
+        |! { error in await alerting.notify(error) }
+        |? { await health.check() }
+}
+```
+
+### Composed Pipelines
+
+```swift
+// Create specialized pipelines
+let fastPipeline = try await createFastPipeline()
+let accuratePipeline = try await createAccuratePipeline()
+
+// Compose them
+let hybridPipeline = fastPipeline |> accuratePipeline  // Fast first, then accurate
+let racePipeline = fastPipeline || accuratePipeline    // First to complete wins
+```
+
 ## Integration with Existing Code
 
 The pipeline can be easily integrated into existing PipelineKit-based applications:
@@ -207,11 +389,13 @@ _ = await pipelineBuilder.with(EmbeddingCacheMiddleware(cache: cache))
 
 ## Best Practices
 
-1. **Model Loading**: Load models once and reuse them
-2. **Cache Management**: Monitor cache hit rates and adjust size as needed
-3. **Error Handling**: Always handle potential errors, especially for streaming
-4. **Resource Cleanup**: Unload models and clear caches when done
-5. **Monitoring**: Use telemetry to understand performance characteristics
+1. **Use operator syntax for clarity** - Operators make pipeline construction more readable
+2. **Apply middleware priorities** - Ensure middleware executes in the correct order
+3. **Model Loading**: Load models once and reuse them
+4. **Cache Management**: Monitor cache hit rates and adjust size as needed
+5. **Error Handling**: Always handle potential errors, especially for streaming
+6. **Resource Cleanup**: Unload models and clear caches when done
+7. **Monitoring**: Use telemetry to understand performance characteristics
 
 ## Running Examples
 
@@ -219,6 +403,12 @@ To run all integration examples:
 
 ```swift
 try await PipelineIntegrationExamples.runAllExamples()
+```
+
+To run operator examples:
+
+```swift
+try await PipelineOperatorExamples.runAllExamples()
 ```
 
 Individual examples can be run separately:
@@ -229,3 +419,13 @@ Individual examples can be run separately:
 - `errorHandlingExample()`
 - `telemetryExample()`
 - `cacheManagementExample()`
+- `basicOperatorExample()`
+- `priorityOperatorExample()`
+- `pipelineCompositionExample()`
+- `fluentStyleExample()`
+
+## Example Files
+
+- `Examples.swift` - Traditional API examples
+- `OperatorExamples.swift` - Comprehensive operator syntax examples
+- `EmbeddingPipelineOperators.swift` - Advanced operator patterns and extensions

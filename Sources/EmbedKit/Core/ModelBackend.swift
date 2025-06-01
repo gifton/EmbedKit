@@ -2,6 +2,14 @@ import Foundation
 import CoreML
 
 /// Token representation for model input
+///
+/// Represents text after tokenization, ready for model consumption.
+/// Design follows the standard transformer input format (BERT/RoBERTa style).
+///
+/// Memory considerations:
+/// - Token arrays can be large (512-4096 tokens per sequence)
+/// - Consider using ContiguousArray for better cache locality in production
+/// - Attention mask could be compressed as bit vector for memory savings
 public struct TokenizedInput: Sendable {
     /// Token IDs for the model
     public let tokenIds: [Int]
@@ -29,6 +37,12 @@ public struct TokenizedInput: Sendable {
 }
 
 /// Output from model inference
+///
+/// Encapsulates raw model outputs before pooling/post-processing.
+/// Designed to preserve all information from the model for flexible processing.
+///
+/// Performance note: Token embeddings can be memory-intensive
+/// (e.g., 512 tokens × 768 dims × 4 bytes = 1.5MB per sequence)
 public struct ModelOutput: Sendable {
     /// Raw embeddings for each token
     public let tokenEmbeddings: [[Float]]
@@ -51,6 +65,20 @@ public struct ModelOutput: Sendable {
 }
 
 /// Protocol for different model backend implementations
+///
+/// Abstraction layer for different ML frameworks (CoreML, Metal Performance Shaders, etc.)
+/// Actor-based design ensures thread-safe model access and prevents race conditions
+/// during model loading/unloading.
+///
+/// Implementation considerations:
+/// - Models are expensive resources - implement proper lifecycle management
+/// - Batch processing should be atomic to prevent partial failures
+/// - Memory-mapped models can reduce RAM usage but may impact latency
+///
+/// Why actor instead of class:
+/// - Automatic synchronization for model state
+/// - Prevents concurrent model mutations
+/// - Natural fit for async/await patterns in Swift
 public protocol ModelBackend: Actor {
     /// Unique identifier for this backend
     var identifier: String { get }
@@ -143,6 +171,15 @@ public extension ModelBackend {
 }
 
 /// Configuration for model backends
+///
+/// Centralizes all backend-specific settings that affect performance and resource usage.
+///
+/// Key trade-offs:
+/// - Memory mapping: Lower RAM usage vs potential disk I/O latency
+/// - Compute units: GPU/ANE faster but limited memory vs CPU flexibility
+/// - Loading timeout: Prevents hanging but may fail on slower devices
+///
+/// Default values chosen for optimal performance on modern iOS/macOS devices
 public struct ModelBackendConfiguration: Sendable {
     /// Whether to use memory mapping for large models
     public let useMemoryMapping: Bool

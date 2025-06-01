@@ -1,6 +1,17 @@
 import Foundation
 
 /// A vector representation of text in high-dimensional space
+///
+/// `EmbeddingVector` is the fundamental output type of all text embedding operations.
+/// It represents text as a dense numerical vector that captures semantic meaning,
+/// enabling mathematical operations like similarity comparisons.
+///
+/// Design decisions:
+/// - Immutable by design to ensure thread safety and prevent accidental modifications
+/// - Conforms to `Collection` for seamless integration with Swift's algorithms
+/// - Stores values as `Float` (32-bit) rather than `Double` for memory efficiency,
+///   as embedding models typically don't require 64-bit precision
+/// - Marked as `Sendable` for safe concurrent access across actor boundaries
 public struct EmbeddingVector: Collection, Sendable {
     public typealias Element = Float
     public typealias Index = Int
@@ -29,6 +40,17 @@ public struct EmbeddingVector: Collection, Sendable {
     public var array: [Float] { values }
     
     /// Compute cosine similarity with another vector
+    ///
+    /// Cosine similarity measures the angle between two vectors, ranging from -1 to 1:
+    /// - 1.0: Vectors point in the same direction (semantically identical)
+    /// - 0.0: Vectors are orthogonal (unrelated)
+    /// - -1.0: Vectors point in opposite directions (semantically opposite)
+    ///
+    /// Implementation note: Uses manual loop instead of Accelerate framework here
+    /// for simplicity, but production code could benefit from SIMD optimization
+    ///
+    /// - Parameter other: The vector to compare with
+    /// - Returns: Cosine similarity score, or 0 if dimensions mismatch
     public func cosineSimilarity(with other: EmbeddingVector) -> Float {
         guard dimensions == other.dimensions else { return 0 }
         
@@ -48,6 +70,14 @@ public struct EmbeddingVector: Collection, Sendable {
 }
 
 /// Configuration for text embedding generation
+///
+/// This configuration struct encapsulates all parameters that affect how embeddings
+/// are generated. It's designed to be immutable and `Sendable` for safe concurrent use.
+///
+/// Design rationale:
+/// - Provides sensible defaults based on common transformer models (BERT-like)
+/// - Allows fine-tuning for specific use cases without modifying core logic
+/// - Separates configuration from implementation for better testability
 public struct EmbeddingConfiguration: Sendable {
     /// Maximum sequence length for input text
     public let maxSequenceLength: Int
@@ -80,6 +110,15 @@ public struct EmbeddingConfiguration: Sendable {
 }
 
 /// Strategy for pooling token embeddings into a single vector
+///
+/// Transformer models output one embedding per token. This enum defines
+/// how to combine these into a single vector representing the entire text.
+///
+/// Performance implications:
+/// - `cls`: Fastest, O(1) - just returns first token
+/// - `mean`: O(n) - requires averaging all tokens
+/// - `max`: O(n) - requires comparing all tokens
+/// - `attentionWeighted`: O(n) - most expensive but potentially most accurate
 public enum PoolingStrategy: String, CaseIterable, Sendable {
     /// Average all token embeddings
     case mean
@@ -119,6 +158,20 @@ public enum EmbeddingError: LocalizedError, Equatable {
 }
 
 /// Protocol for text embedding generation
+///
+/// Core abstraction for all embedding implementations. Designed as an actor to:
+/// - Ensure thread-safe access to model resources
+/// - Prevent concurrent model loading/unloading issues
+/// - Manage memory pressure from large models
+///
+/// Implementation guidance:
+/// - Models should lazy-load on first use or explicit `loadModel()` call
+/// - Batch operations should be optimized over sequential processing
+/// - Memory management is critical - models can be 100MB-1GB+
+///
+/// PipelineKit integration:
+/// - Handlers wrap TextEmbedder instances for command processing
+/// - Middleware can inject caching, monitoring, and acceleration
 public protocol TextEmbedder: Actor {
     /// The configuration for this embedder
     var configuration: EmbeddingConfiguration { get }

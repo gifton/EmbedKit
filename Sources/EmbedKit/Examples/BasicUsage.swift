@@ -1,5 +1,5 @@
 import Foundation
-// import PipelineKit  // Temporarily disabled due to build issues
+import PipelineKit
 
 /// Example demonstrating basic EmbedKit usage
 public struct EmbedKitExample {
@@ -49,27 +49,26 @@ public struct EmbedKitExample {
         let _ = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder() // Using mock for example
         
-        // Create command handler
-        let handler = EmbedTextHandler(embedder: embedder)
+        // Create command handler from PipelineIntegration
+        let handler = PipelineIntegration.EmbedTextHandler(embedder: embedder)
         
         // Create and execute command
-        let command = EmbedTextCommand(
-            text: "Understanding context through embeddings",
-            metadata: ["source": "example"]
+        let command = PipelineIntegration.EmbedTextCommand(
+            text: "Understanding context through embeddings"
         )
         
-        let embedding = try await handler.handle(command)
-        print("Command generated embedding with \(embedding.dimensions) dimensions")
+        let result = try await handler.handle(command)
+        print("Command generated embedding with \(result.embedding.dimensions) dimensions")
     }
     
     /// Example 3: Batch processing with commands
     public static func batchCommandExample() async throws {
         // Create components
         let embedder = MockTextEmbedder()
-        let batchHandler = EmbedBatchHandler(embedder: embedder)
+        let batchHandler = PipelineIntegration.BatchEmbedHandler(embedder: embedder)
         
         // Create batch command
-        let batchCommand = EmbedBatchCommand(
+        let batchCommand = PipelineIntegration.BatchEmbedCommand(
             texts: [
                 "First document about technology",
                 "Second document about science", 
@@ -77,14 +76,14 @@ public struct EmbedKitExample {
             ]
         )
         
-        let embeddings = try await batchHandler.handle(batchCommand)
-        print("Batch processed \(embeddings.count) embeddings")
+        let results = try await batchHandler.handle(batchCommand)
+        print("Batch processed \(results.embeddings.count) embeddings")
     }
     
     /// Example 4: Streaming embeddings
     public static func streamingExample() async throws {
         let embedder = MockTextEmbedder()
-        let streamHandler = EmbedStreamHandler<AsyncStream<String>>(embedder: embedder)
+        let streamHandler = PipelineIntegration.StreamEmbedHandler(embedder: embedder)
         
         // Create async sequence of texts
         let texts = AsyncStream<String> { continuation in
@@ -98,7 +97,7 @@ public struct EmbedKitExample {
         }
         
         // Create stream command
-        let streamCommand = EmbedStreamCommand(
+        let streamCommand = PipelineIntegration.StreamEmbedCommand(
             texts: texts,
             maxConcurrency: 3
         )
