@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import OSLog
+import CommonCrypto
 
 /// SQLite-based persistent storage for model registry data
 public final class PersistentModelRegistry: @unchecked Sendable {
@@ -137,31 +138,56 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                     
                     defer { sqlite3_finalize(statement) }
                     
-                    // Bind parameters
-                    sqlite3_bind_text(statement, 1, uniqueID, -1, nil)
-                    sqlite3_bind_text(statement, 2, version.identifier, -1, nil)
-                    sqlite3_bind_text(statement, 3, version.version, -1, nil)
+                    // Bind parameters with SQLITE_TRANSIENT to ensure strings are copied
+                    // Use custom destructor function that indicates SQLite should copy the string
+                    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    
+                    sqlite3_bind_text(statement, 1, uniqueID, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(statement, 2, version.identifier, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(statement, 3, version.version, -1, SQLITE_TRANSIENT)
                     sqlite3_bind_int64(statement, 4, Int64(version.buildNumber))
                     sqlite3_bind_double(statement, 5, version.createdAt.timeIntervalSince1970)
-                    sqlite3_bind_text(statement, 6, metadataString, -1, nil)
-                    sqlite3_bind_text(statement, 7, fileURL.path, -1, nil)
+                    sqlite3_bind_text(statement, 6, metadataString, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(statement, 7, fileURL.path, -1, SQLITE_TRANSIENT)
                     
                     if let signature = signature {
-                        sqlite3_bind_text(statement, 8, signature, -1, nil)
+                        sqlite3_bind_text(statement, 8, signature, -1, SQLITE_TRANSIENT)
                     } else {
                         sqlite3_bind_null(statement, 8)
                     }
                     
                     sqlite3_bind_int64(statement, 9, fileSize)
-                    sqlite3_bind_text(statement, 10, checksum, -1, nil)
+                    sqlite3_bind_text(statement, 10, checksum, -1, SQLITE_TRANSIENT)
                     
                     // Execute
-                    if sqlite3_step(statement) != SQLITE_DONE {
+                    let stepResult = sqlite3_step(statement)
+                    if stepResult != SQLITE_DONE {
                         let error = String(cString: sqlite3_errmsg(db))
+                        self.logger.error("Insert failed with result: \(stepResult), error: \(error)")
                         throw ModelRegistryError.databaseError("Failed to insert version: \(error)")
+                    } else {
+                        self.logger.debug("Insert successful for id: \(uniqueID)")
                     }
                     
                     self.logger.info("Saved model version \(version.identifier) v\(version.version) to database")
+                    
+                    // Debug - verify data was actually written
+                    let verifySQL = "SELECT id, identifier, version FROM model_versions WHERE id = ?;"
+                    var verifyStatement: OpaquePointer?
+                    if sqlite3_prepare_v2(db, verifySQL, -1, &verifyStatement, nil) == SQLITE_OK {
+                        defer { sqlite3_finalize(verifyStatement) }
+                        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                        sqlite3_bind_text(verifyStatement, 1, uniqueID, -1, transient)
+                        
+                        if sqlite3_step(verifyStatement) == SQLITE_ROW {
+                            let storedId = sqlite3_column_text(verifyStatement, 0).map { String(cString: $0) } ?? "NULL"
+                            let storedIdentifier = sqlite3_column_text(verifyStatement, 1).map { String(cString: $0) } ?? "NULL"
+                            let storedVersion = sqlite3_column_text(verifyStatement, 2).map { String(cString: $0) } ?? "NULL"
+                            self.logger.debug("Verification - id: \(storedId), identifier: \(storedIdentifier), version: \(storedVersion)")
+                        } else {
+                            self.logger.error("Verification failed - record not found after insert")
+                        }
+                    }
                     continuation.resume()
                 } catch {
                     continuation.resume(throwing: error)
@@ -195,14 +221,20 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                     
                     defer { sqlite3_finalize(statement) }
                     
-                    sqlite3_bind_text(statement, 1, identifier, -1, nil)
+                    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    sqlite3_bind_text(statement, 1, identifier, -1, SQLITE_TRANSIENT)
                     
                     var records: [ModelVersionRecord] = []
                     
+                    self.logger.debug("Loading versions for identifier: \(identifier)")
+                    var rowCount = 0
                     while sqlite3_step(statement) == SQLITE_ROW {
+                        rowCount += 1
+                        self.logger.debug("Found row \(rowCount)")
                         let record = try self.parseVersionRecord(from: statement)
                         records.append(record)
                     }
+                    self.logger.debug("Total rows found: \(rowCount)")
                     
                     continuation.resume(returning: records)
                 } catch {
@@ -237,7 +269,8 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                     
                     defer { sqlite3_finalize(statement) }
                     
-                    sqlite3_bind_text(statement, 1, identifier, -1, nil)
+                    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    sqlite3_bind_text(statement, 1, identifier, -1, SQLITE_TRANSIENT)
                     
                     if sqlite3_step(statement) == SQLITE_ROW {
                         let record = try self.parseVersionRecord(from: statement)
@@ -273,7 +306,8 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                         throw ModelRegistryError.databaseError("Failed to prepare clear statement: \(error)")
                     }
                     
-                    sqlite3_bind_text(clearStatement, 1, version.identifier, -1, nil)
+                    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    sqlite3_bind_text(clearStatement, 1, version.identifier, -1, SQLITE_TRANSIENT)
                     
                     if sqlite3_step(clearStatement) != SQLITE_DONE {
                         sqlite3_finalize(clearStatement)
@@ -296,8 +330,9 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                         throw ModelRegistryError.databaseError("Failed to prepare set statement: \(error)")
                     }
                     
-                    sqlite3_bind_text(setStatement, 1, version.identifier, -1, nil)
-                    sqlite3_bind_text(setStatement, 2, version.version, -1, nil)
+                    let SQLITE_TRANSIENT2 = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    sqlite3_bind_text(setStatement, 1, version.identifier, -1, SQLITE_TRANSIENT2)
+                    sqlite3_bind_text(setStatement, 2, version.version, -1, SQLITE_TRANSIENT2)
                     sqlite3_bind_int64(setStatement, 3, Int64(version.buildNumber))
                     
                     if sqlite3_step(setStatement) != SQLITE_DONE {
@@ -345,8 +380,9 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                     
                     defer { sqlite3_finalize(statement) }
                     
-                    sqlite3_bind_text(statement, 1, version.identifier, -1, nil)
-                    sqlite3_bind_text(statement, 2, version.version, -1, nil)
+                    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    sqlite3_bind_text(statement, 1, version.identifier, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(statement, 2, version.version, -1, SQLITE_TRANSIENT)
                     sqlite3_bind_int64(statement, 3, Int64(version.buildNumber))
                     
                     if sqlite3_step(statement) != SQLITE_DONE {
@@ -469,7 +505,8 @@ public final class PersistentModelRegistry: @unchecked Sendable {
                         if sqlite3_prepare_v2(db, deleteSql, -1, &deleteStatement, nil) != SQLITE_OK {
                             continue
                         }
-                        sqlite3_bind_text(deleteStatement, 1, orphanedId, -1, nil)
+                        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                        sqlite3_bind_text(deleteStatement, 1, orphanedId, -1, SQLITE_TRANSIENT)
                         sqlite3_step(deleteStatement)
                         sqlite3_finalize(deleteStatement)
                     }
@@ -493,13 +530,14 @@ public final class PersistentModelRegistry: @unchecked Sendable {
             throw ModelRegistryError.databaseError("Invalid statement")
         }
         
-        let id = String(cString: sqlite3_column_text(statement, 0))
-        let identifier = String(cString: sqlite3_column_text(statement, 1))
-        let version = String(cString: sqlite3_column_text(statement, 2))
+        // Handle potential NULL values properly
+        let id = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
+        let identifier = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+        let version = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? ""
         let buildNumber = Int(sqlite3_column_int(statement, 3))
         let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 4))
-        let metadataString = String(cString: sqlite3_column_text(statement, 5))
-        let filePath = String(cString: sqlite3_column_text(statement, 6))
+        let metadataString = sqlite3_column_text(statement, 5).map { String(cString: $0) } ?? "{}"
+        let filePath = sqlite3_column_text(statement, 6).map { String(cString: $0) } ?? ""
         let isActive = sqlite3_column_int(statement, 7) == 1
         
         let signatureHash: String?
@@ -510,7 +548,7 @@ public final class PersistentModelRegistry: @unchecked Sendable {
         }
         
         let fileSize = sqlite3_column_int64(statement, 9)
-        let checksum = String(cString: sqlite3_column_text(statement, 10))
+        let checksum = sqlite3_column_text(statement, 10).map { String(cString: $0) } ?? ""
         
         // Parse metadata
         let metadataData = metadataString.data(using: .utf8) ?? Data()
@@ -610,5 +648,3 @@ extension Data {
     }
 }
 
-// Need to import CommonCrypto for SHA256
-import CommonCrypto

@@ -65,7 +65,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     /// Stream embeddings for a sequence of texts with backpressure control
     public func embedTextStream<S: AsyncSequence & Sendable>(
         _ texts: S
-    ) -> AsyncThrowingStream<StreamingResult, Error> where S.Element == String {
+    ) -> AsyncThrowingStream<StreamingResult, Error> where S.Element == String, S.Element: Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 await processStream(texts, continuation: continuation)
@@ -76,7 +76,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     /// Stream embeddings with batching for improved performance
     public func embedBatchStream<S: AsyncSequence & Sendable>(
         _ texts: S
-    ) -> AsyncThrowingStream<[StreamingResult], Error> where S.Element == String {
+    ) -> AsyncThrowingStream<[StreamingResult], Error> where S.Element == String, S.Element: Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 await processBatchStream(texts, continuation: continuation)
@@ -85,10 +85,10 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     }
     
     /// Stream embeddings with custom processing pipeline
-    public func embedWithPipeline<S: AsyncSequence & Sendable, T>(
+    public func embedWithPipeline<S: AsyncSequence & Sendable, T: Sendable>(
         _ texts: S,
         transform: @escaping @Sendable (EmbeddingVector, String) async throws -> T
-    ) -> AsyncThrowingStream<T, Error> where S.Element == String, T: Sendable {
+    ) -> AsyncThrowingStream<T, Error> where S.Element == String, S.Element: Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 await processWithPipeline(texts, transform: transform, continuation: continuation)
@@ -99,7 +99,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     private func processStream<S: AsyncSequence & Sendable>(
         _ texts: S,
         continuation: AsyncThrowingStream<StreamingResult, Error>.Continuation
-    ) async where S.Element == String {
+    ) async where S.Element == String, S.Element: Sendable {
         defer { continuation.finish() }
         
         do {
@@ -120,7 +120,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     private func processBatchStream<S: AsyncSequence & Sendable>(
         _ texts: S,
         continuation: AsyncThrowingStream<[StreamingResult], Error>.Continuation
-    ) async where S.Element == String {
+    ) async where S.Element == String, S.Element: Sendable {
         defer { continuation.finish() }
         
         do {
@@ -179,7 +179,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
         _ texts: S,
         transform: @escaping @Sendable (EmbeddingVector, String) async throws -> T,
         continuation: AsyncThrowingStream<T, Error>.Continuation
-    ) async where S.Element == String {
+    ) async where S.Element == String, S.Element: Sendable {
         defer { continuation.finish() }
         
         do {
@@ -238,7 +238,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
     /// Core streaming implementation with advanced backpressure control
     private func embedStream<S: AsyncSequence & Sendable>(
         _ texts: S
-    ) -> AsyncThrowingStream<StreamingResult, Error> where S.Element == String {
+    ) -> AsyncThrowingStream<StreamingResult, Error> where S.Element == String, S.Element: Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {

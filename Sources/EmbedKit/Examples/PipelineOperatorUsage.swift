@@ -2,7 +2,7 @@ import Foundation
 import PipelineKit
 
 /// Simple runnable example demonstrating PipelineKit operator syntax with EmbedKit
-@main
+// @main  // Commented out to avoid duplicate main in tests
 struct PipelineOperatorUsage {
     static func main() async throws {
         print("🚀 EmbedKit Pipeline Operator Syntax Demo\n")

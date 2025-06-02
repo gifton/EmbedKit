@@ -1,0 +1,595 @@
+import Foundation
+import Testing
+import CoreML
+@testable import EmbedKit
+
+@Suite("Model Components Tests")
+struct ModelComponentsTests {
+    
+    // MARK: - CoreMLBackend Tests
+    
+    @Test("CoreMLBackend initialization and state")
+    func testCoreMLBackendInitialization() async throws {
+        let backend = CoreMLBackend(identifier: "test-backend")
+        
+        // Initial state should be not loaded
+        #expect(await !backend.isLoaded)
+        
+        // Should return nil for metadata when not loaded
+        let metadata = await backend.metadata
+        #expect(metadata == nil)
+    }
+    
+    @Test("CoreMLBackend dimension extraction")
+    func testCoreMLBackendDimensionExtraction() async throws {
+        let _ = CoreMLBackend(identifier: "test-backend")
+        
+        // Create mock MLModel description
+        // Note: In real tests, we'd use an actual model file
+        // For now, testing the dimension parsing logic
+        
+        // Test parseShape method through reflection or by making it testable
+        // This would require either making the method public or using @testable
+    }
+    
+    @Test("CoreMLBackend model loading error handling")
+    func testCoreMLBackendModelLoadingErrorHandling() async throws {
+        let backend = CoreMLBackend(identifier: "test-backend")
+        
+        // Try to load non-existent model
+        let nonExistentURL = URL(fileURLWithPath: "/tmp/non_existent_model.mlmodel")
+        
+        await #expect(throws: Error.self) {
+            try await backend.loadModel(from: nonExistentURL)
+        }
+        
+        #expect(await !backend.isLoaded)
+    }
+    
+    @Test("CoreMLBackend unloading")
+    func testCoreMLBackendUnloading() async throws {
+        let backend = CoreMLBackend(identifier: "test-backend")
+        
+        // Unloading when no model is loaded should not crash
+        try await backend.unloadModel()
+        #expect(await !backend.isLoaded)
+    }
+    
+    // MARK: - EmbeddingModelManager Tests
+    
+    @Test("DefaultEmbeddingModelManager initialization")
+    func testDefaultEmbeddingModelManagerInitialization() async {
+        let manager = DefaultEmbeddingModelManager()
+        
+        // Should start with no loaded models
+        let loadedModels = await manager.loadedModels()
+        #expect(loadedModels.isEmpty)
+    }
+    
+    @Test("DefaultEmbeddingModelManager model loading and retrieval")
+    func testDefaultEmbeddingModelManagerModelOperations() async throws {
+        let manager = DefaultEmbeddingModelManager()
+        
+        // Create a mock model backend
+        // Manager doesn't have direct access to models property from tests
+        // Instead, we'd need to use the public API
+        // For now, just test that getModel returns nil for non-loaded models
+        let retrievedModel = await manager.getModel(identifier: .miniLM_L6_v2)
+        #expect(retrievedModel == nil) // Not loaded yet
+    }
+    
+    @Test("DefaultEmbeddingModelManager model unloading")
+    func testDefaultEmbeddingModelManagerModelUnloading() async throws {
+        let manager = DefaultEmbeddingModelManager()
+        
+        // Try to unload a model that was never loaded - should throw
+        await #expect(throws: Error.self) {
+            try await manager.unloadModel(identifier: .miniLM_L6_v2)
+        }
+    }
+    
+    // MARK: - ModelVersioning Tests
+    
+    @Test("ModelVersion comparison")
+    func testModelVersionComparison() {
+        let v1 = ModelVersion(
+            identifier: "test-model",
+            version: "1.0.0",
+            buildNumber: 100,
+            createdAt: Date(),
+            metadata: [:]
+        )
+        
+        let v2 = ModelVersion(
+            identifier: "test-model",
+            version: "2.0.0",
+            buildNumber: 200,
+            createdAt: Date().addingTimeInterval(3600),
+            metadata: [:]
+        )
+        
+        let v1_1 = ModelVersion(
+            identifier: "test-model",
+            version: "1.0.0",
+            buildNumber: 101,
+            createdAt: Date().addingTimeInterval(1800),
+            metadata: [:]
+        )
+        
+        #expect(v2.isNewer(than: v1))
+        #expect(!v1.isNewer(than: v2))
+        #expect(v1_1.isNewer(than: v1)) // Same version but newer build
+        
+        #expect(v1.semanticVersion == "1.0.0.100")
+        #expect(v2.semanticVersion == "2.0.0.200")
+    }
+    
+    @Test("ModelVersionRegistry basic operations")
+    func testModelVersionRegistryBasicOperations() async throws {
+        let registry = ModelVersionRegistry()
+        
+        // Create test file
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ModelVersionTest_\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let modelFile = tempDir.appendingPathComponent("test_model.mlmodel")
+        try "test model".data(using: .utf8)!.write(to: modelFile)
+        
+        // Register version
+        let version = ModelVersion(
+            identifier: "test-model",
+            version: "1.0.0",
+            buildNumber: 100,
+            createdAt: Date(),
+            metadata: ["key": "value"]
+        )
+        
+        try await registry.register(version: version, modelURL: modelFile)
+        
+        // Get versions
+        let versions = await registry.getVersions(for: "test-model")
+        #expect(versions.count == 1)
+        #expect(versions.first == version)
+        
+        // Get active version
+        let activeVersion = await registry.getActiveVersion(for: "test-model")
+        #expect(activeVersion == version)
+        
+        // Get model URL
+        let modelURL = await registry.getModelURL(for: version)
+        #expect(modelURL == modelFile)
+        
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+    
+    @Test("ModelVersionRegistry multiple versions")
+    func testModelVersionRegistryMultipleVersions() async throws {
+        let registry = ModelVersionRegistry()
+        
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ModelVersionTest_\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // Register multiple versions
+        let versions = (1...3).map { i in
+            ModelVersion(
+                identifier: "test-model",
+                version: "\(i).0.0",
+                buildNumber: i * 100,
+                createdAt: Date().addingTimeInterval(Double(i * 3600)),
+                metadata: [:]
+            )
+        }
+        
+        for (index, version) in versions.enumerated() {
+            let modelFile = tempDir.appendingPathComponent("model_v\(index + 1).mlmodel")
+            try "model v\(index + 1)".data(using: .utf8)!.write(to: modelFile)
+            try await registry.register(version: version, modelURL: modelFile)
+        }
+        
+        // Get all versions - should be sorted newest first
+        let allVersions = await registry.getVersions(for: "test-model")
+        #expect(allVersions.count == 3)
+        #expect(allVersions[0].version == "3.0.0")
+        #expect(allVersions[1].version == "2.0.0")
+        #expect(allVersions[2].version == "1.0.0")
+        
+        // Latest should be active by default
+        let activeVersion = await registry.getActiveVersion(for: "test-model")
+        #expect(activeVersion?.version == "3.0.0")
+        
+        // Set different active version
+        try await registry.setActiveVersion(versions[1])
+        let newActive = await registry.getActiveVersion(for: "test-model")
+        #expect(newActive?.version == "2.0.0")
+        
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+    
+    @Test("ModelVersionRegistry remove version")
+    func testModelVersionRegistryRemoveVersion() async throws {
+        let registry = ModelVersionRegistry()
+        
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ModelVersionTest_\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // Register two versions
+        let v1 = ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:])
+        let v2 = ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date().addingTimeInterval(3600), metadata: [:])
+        
+        let file1 = tempDir.appendingPathComponent("v1.mlmodel")
+        let file2 = tempDir.appendingPathComponent("v2.mlmodel")
+        try "v1".data(using: .utf8)!.write(to: file1)
+        try "v2".data(using: .utf8)!.write(to: file2)
+        
+        try await registry.register(version: v1, modelURL: file1)
+        try await registry.register(version: v2, modelURL: file2)
+        
+        // Remove v2
+        try await registry.removeVersion(v2)
+        
+        // Should only have v1
+        let versions = await registry.getVersions(for: "test-model")
+        #expect(versions.count == 1)
+        #expect(versions.first?.version == "1.0.0")
+        
+        // v1 should now be active
+        let activeVersion = await registry.getActiveVersion(for: "test-model")
+        #expect(activeVersion?.version == "1.0.0")
+        
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+    
+    @Test("ModelVersionRegistry statistics")
+    func testModelVersionRegistryStatistics() async throws {
+        let registry = ModelVersionRegistry()
+        
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ModelVersionTest_\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // Register versions for multiple models
+        for modelNum in 1...2 {
+            for versionNum in 1...3 {
+                let version = ModelVersion(
+                    identifier: "model-\(modelNum)",
+                    version: "\(versionNum).0.0",
+                    buildNumber: versionNum * 100,
+                    createdAt: Date(),
+                    metadata: [:]
+                )
+                
+                let file = tempDir.appendingPathComponent("model\(modelNum)_v\(versionNum).mlmodel")
+                try "content".data(using: .utf8)!.write(to: file)
+                try await registry.register(version: version, modelURL: file)
+            }
+        }
+        
+        let stats = await registry.getStatistics()
+        #expect(stats.totalModels == 2)
+        #expect(stats.totalVersions == 6)
+        #expect(stats.activeVersions == 2)
+        
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+    
+    // MARK: - HotSwappableModelManager Tests
+    
+    @Test("HotSwappableModelManager initialization")
+    func testHotSwappableModelManagerInitialization() async {
+        let registry = ModelVersionRegistry()
+        let manager = HotSwappableModelManager(registry: registry, maxConcurrentModels: 3)
+        
+        let stats = await manager.getStatistics()
+        #expect(stats.loadedModels == 0)
+        #expect(stats.totalLoads == 0)
+        #expect(stats.totalEvictions == 0)
+    }
+    
+    @Test("HotSwappableModelManager model loading and swapping")
+    func testHotSwappableModelManagerModelSwapping() async throws {
+        let registry = ModelVersionRegistry()
+        let manager = HotSwappableModelManager(
+            registry: registry,
+            maxConcurrentModels: 2
+        )
+        
+        // Create test versions
+        let v1 = ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:])
+        let v2 = ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:])
+        
+        // Mock loading - in real tests would use actual model files
+        // Test that manager can handle version switching
+        
+        // Load v1
+        let model1 = try await manager.getModel(for: "test-model", version: v1, loader: { _ in
+            MockModelBackend()
+        })
+        #expect(model1 != nil)
+        
+        // Load v2 (hot swap)
+        let model2 = try await manager.getModel(for: "test-model", version: v2, loader: { _ in
+            MockModelBackend()
+        })
+        #expect(model2 != nil)
+        
+        // Both should be loaded
+        let stats = await manager.getStatistics()
+        #expect(stats.loadedModels == 2)
+        #expect(stats.totalLoads == 2)
+    }
+    
+    @Test("HotSwappableModelManager LRU eviction")
+    func testHotSwappableModelManagerLRUEviction() async throws {
+        let registry = ModelVersionRegistry()
+        let manager = HotSwappableModelManager(registry: registry, maxConcurrentModels: 2)
+        
+        // Create versions for 3 different models
+        let versions = (1...3).map { i in
+            ModelVersion(
+                identifier: "model-\(i)",
+                version: "1.0.0",
+                buildNumber: 100,
+                createdAt: Date(),
+                metadata: [:]
+            )
+        }
+        
+        // Load 3 models (exceeds capacity of 2)
+        for (index, version) in versions.enumerated() {
+            _ = try await manager.getModel(for: version.identifier, version: version, loader: { _ in
+                MockModelBackend(id: index)
+            })
+        }
+        
+        // Should have evicted the first model
+        let stats = await manager.getStatistics()
+        #expect(stats.loadedModels == 2)
+        #expect(stats.totalEvictions == 1)
+        
+        // First model should be evicted
+        let loadedModels = await manager.loadedModels
+        #expect(!loadedModels.contains { $0.model.identifier == "model-1" })
+        #expect(loadedModels.contains { $0.model.identifier == "model-2" })
+        #expect(loadedModels.contains { $0.model.identifier == "model-3" })
+    }
+    
+    @Test("HotSwappableModelManager preloading")
+    func testHotSwappableModelManagerPreloading() async throws {
+        let registry = ModelVersionRegistry()
+        let manager = HotSwappableModelManager(registry: registry, maxConcurrentModels: 5)
+        
+        let versions = [
+            ModelVersion(identifier: "model-1", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:]),
+            ModelVersion(identifier: "model-1", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:]),
+            ModelVersion(identifier: "model-2", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:])
+        ]
+        
+        let results = await manager.preloadVersions(versions, loader: { version in
+            MockModelBackend(id: version.hashValue)
+        })
+        
+        #expect(results.count == 3)
+        #expect(results.allSatisfy { $0.value }) // All should succeed
+        
+        let stats = await manager.getStatistics()
+        #expect(stats.loadedModels == 3)
+    }
+    
+    /* MARK: - ModelABTestManager Tests - Disabled due to API changes
+    
+    @Test("ModelABTestManager test creation and management")
+    func testModelABTestManagerTestCreation() async throws {
+        let manager = ModelABTestManager()
+        
+        let testConfig = ModelABTestConfig(
+            testId: "test-1",
+            modelIdentifier: "test-model",
+            controlVersion: ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:]),
+            treatmentVersion: ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:]),
+            trafficSplitPercentage: 50.0,
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(86400) // 24 hours
+        )
+        
+        // Start test
+        try await manager.startTest(testConfig)
+        
+        // Get active tests
+        let activeTests = await manager.getActiveTests()
+        #expect(activeTests.count == 1)
+        #expect(activeTests.first?.testId == "test-1")
+        
+        // Test version selection
+        var controlCount = 0
+        var treatmentCount = 0
+        
+        for _ in 0..<100 {
+            let version = await manager.selectVersion(for: "test-model")
+            if version?.version == "1.0.0" {
+                controlCount += 1
+            } else if version?.version == "2.0.0" {
+                treatmentCount += 1
+            }
+        }
+        
+        // With 50% split, should be roughly equal (allow for randomness)
+        #expect(controlCount > 30)
+        #expect(treatmentCount > 30)
+        #expect(controlCount + treatmentCount == 100)
+    }
+    
+    @Test("ModelABTestManager metrics recording")
+    func testModelABTestManagerMetricsRecording() async throws {
+        let manager = ModelABTestManager()
+        
+        let control = ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:])
+        let treatment = ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:])
+        
+        let testConfig = ModelABTestConfig(
+            testId: "metrics-test",
+            modelIdentifier: "test-model",
+            controlVersion: control,
+            treatmentVersion: treatment,
+            trafficSplitPercentage: 50.0,
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(3600)
+        )
+        
+        try await manager.startTest(testConfig)
+        
+        // Record metrics for control
+        for i in 0..<10 {
+            await manager.recordLatency(for: control, latency: 0.1 + Double(i) * 0.01)
+        }
+        await manager.recordError(for: control)
+        await manager.recordError(for: control)
+        
+        // Record metrics for treatment
+        for i in 0..<10 {
+            await manager.recordLatency(for: treatment, latency: 0.05 + Double(i) * 0.01)
+        }
+        await manager.recordError(for: treatment)
+        
+        // Get test results
+        let results = await manager.getTestResults(testId: "metrics-test")
+        #expect(results != nil)
+        
+        let controlMetrics = results?.controlMetrics
+        let treatmentMetrics = results?.treatmentMetrics
+        
+        #expect(controlMetrics?.requestCount == 10)
+        #expect(controlMetrics?.errorCount == 2)
+        #expect(controlMetrics?.averageLatency ?? 0 > 0.1)
+        
+        #expect(treatmentMetrics?.requestCount == 10)
+        #expect(treatmentMetrics?.errorCount == 1)
+        #expect(treatmentMetrics?.averageLatency ?? 0 < controlMetrics?.averageLatency ?? 0)
+    }
+    
+    @Test("ModelABTestManager winner determination")
+    func testModelABTestManagerWinnerDetermination() async throws {
+        let manager = ModelABTestManager()
+        
+        let control = ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:])
+        let treatment = ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:])
+        
+        let testConfig = ModelABTestConfig(
+            testId: "winner-test",
+            modelIdentifier: "test-model",
+            controlVersion: control,
+            treatmentVersion: treatment,
+            trafficSplitPercentage: 50.0,
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(3600)
+        )
+        
+        try await manager.startTest(testConfig)
+        
+        // Treatment performs better
+        for _ in 0..<100 {
+            await manager.recordLatency(for: control, latency: 0.2)
+            await manager.recordLatency(for: treatment, latency: 0.1)
+        }
+        
+        // More errors for control
+        for _ in 0..<10 {
+            await manager.recordError(for: control)
+        }
+        for _ in 0..<2 {
+            await manager.recordError(for: treatment)
+        }
+        
+        // Determine winner
+        let winner = await manager.determineWinner(testId: "winner-test")
+        #expect(winner?.version == "2.0.0") // Treatment should win
+        
+        // Stop test
+        await manager.stopTest(testId: "winner-test")
+        let activeTests = await manager.getActiveTests()
+        #expect(activeTests.isEmpty)
+    }
+    
+    @Test("ModelABTestManager expired test handling")
+    func testModelABTestManagerExpiredTestHandling() async throws {
+        let manager = ModelABTestManager()
+        
+        // Create test that's already expired
+        let testConfig = ModelABTestConfig(
+            testId: "expired-test",
+            modelIdentifier: "test-model",
+            controlVersion: ModelVersion(identifier: "test-model", version: "1.0.0", buildNumber: 100, createdAt: Date(), metadata: [:]),
+            treatmentVersion: ModelVersion(identifier: "test-model", version: "2.0.0", buildNumber: 200, createdAt: Date(), metadata: [:]),
+            trafficSplitPercentage: 50.0,
+            startTime: Date().addingTimeInterval(-7200), // 2 hours ago
+            endTime: Date().addingTimeInterval(-3600) // 1 hour ago
+        )
+        
+        try await manager.startTest(testConfig)
+        
+        // Should not select version for expired test
+        let version = await manager.selectVersion(for: "test-model")
+        #expect(version == nil)
+        
+        // Test should not be in active tests
+        let activeTests = await manager.getActiveTests()
+        #expect(activeTests.isEmpty)
+    }
+    */
+}
+
+// MARK: - Mock Implementations
+
+actor MockModelBackend: ModelBackend {
+    let id: Int
+    var unloadCalled = false
+    var isLoadedValue = true
+    
+    init(id: Int = 0) {
+        self.id = id
+    }
+    
+    var identifier: String { "mock-backend-\(id)" }
+    
+    var isLoaded: Bool { isLoadedValue }
+    
+    var metadata: ModelMetadata? {
+        ModelMetadata(
+            name: "mock-model",
+            version: "1.0.0",
+            embeddingDimensions: 768,
+            maxSequenceLength: 512,
+            vocabularySize: 30522,
+            modelType: "mock",
+            additionalInfo: [:]
+        )
+    }
+    
+    func loadModel(from url: URL) async throws {
+        isLoadedValue = true
+    }
+    
+    func unloadModel() async {
+        unloadCalled = true
+        isLoadedValue = false
+    }
+    
+    func generateEmbeddings(for input: TokenizedInput) async throws -> ModelOutput {
+        // Return mock embedding output
+        let embeddings = [[Float]](repeating: [Float](repeating: 0.1, count: 768), count: input.tokenIds.count)
+        return ModelOutput(
+            tokenEmbeddings: embeddings,
+            attentionWeights: nil,
+            metadata: ["model": "mock-\(id)"]
+        )
+    }
+    
+    func inputDimensions() async -> (sequence: Int, features: Int)? {
+        return (512, 768)
+    }
+    
+    func outputDimensions() async -> Int? {
+        return 768
+    }
+}

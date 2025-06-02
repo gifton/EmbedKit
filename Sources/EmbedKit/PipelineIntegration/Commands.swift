@@ -360,7 +360,9 @@ public struct CachePreloadResult: Sendable {
 // MARK: - Async Text Source Protocol
 
 /// Protocol for async text sources used in streaming
-public protocol AsyncTextSource: AsyncSequence, Sendable where Element == String {}
+///
+/// Swift 6 Compatibility: Added Element: Sendable constraint for proper concurrency safety
+public protocol AsyncTextSource: AsyncSequence, Sendable where Element == String, Element: Sendable {}
 
 /// Concrete implementation of AsyncTextSource
 public struct ArrayTextSource: AsyncTextSource {

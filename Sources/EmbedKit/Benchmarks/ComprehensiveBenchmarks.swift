@@ -628,11 +628,20 @@ public struct ConcurrencyBenchmarkResults: Sendable, Codable {
 // MARK: - Mock Text Embedder for Testing
 
 /// Simple mock embedder for testing and benchmarking purposes
+///
+/// This mock embedder provides:
+/// - Deterministic embeddings for consistent testing
+/// - Realistic simulation of model loading and processing times
+/// - Proper error handling with contextual information
+/// - Batch processing optimization simulation
 public actor MockTextEmbedder: TextEmbedder {
     public let modelIdentifier = ModelIdentifier(family: "mock", variant: "test", version: "v1")
     public let dimensions: Int
     public var isReady: Bool = false
     public let configuration: Configuration
+    
+    // Simple cache for deterministic behavior
+    private var embeddingCache: [String: EmbeddingVector] = [:]
     
     public init(dimensions: Int = 768) {
         self.dimensions = dimensions
@@ -652,36 +661,110 @@ public actor MockTextEmbedder: TextEmbedder {
     public func embed(_ text: String) async throws -> EmbeddingVector {
         guard isReady else {
             throw ContextualEmbeddingError.modelNotLoaded(
-                context: ErrorContext(
-                    operation: .modelLoading,
-                    modelIdentifier: modelIdentifier,
-                    metadata: ErrorMetadata(),
-                    sourceLocation: SourceLocation()
-                )
+                context: ErrorContext.modelLoading(modelIdentifier)
             )
         }
         
-        // Simulate embedding computation
-        let values = (0..<dimensions).map { _ in Float.random(in: -1...1) }
-        return EmbeddingVector(values)
+        // Check cache first for deterministic behavior
+        if let cached = embeddingCache[text] {
+            return cached
+        }
+        
+        // Simulate realistic embedding computation time
+        try await Task.sleep(nanoseconds: UInt64(text.count * 10_000)) // 10µs per character
+        
+        // Generate deterministic embedding based on text hash
+        let embedding = generateDeterministicEmbedding(for: text)
+        
+        // Cache the result
+        if embeddingCache.count < 1000 { // Simple cache size limit
+            embeddingCache[text] = embedding
+        }
+        
+        return embedding
     }
     
     public func embed(batch texts: [String]) async throws -> [EmbeddingVector] {
         guard isReady else {
             throw ContextualEmbeddingError.modelNotLoaded(
-                context: ErrorContext(
-                    operation: .modelLoading,
-                    modelIdentifier: modelIdentifier,
-                    metadata: ErrorMetadata(),
-                    sourceLocation: SourceLocation()
-                )
+                context: ErrorContext.modelLoading(modelIdentifier)
             )
         }
         
-        // Simulate batch processing
-        return texts.map { _ in
-            let values = (0..<dimensions).map { _ in Float.random(in: -1...1) }
-            return EmbeddingVector(values)
+        // Simulate batch processing optimization (30% faster than individual calls)
+        let totalCharacterCount = texts.reduce(0) { $0 + $1.count }
+        let batchOptimizedTime = UInt64(Double(totalCharacterCount * 10_000) * 0.7)
+        try await Task.sleep(nanoseconds: batchOptimizedTime)
+        
+        // Process batch with potential cache hits
+        var results: [EmbeddingVector] = []
+        results.reserveCapacity(texts.count)
+        
+        for text in texts {
+            if let cached = embeddingCache[text] {
+                results.append(cached)
+            } else {
+                let embedding = generateDeterministicEmbedding(for: text)
+                results.append(embedding)
+                
+                // Cache if space available
+                if embeddingCache.count < 1000 {
+                    embeddingCache[text] = embedding
+                }
+            }
         }
+        
+        return results
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    /// Generate a deterministic embedding based on text content
+    /// This ensures consistent results for testing while still being realistic
+    private func generateDeterministicEmbedding(for text: String) -> EmbeddingVector {
+        // Use text hash as seed for consistent pseudo-random generation
+        var hasher = Hasher()
+        hasher.combine(text)
+        let hashValue = hasher.finalize()
+        
+        // Convert to UInt64 safely
+        let seed = UInt64(bitPattern: Int64(hashValue))
+        
+        // Create deterministic random generator
+        var generator = SeededRandomNumberGenerator(seed: seed)
+        
+        // Generate values that sum to approximately 1.0 for realistic embeddings
+        var values: [Float] = []
+        values.reserveCapacity(dimensions)
+        
+        for _ in 0..<dimensions {
+            let value = Float.random(in: -0.1...0.1, using: &generator)
+            values.append(value)
+        }
+        
+        // Normalize to unit vector for realistic embedding behavior
+        let magnitude = sqrt(values.reduce(0) { $0 + $1 * $1 })
+        if magnitude > 0 {
+            for i in 0..<values.count {
+                values[i] /= magnitude
+            }
+        }
+        
+        return EmbeddingVector(values)
+    }
+}
+
+/// Seeded random number generator for deterministic pseudo-random values
+private struct SeededRandomNumberGenerator: RandomNumberGenerator {
+    private var state: UInt64
+    
+    init(seed: UInt64) {
+        self.state = seed == 0 ? 1 : seed
+    }
+    
+    mutating func next() -> UInt64 {
+        // Linear congruential generator (simple but sufficient for testing)
+        state = state &* 1103515245 &+ 12345
+        return state
     }
 }

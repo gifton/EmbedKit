@@ -236,14 +236,21 @@ public actor EmbeddingCache {
 }
 
 /// Memory-aware cache that responds to system memory pressure
-public final class MemoryAwareCache: @unchecked Sendable {
+/// 
+/// Swift 6 Compatibility: Converted to actor for proper concurrency safety
+/// - Removes need for @unchecked Sendable
+/// - Ensures all memory pressure handling is properly isolated
+/// - Prevents data races on mutable state
+public actor MemoryAwareCache {
     private let embeddingCache: EmbeddingCache
     private var memoryPressureSource: DispatchSourceMemoryPressure?
-    private let logger = Logger(subsystem: "EmbedKit", category: "MemoryAwareCache")
+    nonisolated private let logger = Logger(subsystem: "EmbedKit", category: "MemoryAwareCache")
     
     public init(embeddingCache: EmbeddingCache) {
         self.embeddingCache = embeddingCache
-        setupMemoryPressureHandling()
+        Task {
+            await setupMemoryPressureHandling()
+        }
     }
     
     deinit {
@@ -254,28 +261,46 @@ public final class MemoryAwareCache: @unchecked Sendable {
         memoryPressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global())
         
         memoryPressureSource?.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            
-            let pressure = self.memoryPressureSource?.data ?? []
-            
-            Task {
-                if pressure.contains(.critical) {
-                    self.logger.warning("Critical memory pressure detected, clearing cache")
-                    await self.embeddingCache.clear()
-                } else if pressure.contains(.warning) {
-                    self.logger.info("Memory pressure warning, reducing cache size")
-                    // Clear 50% of cache on warning
-                    let stats = await self.embeddingCache.statistics()
-                    let targetSize = stats.currentSize / 2
-                    
-                    while await self.embeddingCache.statistics().currentSize > targetSize {
-                        // The LRU cache will handle eviction
-                        break
-                    }
-                }
+            Task { [weak self] in
+                guard let self = self else { return }
+                await self.handleMemoryPressureEvent()
             }
         }
         
         memoryPressureSource?.resume()
+    }
+    
+    /// Handle memory pressure events from the system
+    private func handleMemoryPressureEvent() async {
+        guard let pressure = memoryPressureSource?.data else { return }
+        
+        if pressure.contains(.critical) {
+            logger.warning("Critical memory pressure detected, clearing cache")
+            await embeddingCache.clear()
+        } else if pressure.contains(.warning) {
+            logger.info("Memory pressure warning, reducing cache size")
+            await handleMemoryPressureWarning()
+        }
+    }
+    
+    /// Handle memory pressure warning by reducing cache size
+    private func handleMemoryPressureWarning() async {
+        // Clear 50% of cache on warning
+        let stats = await embeddingCache.statistics()
+        let targetSize = stats.currentSize / 2
+        
+        // Note: The actual cache reduction is handled by the LRU eviction policy
+        // When new items are added, old ones will be automatically evicted
+        logger.debug("Memory warning: target cache size reduced to \(targetSize)")
+    }
+    
+    /// Get statistics from the underlying embedding cache
+    public func statistics() async -> CacheStatistics {
+        await embeddingCache.statistics()
+    }
+    
+    /// Clear the underlying cache
+    public func clear() async {
+        await embeddingCache.clear()
     }
 }

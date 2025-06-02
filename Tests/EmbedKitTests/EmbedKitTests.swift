@@ -89,15 +89,15 @@ func testSimpleTokenizerBatch() async throws {
     }
 }
 
-@Test("EmbeddingConfiguration defaults")
-func testEmbeddingConfiguration() {
-    let config = EmbeddingConfiguration()
+@Test("Configuration defaults")
+func testConfiguration() {
+    let config = Configuration()
     
-    #expect(config.maxSequenceLength == 512)
-    #expect(config.normalizeEmbeddings == true)
-    #expect(config.poolingStrategy == .mean)
-    #expect(config.batchSize == 32)
-    #expect(config.useGPUAcceleration == true)
+    #expect(config.model.maxSequenceLength == 512)
+    #expect(config.model.normalizeEmbeddings == true)
+    #expect(config.model.poolingStrategy == .mean)
+    #expect(config.resources.batchSize == 32)
+    #expect(config.performance.useMetalAcceleration == true)
 }
 
 @Test("ModelMetadata creation")
@@ -120,24 +120,23 @@ func testModelMetadata() {
 func testEmbedTextCommand() {
     let command = EmbedTextCommand(
         text: "Test embedding",
-        modelIdentifier: "test-model"
+        modelIdentifier: ModelIdentifier(family: "test", variant: "base", version: "v1")
     )
     
     #expect(command.text == "Test embedding")
-    #expect(command.modelIdentifier == "test-model")
-    #expect(command.configuration == nil)
+    #expect(command.modelIdentifier?.family == "test")
 }
 
-@Test("EmbedBatchCommand creation")
-func testEmbedBatchCommand() {
+@Test("BatchEmbedCommand creation")
+func testBatchEmbedCommand() {
     let texts = ["First text", "Second text", "Third text"]
-    let command = EmbedBatchCommand(
+    let command = BatchEmbedCommand(
         texts: texts,
-        modelIdentifier: "test-model"
+        modelIdentifier: ModelIdentifier(family: "test", variant: "base", version: "v1")
     )
     
     #expect(command.texts == texts)
-    #expect(command.modelIdentifier == "test-model")
+    #expect(command.modelIdentifier?.family == "test")
 }
 
 @Test("CacheStatistics calculation")
@@ -155,52 +154,18 @@ func testCacheStatistics() {
     #expect(stats.evictions == 5)
 }
 
-// Mock embedder for testing
-actor MockTextEmbedder: TextEmbedder {
-    let configuration: EmbeddingConfiguration
-    let dimensions: Int
-    let modelIdentifier: String
-    private(set) var isReady: Bool = false
-    
-    init(
-        dimensions: Int = 384,
-        modelIdentifier: String = "mock-model",
-        configuration: EmbeddingConfiguration = EmbeddingConfiguration()
-    ) {
-        self.dimensions = dimensions
-        self.modelIdentifier = modelIdentifier
-        self.configuration = configuration
-    }
-    
-    func embed(_ text: String) async throws -> EmbeddingVector {
-        guard isReady else {
-            throw EmbeddingError.modelNotLoaded
-        }
-        
-        // Return a mock embedding based on text length
-        let mockValues = Array(repeating: Float(text.count) / 100.0, count: dimensions)
-        return EmbeddingVector(mockValues)
-    }
-    
-    func loadModel() async throws {
-        isReady = true
-    }
-    
-    func unloadModel() async throws {
-        isReady = false
-    }
-}
+// Using MockTextEmbedder from ComprehensiveBenchmarks.swift
 
 @Test("MockTextEmbedder basic functionality")
 func testMockTextEmbedder() async throws {
-    let embedder = MockTextEmbedder(dimensions: 128)
+    let embedder = MockTextEmbedder()
     
     // Should throw when not loaded
     do {
         _ = try await embedder.embed("test")
         #expect(false, "Should have thrown error")
     } catch {
-        #expect(error is EmbeddingError)
+        #expect(error is ContextualEmbeddingError)
     }
     
     // Load model
@@ -209,7 +174,7 @@ func testMockTextEmbedder() async throws {
     
     // Generate embedding
     let embedding = try await embedder.embed("test text")
-    #expect(embedding.dimensions == 128)
+    #expect(embedding.dimensions == 768) // MockTextEmbedder default dimensions
     
     // Unload model
     try await embedder.unloadModel()

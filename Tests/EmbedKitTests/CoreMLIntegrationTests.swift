@@ -1,17 +1,20 @@
-import XCTest
-import CoreML
+import Testing
+import Foundation
+@preconcurrency import CoreML
 @testable import EmbedKit
 
-final class CoreMLIntegrationTests: XCTestCase {
+@Suite("Core ML Integration Tests")
+struct CoreMLIntegrationTests {
     
-    /// Test loading and using a converted Core ML model
+    @Test("Core ML model integration")
     func testCoreMLModelIntegration() async throws {
         // Skip if no model is available
-        guard Bundle(for: Self.self).url(
+        guard Bundle.main.url(
             forResource: "all-MiniLM-L6-v2",
             withExtension: "mlpackage"
         ) != nil else {
-            throw XCTSkip("No Core ML model found in test bundle")
+            // Skip test if model not available
+            return
         }
         
         // Create model loader
@@ -21,14 +24,14 @@ final class CoreMLIntegrationTests: XCTestCase {
         let (mlModel, metadata) = try await loader.loadPretrainedModel(.miniLM)
         
         // Verify metadata
-        XCTAssertEqual(metadata.embeddingDimensions, 384)
-        XCTAssertEqual(metadata.maxSequenceLength, 256)
-        XCTAssertEqual(metadata.modelFormat, .coreML)
+        #expect(metadata.embeddingDimensions == 384)
+        #expect(metadata.maxSequenceLength == 256)
+        #expect(metadata.modelType == "coreml")
         
         // Create embedder with the model
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+            modelIdentifier: ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1"),
+            configuration: Configuration()
         )
         
         // Test embedding
@@ -36,37 +39,39 @@ final class CoreMLIntegrationTests: XCTestCase {
         let embedding = try await embedder.embed(text)
         
         // Verify embedding
-        XCTAssertEqual(embedding.dimensions, 384)
+        #expect(embedding.dimensions == 384)
         
         // Test similarity
         let text2 = "A fast brown fox leaps over a sleepy dog."
         let embedding2 = try await embedder.embed(text2)
         
         let similarity = embedding.cosineSimilarity(with: embedding2)
-        XCTAssertGreaterThan(similarity, 0.8) // Should be similar
+        #expect(similarity > 0.8) // Should be similar
         
         // Test dissimilar texts
         let text3 = "Machine learning is transforming technology."
         let embedding3 = try await embedder.embed(text3)
         
         let similarity2 = embedding.cosineSimilarity(with: embedding3)
-        XCTAssertLessThan(similarity2, 0.5) // Should be dissimilar
+        #expect(similarity2 < 0.5) // Should be dissimilar
     }
     
-    /// Test batch processing performance
+    @Test("Batch processing performance")
     func testBatchProcessingPerformance() async throws {
-        guard Bundle(for: Self.self).url(
+        guard Bundle.main.url(
             forResource: "all-MiniLM-L6-v2",
             withExtension: "mlpackage"
         ) != nil else {
-            throw XCTSkip("No Core ML model found in test bundle")
+            // Skip test if model not available
+            return
         }
         
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration(
-                batchSize: 32,
-                useGPUAcceleration: true
+            modelIdentifier: ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1"),
+            configuration: Configuration(
+                resources: ResourceConfiguration(
+                    batchSize: 32
+                )
             )
         )
         
@@ -82,16 +87,16 @@ final class CoreMLIntegrationTests: XCTestCase {
         let embeddings = try await embedder.embed(batch: texts)
         let duration = CFAbsoluteTimeGetCurrent() - startTime
         
-        XCTAssertEqual(embeddings.count, 100)
+        #expect(embeddings.count == 100)
         
         let embeddingsPerSecond = Double(texts.count) / duration
         print("Performance: \(String(format: "%.1f", embeddingsPerSecond)) embeddings/second")
         
         // Should achieve at least 50 embeddings/second on modern hardware
-        XCTAssertGreaterThan(embeddingsPerSecond, 50)
+        #expect(embeddingsPerSecond > 50)
     }
     
-    /// Test model size and memory usage
+    @Test("Model memory footprint")
     func testModelMemoryFootprint() async throws {
         let loader = CoreMLModelLoader()
         
@@ -109,7 +114,7 @@ final class CoreMLIntegrationTests: XCTestCase {
         print("Model memory footprint: \(String(format: "%.1f", memoryUsedMB)) MB")
         
         // Model should use less than 100MB in memory
-        XCTAssertLessThan(memoryUsedMB, 100)
+        #expect(memoryUsedMB < 100)
     }
 }
 

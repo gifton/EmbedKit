@@ -112,6 +112,8 @@ public actor GracefulDegradationManager {
     
     private var degradationLevels: [String: DegradationLevel] = [:]
     private var resourceUsage: ResourceUsage = ResourceUsage()
+    private var errorCounts: [String: Int] = [:]
+    private var successCounts: [String: Int] = [:]
     
     public enum DegradationLevel: Int, CaseIterable, Sendable, Comparable {
         case normal = 0
@@ -223,9 +225,14 @@ public actor GracefulDegradationManager {
     // MARK: - Private Methods
     
     private func updateResourceUsage() async {
-        // In a real implementation, this would query system resources
-        // For now, we'll simulate based on some heuristics
+        // Update memory usage
         resourceUsage.memoryUsagePercent = getCurrentMemoryUsage()
+        
+        // Update CPU usage
+        resourceUsage.cpuUsagePercent = getCurrentCPUUsage()
+        
+        // Update disk space (for model storage)
+        resourceUsage.diskSpaceAvailable = getDiskSpaceAvailable()
     }
     
     private func assessMemoryPressure() -> DegradationLevel {
@@ -242,9 +249,20 @@ public actor GracefulDegradationManager {
     }
     
     private func assessErrorRate(operation: String) -> DegradationLevel {
-        // This would integrate with the error handling system
-        // For now, return normal
-        return .normal
+        let recentErrors = errorCounts[operation] ?? 0
+        let totalOps = max(1, (errorCounts[operation] ?? 0) + (successCounts[operation] ?? 0))
+        let errorRate = Double(recentErrors) / Double(totalOps)
+        
+        switch errorRate {
+        case 0..<0.05:
+            return .normal
+        case 0.05..<0.15:
+            return .reduced
+        case 0.15..<0.30:
+            return .minimal
+        default:
+            return .emergency
+        }
     }
     
     private func getCurrentMemoryUsage() -> Double {
@@ -269,6 +287,59 @@ public actor GracefulDegradationManager {
         
         return 0.5 // Default assumption
     }
+    
+    private func getCurrentCPUUsage() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_,
+                         task_flavor_t(MACH_TASK_BASIC_INFO),
+                         $0,
+                         &count)
+            }
+        }
+        
+        if result == KERN_SUCCESS {
+            let userTime = Double(info.user_time.seconds) + Double(info.user_time.microseconds) / 1_000_000
+            let systemTime = Double(info.system_time.seconds) + Double(info.system_time.microseconds) / 1_000_000
+            let totalTime = userTime + systemTime
+            let currentTime = ProcessInfo.processInfo.systemUptime
+            
+            if currentTime > totalTime {
+                return min((totalTime / currentTime) * 100.0, 100.0)
+            }
+        }
+        
+        return 0.0
+    }
+    
+    private func getDiskSpaceAvailable() -> Int64 {
+        do {
+            let fileURL = URL(fileURLWithPath: NSHomeDirectory())
+            let values = try fileURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            if let capacity = values.volumeAvailableCapacityForImportantUsage {
+                return capacity
+            }
+        } catch {
+            logger.warning("Failed to get disk space: \(error)")
+        }
+        
+        // Return a reasonable default (1GB)
+        return 1_073_741_824
+    }
+    
+    /// Record a successful operation
+    public func recordSuccess(for operation: String) {
+        successCounts[operation, default: 0] += 1
+    }
+    
+    /// Record a failed operation
+    public func recordError(for operation: String, error: Error) {
+        errorCounts[operation, default: 0] += 1
+        logger.error("Operation \(operation) failed: \(error)")
+    }
 }
 
 /// Resource usage tracking
@@ -276,6 +347,7 @@ public struct ResourceUsage: Sendable {
     public var memoryUsagePercent: Double = 0.0
     public var cpuUsagePercent: Double = 0.0
     public var diskUsagePercent: Double = 0.0
+    public var diskSpaceAvailable: Int64 = 0
     
     public init() {}
 }

@@ -4,7 +4,7 @@ import PipelineKit
 // MARK: - Helper Functions
 
 /// Creates an embedding pipeline builder for the given handler
-public func embeddingPipeline<H: CommandHandler>(for handler: H) -> EmbeddingPipelineBuilder<H> {
+public func embeddingPipeline<H: CommandHandler & Sendable>(for handler: H) -> EmbeddingPipelineBuilder<H> {
     EmbeddingPipelineBuilder(handler: handler)
 }
 
@@ -21,7 +21,7 @@ public extension EmbeddingPipeline {
     // MARK: - Builder Creation
     
     /// Creates a pipeline builder for the specified handler
-    static func builder<H: CommandHandler>(for handler: H) -> EmbeddingPipelineBuilder<H> {
+    static func builder<H: CommandHandler & Sendable>(for handler: H) -> EmbeddingPipelineBuilder<H> {
         EmbeddingPipelineBuilder(handler: handler)
     }
 }
@@ -48,7 +48,9 @@ public enum ExecutionPriority: Int, Sendable, Comparable {
 // MARK: - Pipeline Builder with Operator Support
 
 /// A builder that supports operator syntax for constructing embedding pipelines
-public struct EmbeddingPipelineBuilder<H: CommandHandler> {
+///
+/// Swift 6 Compatibility: Added Sendable constraint to CommandHandler for proper concurrency safety
+public struct EmbeddingPipelineBuilder<H: CommandHandler & Sendable> {
     private let handler: H
     private var middlewares: [any Middleware] = []
     private var prioritizedMiddlewares: [(middleware: any Middleware, priority: ExecutionPriority)] = []
