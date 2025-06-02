@@ -13,11 +13,23 @@ public struct PipelineIntegrationExamples {
         print("=== Basic Embedding Example ===\n")
         
         // Create model manager and embedder
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
+        
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
         
         // Create pipeline with default configuration
         let pipeline = try await EmbeddingPipeline(
@@ -47,11 +59,23 @@ public struct PipelineIntegrationExamples {
         print("\n=== Batch Processing Example ===\n")
         
         // Create components
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
+        
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
         
         // Create pipeline optimized for batch processing
         let pipeline = try await EmbeddingPipelineFactory.highPerformance(
@@ -100,11 +124,23 @@ public struct PipelineIntegrationExamples {
         print("\n=== Streaming Example ===\n")
         
         // Create components
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
+        
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
         
         let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
@@ -159,13 +195,25 @@ public struct PipelineIntegrationExamples {
     public static func modelManagementExample() async throws {
         print("\n=== Model Management Example ===\n")
         
-        let modelManager = EmbeddingModelManager()
-        let initialEmbedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
         
-        let pipeline = try await EmbeddingPipelineFactory.development(
+        // Get the actual embedder from the model manager
+        guard let initialEmbedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
+        
+        let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: initialEmbedder,
             modelManager: modelManager
         )
@@ -191,7 +239,7 @@ public struct PipelineIntegrationExamples {
         // Swap to a different model
         print("\n🔄 Swapping to a different model...")
         let swapResult = try await pipeline.swapModel(
-            to: "all-mpnet-base-v2",
+            to: ModelIdentifier.mpnet_base_v2,
             unloadCurrent: true,
             warmupAfterSwap: true
         )
@@ -228,14 +276,26 @@ public struct PipelineIntegrationExamples {
     public static func errorHandlingExample() async throws {
         print("\n=== Error Handling Example ===\n")
         
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
         
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
+        
         // Create pipeline with rate limiting enabled
-        let pipeline = try await EmbeddingPipelineFactory.development(
+        let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
             modelManager: modelManager
         )
@@ -288,14 +348,26 @@ public struct PipelineIntegrationExamples {
     public static func telemetryExample() async throws {
         print("\n=== Telemetry and Monitoring Example ===\n")
         
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
         
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
+        
         // Create pipeline with full monitoring
-        let pipeline = try await EmbeddingPipelineFactory.development(
+        let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
             modelManager: modelManager
         )
@@ -312,7 +384,7 @@ public struct PipelineIntegrationExamples {
         }
         
         // Batch embedding
-        let batchTexts = (1...20).map { "Batch text \(i)" }
+        let batchTexts = (1...20).map { i in "Batch text \(i)" }
         _ = try await pipeline.embedBatch(batchTexts, batchSize: 10)
         
         // Some cache hits
@@ -358,11 +430,23 @@ public struct PipelineIntegrationExamples {
     public static func cacheManagementExample() async throws {
         print("\n=== Cache Management Example ===\n")
         
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration()
+        let modelManager = DefaultEmbeddingModelManager()
+        let _ = try await modelManager.loadModel(
+            from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+            identifier: ModelIdentifier.miniLM_L6_v2,
+            configuration: nil
         )
+        
+        // Get the actual embedder from the model manager
+        guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
         
         let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,

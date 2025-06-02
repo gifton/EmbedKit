@@ -1,6 +1,5 @@
 import Foundation
 import PipelineKit
-@preconcurrency import EmbedKit
 
 /// Simple runnable example demonstrating PipelineKit operator syntax with EmbedKit
 @main
@@ -35,14 +34,14 @@ struct PipelineOperatorUsage {
     
     static func basicOperatorExample() async throws {
         let handler = MockEmbedTextHandler()
-        let cache = CachingMiddleware()
-        let validation = ValidationMiddleware()
+        let cache = MockCachingMiddleware()
+        let validation = MockValidationMiddleware()
         
-        // Build pipeline with <+ operator
-        let pipeline = try await pipeline(for: handler)
-            <+ validation
-            <+ cache
-            .build()
+        // Build pipeline with fluent API
+        let builder = PipelineBuilder(handler: handler)
+        await builder.with(validation)
+        await builder.with(cache)
+        let pipeline = try await builder.build()
         
         // Execute
         let command = MockEmbedTextCommand(text: "Hello, operators!")
@@ -59,17 +58,17 @@ struct PipelineOperatorUsage {
         let handler = MockEmbedTextHandler()
         
         // Create middleware
-        let auth = AuthenticationMiddleware()
-        let validation = ValidationMiddleware()
-        let cache = CachingMiddleware()
-        let monitoring = MonitoringMiddleware()
+        let auth = MockAuthenticationMiddleware()
+        let validation = MockValidationMiddleware()
+        let cache = MockCachingMiddleware()
+        let monitoring = MockMonitoringMiddleware()
         
-        // Build with prioritized middleware using <++
-        let pipeline = try await pipeline(for: handler)
-            <++ middleware(auth, priority: .authentication)        // Runs first
-            <++ middleware(validation, priority: .validation)       // Runs second
-            <+ cache                                               // Normal priority
-            <++ middleware(monitoring, priority: .postExecution)   // Runs last
+        // Build with prioritized middleware using fluent methods
+        let pipeline = try await EmbeddingPipelineBuilder(handler: handler)
+            .addPrioritizedMiddleware(auth, priority: ExecutionPriority.authentication)
+            .addPrioritizedMiddleware(validation, priority: ExecutionPriority.validation)
+            .addMiddleware(cache)
+            .addPrioritizedMiddleware(monitoring, priority: ExecutionPriority.postExecution)
             .build()
         
         // Execute
@@ -94,10 +93,13 @@ struct PipelineOperatorUsage {
         // Compose them sequentially
         let sequentialPipeline = preprocessPipeline |> embeddingPipeline
         
-        // Add error handling
-        let safePipeline = sequentialPipeline |! { error in
-            print("     → Error caught: \(error)")
-        }
+        // Add error handling using wrapper instead of |! operator
+        let safePipeline = ErrorHandlingPipelineWrapper(
+            pipeline: sequentialPipeline,
+            errorHandler: { error in
+                print("     → Error caught: \(error)")
+            }
+        )
         
         // Execute
         let command = MockEmbedTextCommand(text: "Composed pipeline test")
@@ -112,30 +114,28 @@ struct PipelineOperatorUsage {
     
     static func conditionalExample() async throws {
         let handler = MockEmbedTextHandler()
-        let gpuAcceleration = GPUAccelerationMiddleware()
+        let gpuAcceleration = MockGPUAccelerationMiddleware()
         
-        // Build pipeline with conditional GPU acceleration using EmbedKit's builder
-        let pipeline = try await EmbeddingPipeline.builder(for: handler)
-            <+ ValidationMiddleware()
-            <+ CachingMiddleware()
-            .when({ metadata in
-                // Enable GPU for large batches
-                metadata.get("batchSize", as: Int.self) ?? 0 > 10
-            }, use: gpuAcceleration)
+        // Build pipeline with GPU acceleration using fluent methods
+        // Note: Conditional middleware based on metadata is not supported through the protocol
+        let pipeline = try await EmbeddingPipelineBuilder(handler: handler)
+            .addPrioritizedMiddleware(MockValidationMiddleware(), priority: ExecutionPriority.validation)
+            .addPrioritizedMiddleware(MockCachingMiddleware(), priority: ExecutionPriority.caching)
+            .addMiddleware(gpuAcceleration)  // Always add GPU acceleration
             .build()
         
         // Test with small batch
-        var smallMetadata = DefaultCommandMetadata()
+        let smallMetadata = MutableMetadata()
         smallMetadata.set(5, for: "batchSize")
-        let smallResult = try await pipeline.execute(
+        let _ = try await pipeline.execute(
             MockEmbedTextCommand(text: "Small batch"),
             metadata: smallMetadata
         )
         
         // Test with large batch
-        var largeMetadata = DefaultCommandMetadata()
+        let largeMetadata = MutableMetadata()
         largeMetadata.set(20, for: "batchSize")
-        let largeResult = try await pipeline.execute(
+        let _ = try await pipeline.execute(
             MockEmbedTextCommand(text: "Large batch"),
             metadata: largeMetadata
         )
@@ -151,42 +151,41 @@ struct PipelineOperatorUsage {
         let handler = MockEmbedTextHandler()
         
         // Create comprehensive middleware stack
-        let auth = AuthenticationMiddleware()
-        let rateLimiter = RateLimitingMiddleware(requestsPerSecond: 100)
-        let validation = ValidationMiddleware()
-        let sanitization = SanitizationMiddleware()
-        let cache = CachingMiddleware()
-        let gpu = GPUAccelerationMiddleware()
-        let telemetry = TelemetryMiddleware()
-        let monitoring = MonitoringMiddleware()
+        let auth = MockAuthenticationMiddleware()
+        let rateLimiter = MockRateLimitingMiddleware(requestsPerSecond: 100)
+        let validation = MockValidationMiddleware()
+        let sanitization = MockSanitizationMiddleware()
+        let cache = MockCachingMiddleware()
+        let gpu = MockGPUAccelerationMiddleware()
+        let telemetry = MockTelemetryMiddleware()
+        let monitoring = MockMonitoringMiddleware()
         
-        // Build production-ready pipeline
-        let pipeline = try await EmbeddingPipeline.builder(for: handler)
-            // Security layer
-            <++ (auth, .authentication)
-            <++ (rateLimiter, .authorization)
+        // Build production-ready pipeline using fluent API
+        let basePipeline = try await EmbeddingPipelineBuilder(handler: handler)
+            // Security layer - highest priorities
+            .addPrioritizedMiddleware(auth, priority: ExecutionPriority.authentication)
+            .addPrioritizedMiddleware(rateLimiter, priority: ExecutionPriority.authorization)
             
             // Validation layer
-            <++ (validation, .validation)
-            <+ sanitization
+            .addPrioritizedMiddleware(validation, priority: ExecutionPriority.validation)
+            .addMiddleware(sanitization)
             
             // Performance layer
-            <+ cache
-            .when({ metadata in
-                metadata.get("enableGPU", as: Bool.self) ?? false
-            }, use: gpu)
+            .addPrioritizedMiddleware(cache, priority: ExecutionPriority.caching)
             
             // Observability layer
-            <++ (telemetry, .postExecution)
-            <++ (monitoring, .postExecution)
-            
+            .addPrioritizedMiddleware(telemetry, priority: ExecutionPriority.monitoring)
+            .addPrioritizedMiddleware(monitoring, priority: ExecutionPriority.monitoring)
+            .addMiddleware(gpu)  // Always add GPU since conditional metadata not supported
             .withErrorHandler { error in
                 print("     → Production error: \(error)")
             }
             .build()
         
+        let pipeline = basePipeline
+        
         // Execute with production context
-        var metadata = DefaultCommandMetadata()
+        let metadata = MutableMetadata()
         metadata.set(true, for: "enableGPU")
         metadata.set("user123", for: "userId")
         
@@ -208,50 +207,62 @@ struct PipelineOperatorUsage {
     
     static func createPreprocessingPipeline() async throws -> any Pipeline {
         let handler = MockEmbedTextHandler()
-        return try await pipeline(for: handler)
-            <+ TextPreprocessingMiddleware()
-            <+ TokenizationMiddleware()
-            .build()
+        let builder = PipelineBuilder(handler: handler)
+        await builder.with(MockTextPreprocessingMiddleware())
+        await builder.with(MockTokenizationMiddleware())
+        return try await builder.build()
     }
     
     static func createEmbeddingPipeline() async throws -> any Pipeline {
         let handler = MockEmbedTextHandler()
-        return try await pipeline(for: handler)
-            <+ EmbeddingGenerationMiddleware()
-            <+ NormalizationMiddleware()
-            .build()
+        let builder = PipelineBuilder(handler: handler)
+        await builder.with(MockEmbeddingGenerationMiddleware())
+        await builder.with(MockNormalizationMiddleware())
+        return try await builder.build()
     }
 }
 
 // MARK: - Mock Command and Handler
 
-struct MockEmbedTextCommand: Command {
-    typealias Result = MockEmbedResult
-    let text: String
-}
+// Using types from EmbeddingPipelineOperators.swift to avoid duplication
 
-struct MockEmbedResult: Sendable {
-    let text: String
-    let embedding: [Float]
+// MARK: - Custom Metadata
+
+final class MutableMetadata: CommandMetadata, @unchecked Sendable {
+    let id: UUID
+    let timestamp: Date
+    let correlationId: String?
+    let userId: String?
+    private var metadata: [String: any Sendable] = [:]
+    private let lock = NSLock()
     
-    init(text: String) {
-        self.text = text
-        self.embedding = Array(repeating: 0.1, count: 384) // Mock embedding
+    init(
+        userId: String? = nil,
+        correlationId: String? = UUID().uuidString,
+        timestamp: Date = Date()
+    ) {
+        self.id = UUID()
+        self.userId = userId
+        self.correlationId = correlationId
+        self.timestamp = timestamp
     }
-}
-
-struct MockEmbedTextHandler: CommandHandler {
-    typealias CommandType = MockEmbedTextCommand
     
-    func handle(_ command: MockEmbedTextCommand) async throws -> MockEmbedResult {
-        print("     → Processing: \(command.text)")
-        return MockEmbedResult(text: command.text)
+    func set<T: Sendable>(_ value: T, for key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        metadata[key] = value
+    }
+    
+    func get<T>(_ key: String, as type: T.Type) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        return metadata[key] as? T
     }
 }
 
 // MARK: - Mock Middleware Implementations
 
-struct AuthenticationMiddleware: Middleware {
+struct MockAuthenticationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -262,7 +273,7 @@ struct AuthenticationMiddleware: Middleware {
     }
 }
 
-struct ValidationMiddleware: Middleware {
+struct MockValidationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -273,7 +284,7 @@ struct ValidationMiddleware: Middleware {
     }
 }
 
-struct CachingMiddleware: Middleware {
+struct MockCachingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -284,7 +295,7 @@ struct CachingMiddleware: Middleware {
     }
 }
 
-struct MonitoringMiddleware: Middleware {
+struct MockMonitoringMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -296,7 +307,7 @@ struct MonitoringMiddleware: Middleware {
     }
 }
 
-struct GPUAccelerationMiddleware: Middleware {
+struct MockGPUAccelerationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -307,7 +318,7 @@ struct GPUAccelerationMiddleware: Middleware {
     }
 }
 
-struct RateLimitingMiddleware: Middleware {
+struct MockRateLimitingMiddleware: Middleware {
     let requestsPerSecond: Int
     
     func execute<T: Command>(
@@ -320,7 +331,7 @@ struct RateLimitingMiddleware: Middleware {
     }
 }
 
-struct SanitizationMiddleware: Middleware {
+struct MockSanitizationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -330,7 +341,7 @@ struct SanitizationMiddleware: Middleware {
     }
 }
 
-struct TelemetryMiddleware: Middleware {
+struct MockTelemetryMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -341,7 +352,7 @@ struct TelemetryMiddleware: Middleware {
     }
 }
 
-struct TextPreprocessingMiddleware: Middleware {
+struct MockTextPreprocessingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -351,7 +362,7 @@ struct TextPreprocessingMiddleware: Middleware {
     }
 }
 
-struct TokenizationMiddleware: Middleware {
+struct MockTokenizationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -361,7 +372,7 @@ struct TokenizationMiddleware: Middleware {
     }
 }
 
-struct EmbeddingGenerationMiddleware: Middleware {
+struct MockEmbeddingGenerationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -371,7 +382,7 @@ struct EmbeddingGenerationMiddleware: Middleware {
     }
 }
 
-struct NormalizationMiddleware: Middleware {
+struct MockNormalizationMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,

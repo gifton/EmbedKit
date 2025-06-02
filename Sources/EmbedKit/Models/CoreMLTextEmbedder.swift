@@ -21,8 +21,8 @@ import OSLog
 public actor CoreMLTextEmbedder: TextEmbedder {
     private let logger = Logger(subsystem: "EmbedKit", category: "CoreMLTextEmbedder")
     
-    public let configuration: EmbeddingConfiguration
-    public let modelIdentifier: String
+    public let configuration: Configuration
+    public let modelIdentifier: ModelIdentifier
     
     private let backend: CoreMLBackend
     private let tokenizer: any Tokenizer
@@ -44,8 +44,8 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     /// Initialize a CoreML text embedder
     ///
     /// - Parameters:
-    ///   - modelIdentifier: Name of the .mlmodelc file (without extension)
-    ///   - configuration: Embedding generation settings
+    ///   - modelIdentifier: Type-safe model identifier
+    ///   - configuration: Unified configuration settings
     ///   - tokenizer: Custom tokenizer or nil for default
     ///   - enableCaching: Whether to cache embeddings (recommended for production)
     ///
@@ -54,27 +54,27 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     /// - Optional Metal acceleration automatically detected and enabled
     /// - Cache is memory-aware and will auto-evict under pressure
     public init(
-        modelIdentifier: String,
-        configuration: EmbeddingConfiguration = EmbeddingConfiguration(),
+        modelIdentifier: ModelIdentifier,
+        configuration: Configuration = Configuration(),
         tokenizer: (any Tokenizer)? = nil,
         enableCaching: Bool = true
     ) {
         self.modelIdentifier = modelIdentifier
         self.configuration = configuration
-        self.backend = CoreMLBackend(identifier: modelIdentifier)
+        self.backend = CoreMLBackend(identifier: modelIdentifier.rawValue)
         self.tokenizer = tokenizer ?? SimpleTokenizer(
-            maxSequenceLength: configuration.maxSequenceLength
+            maxSequenceLength: configuration.model.maxSequenceLength
         )
         
         // Setup Metal acceleration if requested and available
-        if configuration.useGPUAcceleration {
+        if configuration.performance.useMetalAcceleration {
             self.metalAccelerator = MetalAccelerator.shared
         } else {
             self.metalAccelerator = nil
         }
         
         // Setup caching if enabled
-        if enableCaching {
+        if enableCaching && configuration.cache.maxCacheSize > 0 {
             self.cache = EmbeddingCache()
             self.memoryAwareCache = MemoryAwareCache(embeddingCache: cache!)
         } else {
@@ -84,21 +84,43 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     }
     
     public func loadModel() async throws {
-        // For now, assume the model is bundled with the app
-        guard let modelURL = Bundle.main.url(forResource: modelIdentifier, withExtension: "mlmodelc") else {
-            // Try in Documents directory
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let modelPath = documentsPath.appendingPathComponent("\(modelIdentifier).mlmodelc")
-            
-            if FileManager.default.fileExists(atPath: modelPath.path) {
-                try await backend.loadModel(from: modelPath)
-            } else {
-                throw EmbeddingError.resourceUnavailable("Model not found: \(modelIdentifier)")
-            }
-            return
-        }
+        let context = ErrorContext.modelLoading(
+            modelIdentifier,
+            location: SourceLocation()
+        )
         
-        try await backend.loadModel(from: modelURL)
+        do {
+            // Check for custom model URL first
+            if let customURL = configuration.model.loadingOptions.customModelURL {
+                try await backend.loadModel(from: customURL)
+            } else {
+                // Try bundled model
+                guard let modelURL = Bundle.main.url(forResource: modelIdentifier.rawValue, withExtension: "mlmodelc") else {
+                    // Try in Documents directory
+                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let modelPath = documentsPath.appendingPathComponent("\(modelIdentifier.rawValue).mlmodelc")
+                    
+                    if FileManager.default.fileExists(atPath: modelPath.path) {
+                        try await backend.loadModel(from: modelPath)
+                    } else {
+                        throw ContextualEmbeddingError.resourceUnavailable(
+                            context: context,
+                            resource: .model
+                        )
+                    }
+                    return
+                }
+                
+                try await backend.loadModel(from: modelURL)
+            }
+        } catch let contextualError as ContextualError {
+            throw contextualError
+        } catch {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: context,
+                underlyingError: error
+            )
+        }
         
         // Update dimensions from model
         if let outputDims = await backend.outputDimensions() {
@@ -118,9 +140,17 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             return cached
         }
         
+        let context = ErrorContext.embedding(
+            modelIdentifier: modelIdentifier,
+            inputSize: text.count,
+            location: SourceLocation()
+        )
+        
         // Ensure model is loaded
         guard await backend.isLoaded else {
-            throw EmbeddingError.modelNotLoaded
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: context
+            )
         }
         
         // Tokenize text
@@ -135,16 +165,16 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             // Use Metal acceleration if available
             pooled = try await accelerator.poolEmbeddings(
                 output.tokenEmbeddings,
-                strategy: configuration.poolingStrategy,
+                strategy: configuration.model.poolingStrategy,
                 attentionMask: tokenized.attentionMask
             )
         } else {
-            pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.poolingStrategy)
+            pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.model.poolingStrategy)
         }
         
         // Normalize if requested
         let final: [Float]
-        if configuration.normalizeEmbeddings {
+        if configuration.model.normalizeEmbeddings {
             if let accelerator = metalAccelerator {
                 let normalizedBatch = try await accelerator.normalizeVectors([pooled])
                 final = normalizedBatch[0]
@@ -164,9 +194,17 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     }
     
     public func embed(batch texts: [String]) async throws -> [EmbeddingVector] {
+        let context = ErrorContext.batchEmbedding(
+            modelIdentifier: modelIdentifier,
+            batchSize: texts.count,
+            location: SourceLocation()
+        )
+        
         // Ensure model is loaded
         guard await backend.isLoaded else {
-            throw EmbeddingError.modelNotLoaded
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: context
+            )
         }
         
         var results: [EmbeddingVector] = []
@@ -201,8 +239,8 @@ public actor CoreMLTextEmbedder: TextEmbedder {
         results.reserveCapacity(texts.count)
         
         // Process in batches according to configuration
-        for i in stride(from: 0, to: texts.count, by: configuration.batchSize) {
-            let batchEnd = min(i + configuration.batchSize, texts.count)
+        for i in stride(from: 0, to: texts.count, by: configuration.resources.batchSize) {
+            let batchEnd = min(i + configuration.resources.batchSize, texts.count)
             let batchTexts = Array(texts[i..<batchEnd])
             
             // Tokenize batch
@@ -212,14 +250,14 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             let outputs = try await backend.generateEmbeddings(for: tokenizedBatch)
             
             // Process each output
-            if let accelerator = metalAccelerator, configuration.useGPUAcceleration {
+            if let accelerator = metalAccelerator, configuration.performance.useMetalAcceleration {
                 // Use Metal for batch processing
                 var pooledBatch: [[Float]] = []
                 
                 for (output, tokenized) in zip(outputs, tokenizedBatch) {
                     let pooled = try await accelerator.poolEmbeddings(
                         output.tokenEmbeddings,
-                        strategy: configuration.poolingStrategy,
+                        strategy: configuration.model.poolingStrategy,
                         attentionMask: tokenized.attentionMask
                     )
                     pooledBatch.append(pooled)
@@ -227,7 +265,7 @@ public actor CoreMLTextEmbedder: TextEmbedder {
                 
                 // Batch normalize if needed
                 let finalBatch: [[Float]]
-                if configuration.normalizeEmbeddings {
+                if configuration.model.normalizeEmbeddings {
                     finalBatch = try await accelerator.normalizeVectors(pooledBatch)
                 } else {
                     finalBatch = pooledBatch
@@ -239,8 +277,8 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             } else {
                 // CPU processing
                 for output in outputs {
-                    let pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.poolingStrategy)
-                    let final = configuration.normalizeEmbeddings ? normalize(pooled) : pooled
+                    let pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.model.poolingStrategy)
+                    let final = configuration.model.normalizeEmbeddings ? normalize(pooled) : pooled
                     results.append(EmbeddingVector(final))
                 }
             }
@@ -262,7 +300,15 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     /// - Profile Metal kernel vs Accelerate for specific pool strategies
     private func pool(tokenEmbeddings: [[Float]], strategy: PoolingStrategy) throws -> [Float] {
         guard !tokenEmbeddings.isEmpty else {
-            throw EmbeddingError.inferenceFailed("No token embeddings to pool")
+            throw ContextualEmbeddingError.inferenceFailed(
+                context: ErrorContext(
+                    operation: .inference,
+                    modelIdentifier: modelIdentifier,
+                    metadata: ErrorMetadata()
+                        .with(key: "reason", value: "No token embeddings to pool"),
+                    sourceLocation: SourceLocation()
+                )
+            )
         }
         
         let embeddingSize = tokenEmbeddings[0].count
@@ -275,7 +321,17 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             
             for embedding in tokenEmbeddings {
                 guard embedding.count == embeddingSize else {
-                    throw EmbeddingError.dimensionMismatch(expected: embeddingSize, actual: embedding.count)
+                    throw ContextualEmbeddingError.dimensionMismatch(
+                        context: ErrorContext(
+                            operation: .inference,
+                            modelIdentifier: modelIdentifier,
+                            metadata: ErrorMetadata()
+                                .with(key: "poolingStrategy", value: "mean"),
+                            sourceLocation: SourceLocation()
+                        ),
+                        expected: embeddingSize,
+                        actual: embedding.count
+                    )
                 }
                 
                 vDSP_vadd(result, 1, embedding, 1, &result, 1, vDSP_Length(embeddingSize))
@@ -296,7 +352,17 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             for i in 1..<tokenEmbeddings.count {
                 let embedding = tokenEmbeddings[i]
                 guard embedding.count == embeddingSize else {
-                    throw EmbeddingError.dimensionMismatch(expected: embeddingSize, actual: embedding.count)
+                    throw ContextualEmbeddingError.dimensionMismatch(
+                        context: ErrorContext(
+                            operation: .inference,
+                            modelIdentifier: modelIdentifier,
+                            metadata: ErrorMetadata()
+                                .with(key: "poolingStrategy", value: "mean"),
+                            sourceLocation: SourceLocation()
+                        ),
+                        expected: embeddingSize,
+                        actual: embedding.count
+                    )
                 }
                 
                 vDSP_vmax(result, 1, embedding, 1, &result, 1, vDSP_Length(embeddingSize))

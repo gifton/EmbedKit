@@ -212,7 +212,7 @@ public actor TelemetrySystem {
 }
 
 /// Configuration for telemetry system
-public struct TelemetryConfiguration {
+public struct TelemetryConfiguration: Sendable {
     public let maxMetrics: Int
     public let maxEvents: Int
     public let logMetrics: Bool
@@ -292,7 +292,7 @@ public enum EventSeverity: String, Codable, CaseIterable {
 }
 
 /// Timer token for measuring operation duration
-public struct TimerToken {
+public struct TimerToken: Sendable {
     private let name: String
     private let startTime: Date
     private let telemetry: TelemetrySystem

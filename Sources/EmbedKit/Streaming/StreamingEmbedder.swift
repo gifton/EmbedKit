@@ -348,7 +348,7 @@ public actor StreamingEmbedder<Embedder: TextEmbedder> {
             inputBufferSize: configuration.inputBufferSize,
             outputBufferSize: configuration.outputBufferSize,
             isEmbedderReady: await embedder.isReady,
-            modelIdentifier: await embedder.modelIdentifier
+            modelIdentifier: await embedder.modelIdentifier.rawValue
         )
     }
 }

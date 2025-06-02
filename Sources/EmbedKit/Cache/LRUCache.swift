@@ -2,6 +2,29 @@ import Foundation
 import Collections
 import OSLog
 
+/// Statistics about cache performance
+public struct CacheStatistics: Sendable {
+    public let hits: Int
+    public let misses: Int
+    public let evictions: Int
+    public let currentSize: Int
+    public let maxSize: Int
+    
+    /// Computed hit rate
+    public var hitRate: Double {
+        let total = hits + misses
+        return total > 0 ? Double(hits) / Double(total) : 0
+    }
+    
+    public init(hits: Int, misses: Int, evictions: Int, currentSize: Int, maxSize: Int) {
+        self.hits = hits
+        self.misses = misses
+        self.evictions = evictions
+        self.currentSize = currentSize
+        self.maxSize = maxSize
+    }
+}
+
 /// Thread-safe LRU (Least Recently Used) cache for embeddings
 public actor LRUCache<Key: Hashable & Sendable, Value: Sendable> {
     private let logger = Logger(subsystem: "EmbedKit", category: "LRUCache")
@@ -123,11 +146,11 @@ public actor EmbeddingCache {
     
     public struct CachedEmbedding: Sendable {
         public let embedding: EmbeddingVector
-        public let modelIdentifier: String
+        public let modelIdentifier: ModelIdentifier
         public let timestamp: Date
         public let byteSize: Int
         
-        init(embedding: EmbeddingVector, modelIdentifier: String) {
+        init(embedding: EmbeddingVector, modelIdentifier: ModelIdentifier) {
             self.embedding = embedding
             self.modelIdentifier = modelIdentifier
             self.timestamp = Date()
@@ -142,14 +165,14 @@ public actor EmbeddingCache {
     }
     
     /// Generate a cache key from text and model identifier
-    public static func cacheKey(for text: String, modelIdentifier: String) -> String {
+    public static func cacheKey(for text: String, modelIdentifier: ModelIdentifier) -> String {
         // Use a hash to avoid storing full text in memory
         let textHash = text.hashValue
-        return "\(modelIdentifier):\(textHash)"
+        return "\(modelIdentifier.rawValue):\(textHash)"
     }
     
     /// Get an embedding from the cache
-    public func get(text: String, modelIdentifier: String) async -> EmbeddingVector? {
+    public func get(text: String, modelIdentifier: ModelIdentifier) async -> EmbeddingVector? {
         let key = Self.cacheKey(for: text, modelIdentifier: modelIdentifier)
         
         if let cached = await cache.get(key) {
@@ -166,7 +189,7 @@ public actor EmbeddingCache {
     }
     
     /// Store an embedding in the cache
-    public func set(text: String, modelIdentifier: String, embedding: EmbeddingVector) async {
+    public func set(text: String, modelIdentifier: ModelIdentifier, embedding: EmbeddingVector) async {
         let key = Self.cacheKey(for: text, modelIdentifier: modelIdentifier)
         let cached = CachedEmbedding(embedding: embedding, modelIdentifier: modelIdentifier)
         
@@ -198,7 +221,7 @@ public actor EmbeddingCache {
     }
     
     /// Preload embeddings for a batch of texts
-    public func preload(texts: [String], modelIdentifier: String, embeddings: [EmbeddingVector]) async {
+    public func preload(texts: [String], modelIdentifier: ModelIdentifier, embeddings: [EmbeddingVector]) async {
         guard texts.count == embeddings.count else {
             logger.error("Mismatch between texts and embeddings count")
             return

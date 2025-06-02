@@ -69,45 +69,6 @@ public struct EmbeddingVector: Collection, Sendable {
     }
 }
 
-/// Configuration for text embedding generation
-///
-/// This configuration struct encapsulates all parameters that affect how embeddings
-/// are generated. It's designed to be immutable and `Sendable` for safe concurrent use.
-///
-/// Design rationale:
-/// - Provides sensible defaults based on common transformer models (BERT-like)
-/// - Allows fine-tuning for specific use cases without modifying core logic
-/// - Separates configuration from implementation for better testability
-public struct EmbeddingConfiguration: Sendable {
-    /// Maximum sequence length for input text
-    public let maxSequenceLength: Int
-    
-    /// Whether to normalize embeddings to unit length
-    public let normalizeEmbeddings: Bool
-    
-    /// Pooling strategy for token embeddings
-    public let poolingStrategy: PoolingStrategy
-    
-    /// Batch size for processing multiple texts
-    public let batchSize: Int
-    
-    /// Whether to use GPU acceleration when available
-    public let useGPUAcceleration: Bool
-    
-    public init(
-        maxSequenceLength: Int = 512,
-        normalizeEmbeddings: Bool = true,
-        poolingStrategy: PoolingStrategy = .mean,
-        batchSize: Int = 32,
-        useGPUAcceleration: Bool = true
-    ) {
-        self.maxSequenceLength = maxSequenceLength
-        self.normalizeEmbeddings = normalizeEmbeddings
-        self.poolingStrategy = poolingStrategy
-        self.batchSize = batchSize
-        self.useGPUAcceleration = useGPUAcceleration
-    }
-}
 
 /// Strategy for pooling token embeddings into a single vector
 ///
@@ -130,32 +91,6 @@ public enum PoolingStrategy: String, CaseIterable, Sendable {
     case attentionWeighted
 }
 
-/// Errors that can occur during embedding generation
-public enum EmbeddingError: LocalizedError, Equatable {
-    case modelNotLoaded
-    case tokenizationFailed(String)
-    case inferenceFailed(String)
-    case invalidInput(String)
-    case dimensionMismatch(expected: Int, actual: Int)
-    case resourceUnavailable(String)
-    
-    public var errorDescription: String? {
-        switch self {
-        case .modelNotLoaded:
-            return "The embedding model is not loaded"
-        case .tokenizationFailed(let details):
-            return "Failed to tokenize input: \(details)"
-        case .inferenceFailed(let details):
-            return "Model inference failed: \(details)"
-        case .invalidInput(let details):
-            return "Invalid input: \(details)"
-        case .dimensionMismatch(let expected, let actual):
-            return "Dimension mismatch: expected \(expected), got \(actual)"
-        case .resourceUnavailable(let resource):
-            return "Resource unavailable: \(resource)"
-        }
-    }
-}
 
 /// Protocol for text embedding generation
 ///
@@ -173,14 +108,14 @@ public enum EmbeddingError: LocalizedError, Equatable {
 /// - Handlers wrap TextEmbedder instances for command processing
 /// - Middleware can inject caching, monitoring, and acceleration
 public protocol TextEmbedder: Actor {
-    /// The configuration for this embedder
-    var configuration: EmbeddingConfiguration { get }
+    /// The unified configuration for this embedder
+    var configuration: Configuration { get }
     
     /// The number of dimensions in the embedding space
     var dimensions: Int { get }
     
-    /// Unique identifier for the model being used
-    var modelIdentifier: String { get }
+    /// Type-safe model identifier
+    var modelIdentifier: ModelIdentifier { get }
     
     /// Whether the model is currently loaded and ready
     var isReady: Bool { get async }

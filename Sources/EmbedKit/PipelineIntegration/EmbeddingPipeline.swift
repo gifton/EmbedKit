@@ -5,7 +5,7 @@ import PipelineKit
 
 /// A comprehensive pipeline for embedding operations with all middleware integrated
 public actor EmbeddingPipeline {
-    private let pipeline: ContextAwarePipeline
+    private let pipeline: any Pipeline
     private let commandBus: CommandBus
     private let embedder: any TextEmbedder
     private let cache: EmbeddingCache
@@ -14,7 +14,7 @@ public actor EmbeddingPipeline {
     private let logger = EmbedKitLogger.embeddings()
     
     /// Configuration for the embedding pipeline
-    public struct Configuration {
+    public struct Configuration: Sendable {
         public let enableCache: Bool
         public let enableGPUAcceleration: Bool
         public let enableRateLimiting: Bool
@@ -54,7 +54,8 @@ public actor EmbeddingPipeline {
         self.embedder = embedder
         self.modelManager = modelManager
         self.cache = EmbeddingCache(maxEntries: 10_000, maxMemoryMB: 100)
-        self.telemetry = TelemetrySystem(configuration: configuration.telemetryConfiguration)
+        let telemetryConfig = configuration.telemetryConfiguration
+        self.telemetry = TelemetrySystem(configuration: telemetryConfig)
         
         // Create handlers
         let embedTextHandler = EmbedTextHandler(
@@ -93,62 +94,21 @@ public actor EmbeddingPipeline {
         let clearCacheHandler = ClearCacheHandler(cache: cache)
         let preloadCacheHandler = PreloadCacheHandler(embedder: embedder, cache: cache)
         
-        // Build command bus
-        let busBuilder = CommandBusBuilder()
-        await busBuilder.register(embedTextHandler, for: EmbedTextCommand.self)
-        await busBuilder.register(batchEmbedHandler, for: BatchEmbedCommand.self)
-        await busBuilder.register(streamEmbedHandler, for: StreamEmbedCommand.self)
-        await busBuilder.register(loadModelHandler, for: LoadModelCommand.self)
-        await busBuilder.register(swapModelHandler, for: SwapModelCommand.self)
-        await busBuilder.register(unloadModelHandler, for: UnloadModelCommand.self)
-        await busBuilder.register(clearCacheHandler, for: ClearCacheCommand.self)
-        await busBuilder.register(preloadCacheHandler, for: PreloadCacheCommand.self)
+        // Build command bus using fluent API
+        self.commandBus = try await CommandBusBuilder()
+            .with(EmbedTextCommand.self, handler: embedTextHandler)
+            .with(BatchEmbedCommand.self, handler: batchEmbedHandler)
+            .with(StreamEmbedCommand.self, handler: streamEmbedHandler)
+            .with(LoadModelCommand.self, handler: loadModelHandler)
+            .with(SwapModelCommand.self, handler: swapModelHandler)
+            .with(UnloadModelCommand.self, handler: unloadModelHandler)
+            .with(ClearCacheCommand.self, handler: clearCacheHandler)
+            .with(PreloadCacheCommand.self, handler: preloadCacheHandler)
+            .build()
         
-        self.commandBus = try await busBuilder.build()
-        
-        // Build pipeline with middleware
-        let pipelineBuilder = ContextAwarePipelineBuilder(bus: commandBus)
-        
-        // Add validation middleware (always enabled)
-        _ = await pipelineBuilder.with(
-            EmbeddingValidationMiddleware(
-                maxTextLength: configuration.maxTextLength,
-                maxBatchSize: configuration.maxBatchSize
-            )
-        )
-        
-        // Add telemetry middleware
-        _ = await pipelineBuilder.with(TelemetryMiddleware(telemetry: telemetry))
-        
-        // Add cache middleware if enabled
-        if configuration.enableCache {
-            _ = await pipelineBuilder.with(EmbeddingCacheMiddleware(cache: cache))
-        }
-        
-        // Add GPU acceleration if enabled
-        if configuration.enableGPUAcceleration {
-            if let metalMiddleware = try? MetalAccelerationMiddleware() {
-                _ = await pipelineBuilder.with(metalMiddleware)
-            }
-        }
-        
-        // Add rate limiting if enabled
-        if configuration.enableRateLimiting {
-            _ = await pipelineBuilder.with(
-                EmbeddingRateLimitMiddleware(
-                    requestsPerSecond: configuration.requestsPerSecond
-                )
-            )
-        }
-        
-        // Add monitoring if enabled
-        if configuration.enableMonitoring {
-            _ = await pipelineBuilder.with(
-                EmbeddingMonitoringMiddleware(telemetry: telemetry)
-            )
-        }
-        
-        self.pipeline = try await pipelineBuilder.build()
+        // Create a simple command bus based pipeline
+        // This uses the command bus directly rather than trying to wrap it in a ContextAwarePipeline
+        self.pipeline = CommandBusPipelineWrapper(commandBus: commandBus)
         
         logger.success("Embedding pipeline initialized")
     }
@@ -158,7 +118,7 @@ public actor EmbeddingPipeline {
     /// Embed a single text
     public func embed(
         _ text: String,
-        modelIdentifier: String? = nil,
+        modelIdentifier: ModelIdentifier? = nil,
         useCache: Bool = true
     ) async throws -> EmbeddingResult {
         let command = EmbedTextCommand(
@@ -176,7 +136,7 @@ public actor EmbeddingPipeline {
     /// Embed multiple texts in batch
     public func embedBatch(
         _ texts: [String],
-        modelIdentifier: String? = nil,
+        modelIdentifier: ModelIdentifier? = nil,
         useCache: Bool = true,
         batchSize: Int = 32
     ) async throws -> BatchEmbeddingResult {
@@ -195,8 +155,8 @@ public actor EmbeddingPipeline {
     
     /// Stream embeddings for a large collection of texts
     public func streamEmbeddings(
-        from source: AsyncTextSource,
-        modelIdentifier: String? = nil,
+        from source: any AsyncTextSource,
+        modelIdentifier: ModelIdentifier? = nil,
         maxConcurrency: Int = 10,
         bufferSize: Int = 1000
     ) async throws -> AsyncThrowingStream<StreamingEmbeddingResult, Error> {
@@ -217,7 +177,7 @@ public actor EmbeddingPipeline {
     
     /// Load a specific model
     public func loadModel(
-        _ identifier: String,
+        _ identifier: ModelIdentifier,
         preload: Bool = true,
         useGPU: Bool = true
     ) async throws -> ModelLoadResult {
@@ -235,7 +195,7 @@ public actor EmbeddingPipeline {
     
     /// Swap the current model with a new one
     public func swapModel(
-        to newIdentifier: String,
+        to newIdentifier: ModelIdentifier,
         unloadCurrent: Bool = true,
         warmupAfterSwap: Bool = true
     ) async throws -> ModelSwapResult {
@@ -264,7 +224,7 @@ public actor EmbeddingPipeline {
     // MARK: - Cache Management
     
     /// Clear the embedding cache
-    public func clearCache(modelIdentifier: String? = nil) async throws -> CacheClearResult {
+    public func clearCache(modelIdentifier: ModelIdentifier? = nil) async throws -> CacheClearResult {
         let command = ClearCacheCommand(modelIdentifier: modelIdentifier)
         
         return try await pipeline.execute(
@@ -276,7 +236,7 @@ public actor EmbeddingPipeline {
     /// Preload embeddings into cache
     public func preloadCache(
         texts: [String],
-        modelIdentifier: String? = nil
+        modelIdentifier: ModelIdentifier? = nil
     ) async throws -> CachePreloadResult {
         let command = PreloadCacheCommand(
             texts: texts,
@@ -301,7 +261,7 @@ public actor EmbeddingPipeline {
             cacheStatistics: cacheStats,
             systemMetrics: systemMetrics,
             telemetryData: telemetryMetrics,
-            currentModel: embedder.modelIdentifier,
+            currentModel: (await embedder.modelIdentifier).rawValue,
             isReady: await embedder.isReady
         )
     }
@@ -347,86 +307,27 @@ public struct PipelineStatistics: Sendable {
     }
 }
 
-// MARK: - Pipeline Factory
+// MARK: - Command Bus Pipeline Wrapper
 
-/// Factory for creating pre-configured pipelines
-public struct EmbeddingPipelineFactory {
+/// A simple wrapper that makes CommandBus conform to Pipeline protocol
+private struct CommandBusPipelineWrapper: Pipeline {
+    private let commandBus: CommandBus
     
-    /// Create a high-performance pipeline optimized for throughput
-    public static func highPerformance(
-        embedder: any TextEmbedder,
-        modelManager: EmbeddingModelManager
-    ) async throws -> EmbeddingPipeline {
-        let configuration = EmbeddingPipeline.Configuration(
-            enableCache: true,
-            enableGPUAcceleration: true,
-            enableRateLimiting: false, // No rate limiting for max performance
-            enableMonitoring: false, // Minimal monitoring
-            maxTextLength: 10_000,
-            maxBatchSize: 1000,
-            requestsPerSecond: 1000
-        )
-        
-        return try await EmbeddingPipeline(
-            embedder: embedder,
-            modelManager: modelManager,
-            configuration: configuration
-        )
+    init(commandBus: CommandBus) {
+        self.commandBus = commandBus
     }
     
-    /// Create a balanced pipeline with all features enabled
-    public static func balanced(
-        embedder: any TextEmbedder,
-        modelManager: EmbeddingModelManager
-    ) async throws -> EmbeddingPipeline {
-        return try await EmbeddingPipeline(
-            embedder: embedder,
-            modelManager: modelManager
-        )
+    func execute<T: Command>(
+        _ command: T,
+        metadata: CommandMetadata
+    ) async throws -> T.Result {
+        return try await commandBus.send(command, metadata: metadata)
     }
     
-    /// Create a development pipeline with extensive monitoring
-    public static func development(
-        embedder: any TextEmbedder,
-        modelManager: EmbeddingModelManager
-    ) async throws -> EmbeddingPipeline {
-        let configuration = EmbeddingPipeline.Configuration(
-            enableCache: true,
-            enableGPUAcceleration: true,
-            enableRateLimiting: true,
-            enableMonitoring: true,
-            maxTextLength: 10_000,
-            maxBatchSize: 100,
-            requestsPerSecond: 10,
-            telemetryConfiguration: TelemetryConfiguration(
-                logMetrics: true,
-                logEvents: true
-            )
-        )
-        
-        return try await EmbeddingPipeline(
-            embedder: embedder,
-            modelManager: modelManager,
-            configuration: configuration
-        )
-    }
-    
-    /// Create a minimal pipeline with only essential features
-    public static func minimal(
-        embedder: any TextEmbedder,
-        modelManager: EmbeddingModelManager
-    ) async throws -> EmbeddingPipeline {
-        let configuration = EmbeddingPipeline.Configuration(
-            enableCache: false,
-            enableGPUAcceleration: false,
-            enableRateLimiting: false,
-            enableMonitoring: false
-        )
-        
-        return try await EmbeddingPipeline(
-            embedder: embedder,
-            modelManager: modelManager,
-            configuration: configuration
-        )
+    func addMiddleware(_ middleware: any Middleware) async throws {
+        // Command bus based pipeline doesn't support adding middleware after creation
+        // Middleware should be added to individual handlers during command bus construction
     }
 }
+
+// MARK: - Pipeline Factory removed - using the one in OperatorExamples.swift

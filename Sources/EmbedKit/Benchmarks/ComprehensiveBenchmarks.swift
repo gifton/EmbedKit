@@ -624,3 +624,64 @@ public struct ConcurrencyBenchmarkResults: Sendable, Codable {
         self.concurrencyScaling = concurrencyScaling
     }
 }
+
+// MARK: - Mock Text Embedder for Testing
+
+/// Simple mock embedder for testing and benchmarking purposes
+public actor MockTextEmbedder: TextEmbedder {
+    public let modelIdentifier = ModelIdentifier(family: "mock", variant: "test", version: "v1")
+    public let dimensions: Int
+    public var isReady: Bool = false
+    public let configuration: Configuration
+    
+    public init(dimensions: Int = 768) {
+        self.dimensions = dimensions
+        self.configuration = Configuration()
+    }
+    
+    public func loadModel() async throws {
+        // Simulate model loading
+        try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        isReady = true
+    }
+    
+    public func unloadModel() async throws {
+        isReady = false
+    }
+    
+    public func embed(_ text: String) async throws -> EmbeddingVector {
+        guard isReady else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: modelIdentifier,
+                    metadata: ErrorMetadata(),
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
+        
+        // Simulate embedding computation
+        let values = (0..<dimensions).map { _ in Float.random(in: -1...1) }
+        return EmbeddingVector(values)
+    }
+    
+    public func embed(batch texts: [String]) async throws -> [EmbeddingVector] {
+        guard isReady else {
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .modelLoading,
+                    modelIdentifier: modelIdentifier,
+                    metadata: ErrorMetadata(),
+                    sourceLocation: SourceLocation()
+                )
+            )
+        }
+        
+        // Simulate batch processing
+        return texts.map { _ in
+            let values = (0..<dimensions).map { _ in Float.random(in: -1...1) }
+            return EmbeddingVector(values)
+        }
+    }
+}

@@ -13,9 +13,8 @@ public struct PipelineIntegrationUsage {
             modelIdentifier: "all-MiniLM-L6-v2"
         )
         
-        defer {
-            Task { await cleanup() }
-        }
+        // Cleanup will be called at the end of the function
+        // Note: cleanup is not called in defer since it's async
         
         // 2. Index documents
         let documents = [
@@ -85,21 +84,19 @@ public struct PipelineIntegrationUsage {
         print("   Hit rate: \(String(format: "%.1f%%", cacheStats.hitRate * 100))")
         print("   Total hits: \(cacheStats.hits)")
         print("   Total misses: \(cacheStats.misses)")
+        
+        // Cleanup
+        await cleanup()
     }
     
     /// Example: Real-time Document Processing Pipeline
     public static func documentProcessingExample() async throws {
         print("\n📄 Document Processing Pipeline Example\n")
         
-        // Create a high-performance pipeline
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration(
-                batchSize: 64,
-                useGPUAcceleration: true
-            )
-        )
+        // Create a high-performance pipeline using mock embedder for example
+        let embedder = MockTextEmbedder(dimensions: 384)
+        try await embedder.loadModel()
+        let modelManager = DefaultEmbeddingModelManager()
         
         let pipeline = try await EmbeddingPipelineFactory.highPerformance(
             embedder: embedder,
@@ -167,7 +164,7 @@ public struct PipelineIntegrationUsage {
     public static func multiModelComparisonExample() async throws {
         print("\n🤖 Multi-Model Comparison Example\n")
         
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let models = [
             "all-MiniLM-L6-v2",
             "all-mpnet-base-v2",
@@ -189,11 +186,9 @@ public struct PipelineIntegrationUsage {
             print("\n📊 Testing model: \(modelId)")
             
             do {
-                // Create pipeline for this model
-                let embedder = try await modelManager.loadModel(
-                    identifier: modelId,
-                    configuration: EmbeddingConfiguration()
-                )
+                // Create mock embedder for this model (in a real app, load actual model)
+                let embedder = MockTextEmbedder(dimensions: 384)
+                try await embedder.loadModel()
                 
                 let pipeline = try await EmbeddingPipelineFactory.minimal(
                     embedder: embedder,
