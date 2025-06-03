@@ -302,4 +302,3 @@ public actor MetalPoolingProcessor {
 }
 
 // Note: PoolingStrategy is already defined in TextEmbedder.swift
-// We'll use that definition to avoid conflicts

@@ -250,49 +250,53 @@ public actor StreamEmbedHandler: CommandHandler {
         
         logger.start("streaming embeddings", details: "concurrency: \(command.maxConcurrency)")
         
-        // For simplicity, we'll create a mock implementation that doesn't use the problematic iterator
-        // In a real implementation, this would be handled by StreamingEmbedder with proper generic constraints
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     var index = 0
                     
-                    // Mock implementation: process a fixed set of sample texts
-                    let sampleTexts = ["Sample text 1", "Sample text 2", "Sample text 3"]
-                    
-                    for text in sampleTexts {
-                        let startTime = Date()
-                        let embedding = try await embedder.embed(text)
-                        let duration = Date().timeIntervalSince(startTime)
-                        
-                        let embeddingResult = StreamingEmbeddingResult(
-                            embedding: embedding,
-                            text: text,
-                            index: index,
-                            modelIdentifier: modelId,
-                            timestamp: startTime
-                        )
-                        
-                        continuation.yield(embeddingResult)
-                        index += 1
-                        
-                        // Update cache if available
-                        await cache.set(
-                            text: text,
-                            modelIdentifier: modelId,
-                            embedding: embedding
-                        )
-                        
-                        // Record telemetry
-                        if index % 10 == 0 {
-                            await telemetry.recordEmbeddingOperation(
-                                operation: "stream_batch",
-                                duration: duration,
-                                inputLength: text.count,
-                                outputDimensions: embedding.dimensions,
-                                batchSize: 10
+                    // Special handling for ArrayTextSource to avoid type erasure issues
+                    if let arraySource = command.textSource as? ArrayTextSource {
+                        for try await text in arraySource {
+                            let startTime = Date()
+                            let embedding = try await embedder.embed(text)
+                            let duration = Date().timeIntervalSince(startTime)
+                            
+                            let embeddingResult = StreamingEmbeddingResult(
+                                embedding: embedding,
+                                text: text,
+                                index: index,
+                                modelIdentifier: modelId,
+                                timestamp: startTime
                             )
+                            
+                            continuation.yield(embeddingResult)
+                            index += 1
+                            
+                            // Update cache if available
+                            await cache.set(
+                                text: text,
+                                modelIdentifier: modelId,
+                                embedding: embedding
+                            )
+                            
+                            // Record telemetry
+                            if index % 10 == 0 {
+                                await telemetry.recordEmbeddingOperation(
+                                    operation: "stream_batch",
+                                    duration: duration,
+                                    inputLength: text.count,
+                                    outputDimensions: embedding.dimensions,
+                                    batchSize: 10
+                                )
+                            }
                         }
+                    } else {
+                        // Fallback for other AsyncTextSource implementations
+                        continuation.finish(throwing: ContextualEmbeddingError.configurationError(
+                            context: ErrorContext(operation: .streaming),
+                            issue: .incompatible
+                        ))
                     }
                     
                     logger.complete("streaming", result: "\(index) embeddings processed")

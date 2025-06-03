@@ -377,9 +377,9 @@ struct ErrorHandlingTests {
         
         // Assess level after concurrent operations
         let level = await manager.assessDegradationLevel(operation: "concurrent_test")
-        // With 10 errors and 5 successes (error rate = 66.7%), level should be at least reduced
-        #expect(level.rawValue >= GracefulDegradationManager.DegradationLevel.normal.rawValue)
-        #expect(level != .emergency) // But not emergency with some successes
+        // With 10 errors and 5 successes (error rate = 66.7%), level should be emergency
+        // Error rate thresholds: normal < 5%, reduced < 15%, minimal < 30%, emergency >= 30%
+        #expect(level == .emergency) // 66.7% error rate is well above 30% threshold
     }
     
     @Test("Error context metadata chaining")
