@@ -1,0 +1,61 @@
+name: Swift
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-14, macos-13]
+        
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app
+      
+    - name: Show Swift version
+      run: swift --version
+      
+    - name: Build
+      run: swift build -v
+      
+    - name: Run tests
+      run: swift test -v --parallel
+      
+  lint:
+    name: SwiftLint
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run SwiftLint
+      run: |
+        brew install swiftlint
+        swiftlint --strict
+      continue-on-error: true
+      
+  build-docs:
+    name: Build Documentation
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app
+      
+    - name: Build documentation
+      run: |
+        swift package generate-documentation \
+          --target EmbedKit \
+          --output-path ./docs \
+          --hosting-base-path EmbedKit
+      continue-on-error: true

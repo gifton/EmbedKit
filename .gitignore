@@ -1,9 +1,81 @@
+# macOS
 .DS_Store
-/.build
-/Packages
+*.xcuserdatad
 xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+*.xcodeproj
+
+# Xcode
+build/
 DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
 /Models
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.playground/playground.xcworkspace/xcuserdata/
+
+# AppCode
+.idea/
+
+# VS Code
+.vscode/
+
+# Dependencies
+Packages/
+.build/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Logs
+*.log
+
+# Test Coverage
+*.profdata
+*.profraw
+coverage/
+.coverage/
+
+# Documentation
+docs/.build/
+.docc-build/
+
+# Python (for scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+.env/
+
+# Model files (if too large)
+*.mlmodel
+*.mlpackage
+*.coreml
+# Uncomment if you want to exclude model files from the repo
+# Models/
+
+# Benchmarks output
+benchmark_results/
+*.benchmark
+
+# Cache directories
+.cache/
+cache/
+
+# Metal shader cache
+*.metallib-air
+*.air
+
+# Other
+.env
+.env.local
+*.orig
