@@ -9,7 +9,7 @@ struct PipelineIntegrationTests {
     @Test("Basic embedding through pipeline")
     func testBasicEmbedding() async throws {
         // Create pipeline
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
         let pipeline = try await EmbeddingPipeline(
             embedder: embedder,
@@ -20,15 +20,15 @@ struct PipelineIntegrationTests {
         // Test embedding
         let result = try await pipeline.embed("Hello, world!")
         
-        #expect(result.embedding.dimensions == 384)
-        #expect(result.modelIdentifier == "mock-model")
+        #expect(result.embedding.dimensions == 768) // MockTextEmbedder default
+        #expect(result.modelIdentifier == "mock-test-v1") // MockTextEmbedder identifier
         #expect(!result.fromCache)
     }
     
     @Test("Batch embedding with cache")
     func testBatchEmbeddingWithCache() async throws {
         // Create pipeline with cache enabled
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
         let pipeline = try await EmbeddingPipeline(
             embedder: embedder,
@@ -73,7 +73,7 @@ struct PipelineIntegrationTests {
     
     @Test("Streaming embeddings")
     func testStreamingEmbeddings() async throws {
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
         let pipeline = try await EmbeddingPipeline(
             embedder: embedder,
@@ -94,12 +94,12 @@ struct PipelineIntegrationTests {
         }
         
         #expect(results.count == 10)
-        #expect(results.allSatisfy { $0.embedding.dimensions == 384 })
+        #expect(results.allSatisfy { $0.embedding.dimensions == 768 }) // MockTextEmbedder default
     }
     
     @Test("Pipeline factories")
     func testPipelineFactories() async throws {
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
         
         // Test different factory configurations
@@ -113,7 +113,8 @@ struct PipelineIntegrationTests {
             modelManager: modelManager
         )
         
-        let dev = try await EmbeddingPipelineFactory.development(
+        // Development configuration doesn't exist, use balanced
+        let dev = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
             modelManager: modelManager
         )
@@ -132,9 +133,9 @@ struct PipelineIntegrationTests {
     
     @Test("Telemetry integration")
     func testTelemetryIntegration() async throws {
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
-        let pipeline = try await EmbeddingPipelineFactory.development(
+        let pipeline = try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
             modelManager: modelManager
         )
@@ -150,7 +151,7 @@ struct PipelineIntegrationTests {
         // Check statistics
         let stats = await pipeline.getStatistics()
         #expect(stats.isReady)
-        #expect(stats.currentModel == "mock-model")
+        #expect(stats.currentModel == "mock-test-v1") // MockTextEmbedder identifier
         
         // Check telemetry data exists
         let telemetryData = await pipeline.getTelemetryData()
@@ -159,7 +160,7 @@ struct PipelineIntegrationTests {
     
     @Test("Error handling")
     func testErrorHandling() async throws {
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = FailingTextEmbedder()
         let pipeline = try await EmbeddingPipeline(
             embedder: embedder,
@@ -167,14 +168,17 @@ struct PipelineIntegrationTests {
         )
         
         // Should throw embedding error
-        #expect(throws: EmbeddingError.self) {
+        do {
             _ = try await pipeline.embed("Will fail")
+            #expect(false, "Should have thrown error")
+        } catch {
+            #expect(error is ContextualEmbeddingError)
         }
     }
     
     @Test("Cache management")
     func testCacheManagement() async throws {
-        let modelManager = EmbeddingModelManager()
+        let modelManager = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder()
         let pipeline = try await EmbeddingPipeline(
             embedder: embedder,
@@ -209,52 +213,47 @@ struct PipelineIntegrationTests {
     func testQuickStart() async throws {
         let (pipeline, cleanup) = try await PipelineIntegration.quickStart()
         
-        defer {
-            Task {
-                await cleanup()
-            }
+        // Use a task to ensure cleanup happens
+        let embeddingTask = Task {
+            let result = try await pipeline.embed("Quick start test")
+            await cleanup()
+            return result
         }
         
-        // Should be able to embed
-        let result = try await pipeline.embed("Quick start test")
+        let result = try await embeddingTask.value
         #expect(result.embedding.dimensions > 0)
     }
 }
 
 // MARK: - Mock Implementations
-
-actor MockTextEmbedder: TextEmbedder {
-    let configuration = EmbeddingConfiguration()
-    let dimensions = 384
-    let modelIdentifier = "mock-model"
-    var isReady = true
-    
-    func embed(_ text: String) async throws -> EmbeddingVector {
-        // Simulate some processing time
-        try await Task.sleep(nanoseconds: 10_000_000) // 10ms
-        
-        // Return mock embedding
-        let values = (0..<dimensions).map { _ in Float.random(in: -1...1) }
-        return EmbeddingVector(values)
-    }
-    
-    func loadModel() async throws {
-        isReady = true
-    }
-    
-    func unloadModel() async throws {
-        isReady = false
-    }
-}
+// Using MockTextEmbedder from ComprehensiveBenchmarks.swift
 
 actor FailingTextEmbedder: TextEmbedder {
-    let configuration = EmbeddingConfiguration()
+    let configuration = Configuration()
     let dimensions = 384
-    let modelIdentifier = "failing-model"
+    let modelIdentifier = ModelIdentifier(family: "failing", variant: "test", version: "v1")
     let isReady = true
     
     func embed(_ text: String) async throws -> EmbeddingVector {
-        throw EmbeddingError.inferenceFailed("Mock failure")
+        throw ContextualEmbeddingError.inferenceFailed(
+            context: ErrorContext(
+                operation: .inference,
+                modelIdentifier: modelIdentifier,
+                metadata: ErrorMetadata().with(key: "text", value: text),
+                sourceLocation: SourceLocation()
+            )
+        )
+    }
+    
+    func embed(batch texts: [String]) async throws -> [EmbeddingVector] {
+        throw ContextualEmbeddingError.inferenceFailed(
+            context: ErrorContext(
+                operation: .inference,
+                modelIdentifier: modelIdentifier,
+                metadata: ErrorMetadata().with(key: "text", value: "batch"),
+                sourceLocation: SourceLocation()
+            )
+        )
     }
     
     func loadModel() async throws {

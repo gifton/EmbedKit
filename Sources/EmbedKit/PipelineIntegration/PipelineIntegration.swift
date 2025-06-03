@@ -19,11 +19,10 @@ public enum PipelineIntegration {
     public static func createDefaultPipeline(
         modelIdentifier: String = "all-MiniLM-L6-v2"
     ) async throws -> EmbeddingPipeline {
-        let modelManager = EmbeddingModelManager()
-        let embedder = try await modelManager.loadModel(
-            identifier: modelIdentifier,
-            configuration: EmbeddingConfiguration()
-        )
+        let modelManager = DefaultEmbeddingModelManager()
+        // Create mock embedder for example (in production, load actual model)
+        let embedder = MockTextEmbedder(dimensions: 384)
+        try await embedder.loadModel()
         
         return try await EmbeddingPipelineFactory.balanced(
             embedder: embedder,
@@ -44,56 +43,24 @@ public enum PipelineIntegration {
         )
     }
     
-    /// Register EmbedKit handlers with an existing command bus
+    /// Register EmbedKit handlers with an existing command bus using fluent API
     public static func registerHandlers(
         with busBuilder: CommandBusBuilder,
         embedder: any TextEmbedder,
         modelManager: EmbeddingModelManager,
         cache: EmbeddingCache,
         telemetry: TelemetrySystem
-    ) async {
-        // Register embedding handlers
-        await busBuilder.register(
-            EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry),
-            for: EmbedTextCommand.self
-        )
-        
-        await busBuilder.register(
-            BatchEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry),
-            for: BatchEmbedCommand.self
-        )
-        
-        await busBuilder.register(
-            StreamEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry),
-            for: StreamEmbedCommand.self
-        )
-        
-        // Register model management handlers
-        await busBuilder.register(
-            LoadModelHandler(modelManager: modelManager, telemetry: telemetry),
-            for: LoadModelCommand.self
-        )
-        
-        await busBuilder.register(
-            SwapModelHandler(modelManager: modelManager, telemetry: telemetry),
-            for: SwapModelCommand.self
-        )
-        
-        await busBuilder.register(
-            UnloadModelHandler(modelManager: modelManager, cache: cache),
-            for: UnloadModelCommand.self
-        )
-        
-        // Register cache management handlers
-        await busBuilder.register(
-            ClearCacheHandler(cache: cache),
-            for: ClearCacheCommand.self
-        )
-        
-        await busBuilder.register(
-            PreloadCacheHandler(embedder: embedder, cache: cache),
-            for: PreloadCacheCommand.self
-        )
+    ) async throws -> CommandBusBuilder {
+        // Register all handlers using fluent API
+        return try await busBuilder
+            .with(EmbedTextCommand.self, handler: EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry))
+            .with(BatchEmbedCommand.self, handler: BatchEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry))
+            .with(StreamEmbedCommand.self, handler: StreamEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry))
+            .with(LoadModelCommand.self, handler: LoadModelHandler(modelManager: modelManager, telemetry: telemetry))
+            .with(SwapModelCommand.self, handler: SwapModelHandler(modelManager: modelManager, telemetry: telemetry))
+            .with(UnloadModelCommand.self, handler: UnloadModelHandler(modelManager: modelManager, cache: cache))
+            .with(ClearCacheCommand.self, handler: ClearCacheHandler(cache: cache))
+            .with(PreloadCacheCommand.self, handler: PreloadCacheHandler(embedder: embedder, cache: cache))
     }
     
     /// Create a middleware stack for embedding operations
@@ -156,7 +123,7 @@ public enum PipelineIntegration {
 // MARK: - Middleware Configuration
 
 /// Configuration for middleware stack
-public struct MiddlewareConfiguration {
+public struct MiddlewareConfiguration: Sendable {
     public let enableCache: Bool
     public let enableGPUAcceleration: Bool
     public let enableRateLimiting: Bool
@@ -259,17 +226,31 @@ public extension PipelineIntegration {
         
         // Check if we can create basic components
         do {
-            let modelManager = EmbeddingModelManager()
-            let cache = EmbeddingCache()
-            let telemetry = TelemetrySystem()
+            let modelManager = DefaultEmbeddingModelManager()
+            let _ = EmbeddingCache()
+            let _ = TelemetrySystem()
             
             logger.success("Core components created")
             
             // Try to create a minimal pipeline
-            let embedder = try await modelManager.loadModel(
-                identifier: "all-MiniLM-L6-v2",
-                configuration: EmbeddingConfiguration()
+            let _ = try await modelManager.loadModel(
+                from: URL(fileURLWithPath: "/tmp/models/all-MiniLM-L6-v2.mlmodel"),
+                identifier: ModelIdentifier.miniLM_L6_v2,
+                configuration: nil
             )
+            
+            // Get the actual embedder from the model manager
+            guard let embedder = await modelManager.getModel(identifier: ModelIdentifier.miniLM_L6_v2) else {
+                throw ContextualEmbeddingError.modelNotLoaded(
+                    context: ErrorContext(
+                        operation: .modelLoading,
+                        modelIdentifier: ModelIdentifier.miniLM_L6_v2,
+                        metadata: ErrorMetadata()
+                            .with(key: "reason", value: "Model not found in manager"),
+                        sourceLocation: SourceLocation()
+                    )
+                )
+            }
             
             let pipeline = try await createCustomPipeline(
                 embedder: embedder,

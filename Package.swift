@@ -6,10 +6,10 @@ import PackageDescription
 let package = Package(
     name: "EmbedKit",
     platforms: [
-        .iOS(.v17),
-        .macOS(.v13),
-        .tvOS(.v16),
-        .watchOS(.v9)
+        .iOS(.v17),      // iOS 17+ for Metal 3 support
+        .macOS(.v13),    // macOS 13+ for Metal 3 support
+        .tvOS(.v16),     // tvOS 16+ for Metal 3 support
+        .visionOS(.v1)   // visionOS for future AR/VR embeddings
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
@@ -18,8 +18,8 @@ let package = Package(
             targets: ["EmbedKit"]),
     ],
     dependencies: [
-        // Local dependency on PipelineKit - temporarily disabled
-         .package(path: "../PipelineKit"),
+        // Local dependency on PipelineKit
+        .package(path: "../PipelineKit"),
         // For structured logging
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         // For collections utilities
@@ -33,7 +33,7 @@ let package = Package(
         .target(
             name: "EmbedKit",
             dependencies: [
-                .product(name: "PipelineKit", package: "PipelineKit"), // Temporarily disabled
+                .product(name: "PipelineKit", package: "PipelineKit"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),

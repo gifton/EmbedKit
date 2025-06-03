@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 /// Expressive logging system with emojis and rich formatting
-public struct ExpressiveLogger {
+public struct ExpressiveLogger: Sendable {
     private let logger: Logger
     private let category: String
     

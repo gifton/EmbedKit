@@ -137,7 +137,7 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
     
     private let registry: ModelVersionRegistry
     private var loadedModels: [String: any TextEmbedder] = [:]
-    private var modelConfigurations: [String: EmbeddingConfiguration] = [:]
+    private var modelConfigurations: [String: Configuration] = [:]
     private let maxConcurrentModels: Int
     
     public init(
@@ -150,11 +150,11 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
     
     public func loadModel(
         from url: URL,
-        identifier: String,
+        identifier: ModelIdentifier,
         configuration: ModelBackendConfiguration? = nil
     ) async throws -> ModelMetadata {
         // Create version if not exists
-        let version = ModelVersion(identifier: identifier, version: "1.0")
+        let version = ModelVersion(identifier: identifier.rawValue, version: "1.0")
         try await registry.register(version: version, modelURL: url)
         
         return try await loadVersion(version, configuration: configuration)
@@ -177,9 +177,10 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
         }
         
         // Create and load the embedder
+        let modelId = try ModelIdentifier(version.identifier)
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: version.identifier,
-            configuration: EmbeddingConfiguration()
+            modelIdentifier: modelId,
+            configuration: Configuration()
         )
         
         try await embedder.loadModel()
@@ -194,7 +195,7 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
             name: version.identifier,
             version: version.semanticVersion,
             embeddingDimensions: await embedder.dimensions,
-            maxSequenceLength: embedder.configuration.maxSequenceLength,
+            maxSequenceLength: embedder.configuration.model.maxSequenceLength,
             vocabularySize: 30522,
             modelType: "coreml",
             additionalInfo: version.metadata
@@ -216,17 +217,17 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
         logger.info("Successfully swapped to version \\(version.semanticVersion)")
     }
     
-    public func unloadModel(identifier: String) async throws {
-        if let embedder = loadedModels[identifier] {
+    public func unloadModel(identifier: ModelIdentifier) async throws {
+        if let embedder = loadedModels[identifier.rawValue] {
             try await embedder.unloadModel()
-            loadedModels.removeValue(forKey: identifier)
-            logger.info("Unloaded model \\(identifier)")
+            loadedModels.removeValue(forKey: identifier.rawValue)
+            logger.info("Unloaded model \\(identifier.rawValue)")
         }
     }
     
-    public func getModel(identifier: String?) async -> (any TextEmbedder)? {
+    public func getModel(identifier: ModelIdentifier?) async -> (any TextEmbedder)? {
         if let id = identifier {
-            return loadedModels[id]
+            return loadedModels[id.rawValue]
         } else {
             // Return any active model or the first available
             for (_, embedder) in loadedModels {

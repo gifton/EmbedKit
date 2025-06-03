@@ -183,10 +183,27 @@ public actor AdvancedTokenizer: Tokenizer {
     }
     
     private func tokenizeSentencePiece(_ text: String) async throws -> [String] {
-        // Simplified SentencePiece implementation
-        // In a real implementation, this would use the SentencePiece library
+        // MARK: - Future Enhancement: SentencePiece Integration
+        // 
+        // SentencePiece is a state-of-the-art tokenization algorithm used by many
+        // modern language models (T5, mBART, XLM-R, etc.). Full integration would require:
+        //
+        // 1. Adding the SentencePiece Swift library as a dependency
+        // 2. Loading pre-trained SentencePiece models (.model files)
+        // 3. Implementing proper subword tokenization with:
+        //    - Unigram language model-based tokenization
+        //    - Proper handling of unknown tokens
+        //    - Support for both encoding and decoding
+        //
+        // Current implementation falls back to BPE which provides similar
+        // subword tokenization capabilities.
+        //
+        // To implement SentencePiece support:
+        // - Add package dependency: https://github.com/google/sentencepiece
+        // - Load model: SentencePieceProcessor.load(modelPath)
+        // - Tokenize: processor.encode(text)
         
-        // For now, fall back to BPE-like behavior
+        logger.info("SentencePiece tokenization requested, falling back to BPE")
         return try await tokenizeBPE(text)
     }
     

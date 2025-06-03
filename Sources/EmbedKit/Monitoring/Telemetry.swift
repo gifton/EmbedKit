@@ -206,13 +206,41 @@ public actor TelemetrySystem {
     }
     
     private func getCurrentCPUUsage() -> Double {
-        // Simplified CPU usage - in production would use more accurate methods
-        return 0.0
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_,
+                         task_flavor_t(MACH_TASK_BASIC_INFO),
+                         $0,
+                         &count)
+            }
+        }
+        
+        if result == KERN_SUCCESS {
+            // Calculate CPU usage percentage
+            let userTime = Double(info.user_time.seconds) + Double(info.user_time.microseconds) / 1_000_000
+            let systemTime = Double(info.system_time.seconds) + Double(info.system_time.microseconds) / 1_000_000
+            let totalTime = userTime + systemTime
+            
+            // Get elapsed time since process start
+            let currentTime = ProcessInfo.processInfo.systemUptime
+            let processStartTime = currentTime - totalTime
+            
+            if processStartTime > 0 {
+                return (totalTime / processStartTime) * 100.0
+            }
+        }
+        
+        // Fallback to process info if mach calls fail
+        return ProcessInfo.processInfo.processorCount > 0 ? 
+            (1.0 / Double(ProcessInfo.processInfo.processorCount)) * 100.0 : 0.0
     }
 }
 
 /// Configuration for telemetry system
-public struct TelemetryConfiguration {
+public struct TelemetryConfiguration: Sendable {
     public let maxMetrics: Int
     public let maxEvents: Int
     public let logMetrics: Bool
@@ -292,7 +320,7 @@ public enum EventSeverity: String, Codable, CaseIterable {
 }
 
 /// Timer token for measuring operation duration
-public struct TimerToken {
+public struct TimerToken: Sendable {
     private let name: String
     private let startTime: Date
     private let telemetry: TelemetrySystem

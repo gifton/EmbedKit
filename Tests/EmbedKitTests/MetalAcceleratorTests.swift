@@ -269,7 +269,7 @@ struct MetalAcceleratorTests {
         }
         
         // Test that memory pressure handling doesn't crash
-        accelerator.handleMemoryPressure()
+        await accelerator.handleMemoryPressure()
         
         // Verify that operations still work after memory pressure handling
         let vectors: [[Float]] = [[1.0, 2.0, 3.0]]

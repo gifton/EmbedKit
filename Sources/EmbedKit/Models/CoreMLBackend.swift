@@ -75,11 +75,17 @@ public actor CoreMLBackend: ModelBackend {
     
     public func generateEmbeddings(for input: TokenizedInput) async throws -> ModelOutput {
         guard let model = model else {
-            throw EmbeddingError.modelNotLoaded
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext(
+                    operation: .inference,
+                    modelIdentifier: try? ModelIdentifier(identifier),
+                    sourceLocation: SourceLocation()
+                )
+            )
         }
         
         // Create helper and run prediction
-        let helper = CoreMLPredictionHelper()
+        let helper = CoreMLPredictionHelper(modelIdentifier: identifier)
         
         // CoreML operations are synchronous, so we just call them directly
         return try helper.predict(input: input, model: model)
@@ -165,6 +171,8 @@ public actor CoreMLBackend: ModelBackend {
 // MARK: - Helper for non-isolated predictions
 
 struct CoreMLPredictionHelper {
+    let modelIdentifier: String
+    
     func predict(input: TokenizedInput, model: MLModel) throws -> ModelOutput {
         // Prepare input features
         let inputFeatures = try prepareInput(input, for: model)
@@ -214,13 +222,29 @@ struct CoreMLPredictionHelper {
             }
         }
         
-        throw EmbeddingError.inferenceFailed("Could not find embeddings in model output")
+        throw ContextualEmbeddingError.inferenceFailed(
+            context: ErrorContext(
+                operation: .inference,
+                modelIdentifier: try? ModelIdentifier(modelIdentifier),
+                metadata: ErrorMetadata()
+                    .with(key: "reason", value: "Could not find embeddings in model output"),
+                sourceLocation: SourceLocation()
+            )
+        )
     }
     
     private func convertToFloat2D(_ multiArray: MLMultiArray) throws -> [[Float]] {
         let shape = multiArray.shape
         guard shape.count >= 2 else {
-            throw EmbeddingError.inferenceFailed("Expected at least 2D output, got \(shape.count)D")
+            throw ContextualEmbeddingError.inferenceFailed(
+                context: ErrorContext(
+                    operation: .inference,
+                    modelIdentifier: try? ModelIdentifier(modelIdentifier),
+                    metadata: ErrorMetadata()
+                        .with(key: "reason", value: "Expected at least 2D output, got \(shape.count)D"),
+                    sourceLocation: SourceLocation()
+                )
+            )
         }
         
         let sequenceLength = shape[shape.count - 2].intValue
@@ -244,7 +268,15 @@ struct CoreMLPredictionHelper {
             vDSP_vdpsp(doublePointer, 1, &floatArray, 1, vDSP_Length(totalElements))
             
         default:
-            throw EmbeddingError.inferenceFailed("Unsupported data type: \(multiArray.dataType)")
+            throw ContextualEmbeddingError.inferenceFailed(
+                context: ErrorContext(
+                    operation: .inference,
+                    modelIdentifier: try? ModelIdentifier(modelIdentifier),
+                    metadata: ErrorMetadata()
+                        .with(key: "reason", value: "Unsupported data type: \(multiArray.dataType)"),
+                    sourceLocation: SourceLocation()
+                )
+            )
         }
         
         // Reshape to 2D

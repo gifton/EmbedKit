@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import CryptoKit
 
 /// Enhanced model version registry with persistent storage
 public actor PersistentModelVersionRegistry {
@@ -83,8 +84,12 @@ public actor PersistentModelVersionRegistry {
     /// Set the active version for a model
     public func setActiveVersion(_ version: ModelVersion) async throws {
         // Verify version exists in storage
-        let versions = try await storage.loadVersions(for: version.identifier)
-        guard versions.contains(where: { $0.version == version }) else {
+        let versionRecords = try await storage.loadVersions(for: version.identifier)
+        guard versionRecords.contains(where: { 
+            $0.version.identifier == version.identifier &&
+            $0.version.version == version.version &&
+            $0.version.buildNumber == version.buildNumber
+        }) else {
             throw ModelVersionError.versionNotFound(version.semanticVersion)
         }
         
@@ -123,7 +128,11 @@ public actor PersistentModelVersionRegistry {
     public func getModelURL(for version: ModelVersion) async -> URL? {
         do {
             let records = try await storage.loadVersions(for: version.identifier)
-            if let record = records.first(where: { $0.version == version }) {
+            if let record = records.first(where: { 
+                $0.version.identifier == version.identifier &&
+                $0.version.version == version.version &&
+                $0.version.buildNumber == version.buildNumber
+            }) {
                 return URL(fileURLWithPath: record.filePath)
             }
         } catch {
@@ -137,7 +146,11 @@ public actor PersistentModelVersionRegistry {
     public func getVersionRecord(for version: ModelVersion) async -> ModelVersionRecord? {
         do {
             let records = try await storage.loadVersions(for: version.identifier)
-            return records.first(where: { $0.version == version })
+            return records.first(where: { 
+                $0.version.identifier == version.identifier &&
+                $0.version.version == version.version &&
+                $0.version.buildNumber == version.buildNumber
+            })
         } catch {
             logger.error("Failed to get version record for \(version.semanticVersion): \(error)")
             return nil
@@ -150,10 +163,17 @@ public actor PersistentModelVersionRegistry {
         try await storage.removeVersion(version)
         
         // Update memory cache
-        memoryCache[version.identifier]?.removeAll { $0 == version }
+        memoryCache[version.identifier]?.removeAll { 
+            $0.identifier == version.identifier &&
+            $0.version == version.version &&
+            $0.buildNumber == version.buildNumber
+        }
         
         // If this was the active version, choose the latest remaining version
-        if activeVersionCache[version.identifier] == version {
+        if let activeVersion = activeVersionCache[version.identifier],
+           activeVersion.identifier == version.identifier &&
+           activeVersion.version == version.version &&
+           activeVersion.buildNumber == version.buildNumber {
             let remainingVersions = await getVersions(for: version.identifier)
             activeVersionCache[version.identifier] = remainingVersions.first
             
@@ -337,10 +357,29 @@ public actor PersistentModelVersionRegistry {
     }
     
     private func verifyModelSignature(fileURL: URL, expectedSignature: String) async throws -> Bool {
-        // This is a placeholder for signature verification
-        // In a real implementation, you would use proper cryptographic signature verification
-        // For now, we'll just return true to avoid blocking the implementation
-        return true
+        // Compute SHA256 hash of the model file
+        let fileHash = try await computeFileHash(fileURL: fileURL)
+        
+        // Compare with expected signature
+        // Note: In a production system, you would verify a cryptographic signature
+        // using public key cryptography (e.g., RSA or ECDSA signatures)
+        // For now, we're using SHA256 hash comparison as a basic integrity check
+        return fileHash == expectedSignature
+    }
+    
+    private func computeFileHash(fileURL: URL) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            Task {
+                do {
+                    let fileData = try Data(contentsOf: fileURL)
+                    let digest = SHA256.hash(data: fileData)
+                    let hash = digest.compactMap { String(format: "%02x", $0) }.joined()
+                    continuation.resume(returning: hash)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }
 

@@ -116,42 +116,56 @@ struct PerformanceTests {
 
 // Mock embedder with caching for testing
 actor MockCachedTextEmbedder: TextEmbedder {
-    let configuration = EmbeddingConfiguration()
+    let configuration = Configuration()
     let dimensions = 3
-    let modelIdentifier = "mock-cached"
+    let modelIdentifier = ModelIdentifier(family: "mock", variant: "cached", version: "v1")
     private(set) var isReady = false
     private let cache = EmbeddingCache(maxEntries: 100)
     private(set) var computeCount = 0
     
     func embed(_ text: String) async throws -> EmbeddingVector {
-        guard isReady else { throw EmbeddingError.modelNotLoaded }
+        guard isReady else { 
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext.modelLoading(modelIdentifier)
+            )
+        }
         
         // Check cache first
         if let cached = await cache.get(text: text, modelIdentifier: modelIdentifier) {
             return cached
         }
         
-        // Compute embedding
+        // Compute embedding using deterministic generation
         computeCount += 1
-        let hash = Float(text.hashValue)
-        let values = [
-            abs(sin(hash)) / 2,
-            abs(cos(hash)) / 2,
-            abs(sin(hash * 2)) / 2
-        ]
-        
-        let embedding = EmbeddingVector(values)
+        let embedding = generateDeterministicEmbedding(for: text)
         await cache.set(text: text, modelIdentifier: modelIdentifier, embedding: embedding)
         
         return embedding
     }
     
     func embed(batch texts: [String]) async throws -> [EmbeddingVector] {
-        var results: [EmbeddingVector] = []
-        for text in texts {
-            let embedding = try await embed(text)
-            results.append(embedding)
+        guard isReady else { 
+            throw ContextualEmbeddingError.modelNotLoaded(
+                context: ErrorContext.modelLoading(modelIdentifier)
+            )
         }
+        
+        var results: [EmbeddingVector] = []
+        results.reserveCapacity(texts.count)
+        
+        for text in texts {
+            // Check cache first
+            if let cached = await cache.get(text: text, modelIdentifier: modelIdentifier) {
+                results.append(cached)
+            } else {
+                // Generate new embedding
+                computeCount += 1
+                let embedding = generateDeterministicEmbedding(for: text)
+                await cache.set(text: text, modelIdentifier: modelIdentifier, embedding: embedding)
+                results.append(embedding)
+            }
+        }
+        
         return results
     }
     
@@ -162,5 +176,55 @@ actor MockCachedTextEmbedder: TextEmbedder {
     func unloadModel() async throws {
         isReady = false
         await cache.clear()
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    /// Generate a deterministic embedding based on text content
+    private func generateDeterministicEmbedding(for text: String) -> EmbeddingVector {
+        // Use text hash as seed for consistent pseudo-random generation
+        var hasher = Hasher()
+        hasher.combine(text)
+        let hashValue = hasher.finalize()
+        
+        // Convert to UInt64 safely
+        let seed = UInt64(bitPattern: Int64(hashValue))
+        
+        // Create deterministic random generator
+        var generator = SeededRandomNumberGenerator(seed: seed)
+        
+        // Generate values for the specified dimensions
+        var values: [Float] = []
+        values.reserveCapacity(dimensions)
+        
+        for _ in 0..<dimensions {
+            let value = Float.random(in: -0.1...0.1, using: &generator)
+            values.append(value)
+        }
+        
+        // Normalize to unit vector for realistic embedding behavior
+        let magnitude = sqrt(values.reduce(0) { $0 + $1 * $1 })
+        if magnitude > 0 {
+            for i in 0..<values.count {
+                values[i] /= magnitude
+            }
+        }
+        
+        return EmbeddingVector(values)
+    }
+}
+
+/// Seeded random number generator for deterministic pseudo-random values
+private struct SeededRandomNumberGenerator: RandomNumberGenerator {
+    private var state: UInt64
+    
+    init(seed: UInt64) {
+        self.state = seed == 0 ? 1 : seed
+    }
+    
+    mutating func next() -> UInt64 {
+        // Linear congruential generator (simple but sufficient for testing)
+        state = state &* 1103515245 &+ 12345
+        return state
     }
 }

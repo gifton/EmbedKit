@@ -8,13 +8,13 @@ public struct EmbedTextCommand: Command, ValidatableCommand {
     public typealias Result = EmbeddingResult
     
     public let text: String
-    public let modelIdentifier: String?
+    public let modelIdentifier: ModelIdentifier?
     public let useCache: Bool
     public let normalize: Bool
     
     public init(
         text: String,
-        modelIdentifier: String? = nil,
+        modelIdentifier: ModelIdentifier? = nil,
         useCache: Bool = true,
         normalize: Bool = true
     ) {
@@ -40,14 +40,14 @@ public struct BatchEmbedCommand: Command, ValidatableCommand {
     public typealias Result = BatchEmbeddingResult
     
     public let texts: [String]
-    public let modelIdentifier: String?
+    public let modelIdentifier: ModelIdentifier?
     public let useCache: Bool
     public let normalize: Bool
     public let batchSize: Int
     
     public init(
         texts: [String],
-        modelIdentifier: String? = nil,
+        modelIdentifier: ModelIdentifier? = nil,
         useCache: Bool = true,
         normalize: Bool = true,
         batchSize: Int = 32
@@ -88,14 +88,14 @@ public struct BatchEmbedCommand: Command, ValidatableCommand {
 public struct StreamEmbedCommand: Command {
     public typealias Result = AsyncThrowingStream<StreamingEmbeddingResult, Error>
     
-    public let textSource: AsyncTextSource
-    public let modelIdentifier: String?
+    public let textSource: any AsyncTextSource
+    public let modelIdentifier: ModelIdentifier?
     public let maxConcurrency: Int
     public let bufferSize: Int
     
     public init(
-        textSource: AsyncTextSource,
-        modelIdentifier: String? = nil,
+        textSource: any AsyncTextSource,
+        modelIdentifier: ModelIdentifier? = nil,
         maxConcurrency: Int = 10,
         bufferSize: Int = 1000
     ) {
@@ -112,12 +112,12 @@ public struct StreamEmbedCommand: Command {
 public struct LoadModelCommand: Command, ValidatableCommand {
     public typealias Result = ModelLoadResult
     
-    public let modelIdentifier: String
+    public let modelIdentifier: ModelIdentifier
     public let preload: Bool
     public let useGPU: Bool
     
     public init(
-        modelIdentifier: String,
+        modelIdentifier: ModelIdentifier,
         preload: Bool = true,
         useGPU: Bool = true
     ) {
@@ -127,9 +127,7 @@ public struct LoadModelCommand: Command, ValidatableCommand {
     }
     
     public func validate() throws {
-        guard !modelIdentifier.isEmpty else {
-            throw ValidationError.custom("Model identifier cannot be empty")
-        }
+        // ModelIdentifier is always valid by construction
     }
 }
 
@@ -137,12 +135,12 @@ public struct LoadModelCommand: Command, ValidatableCommand {
 public struct SwapModelCommand: Command, ValidatableCommand {
     public typealias Result = ModelSwapResult
     
-    public let newModelIdentifier: String
+    public let newModelIdentifier: ModelIdentifier
     public let unloadCurrent: Bool
     public let warmupAfterSwap: Bool
     
     public init(
-        newModelIdentifier: String,
+        newModelIdentifier: ModelIdentifier,
         unloadCurrent: Bool = true,
         warmupAfterSwap: Bool = true
     ) {
@@ -152,9 +150,7 @@ public struct SwapModelCommand: Command, ValidatableCommand {
     }
     
     public func validate() throws {
-        guard !newModelIdentifier.isEmpty else {
-            throw ValidationError.custom("New model identifier cannot be empty")
-        }
+        // ModelIdentifier is always valid by construction
     }
 }
 
@@ -175,9 +171,9 @@ public struct UnloadModelCommand: Command {
 public struct ClearCacheCommand: Command {
     public typealias Result = CacheClearResult
     
-    public let modelIdentifier: String?
+    public let modelIdentifier: ModelIdentifier?
     
-    public init(modelIdentifier: String? = nil) {
+    public init(modelIdentifier: ModelIdentifier? = nil) {
         self.modelIdentifier = modelIdentifier
     }
 }
@@ -187,9 +183,9 @@ public struct PreloadCacheCommand: Command, ValidatableCommand {
     public typealias Result = CachePreloadResult
     
     public let texts: [String]
-    public let modelIdentifier: String?
+    public let modelIdentifier: ModelIdentifier?
     
-    public init(texts: [String], modelIdentifier: String? = nil) {
+    public init(texts: [String], modelIdentifier: ModelIdentifier? = nil) {
         self.texts = texts
         self.modelIdentifier = modelIdentifier
     }
@@ -210,13 +206,13 @@ public struct PreloadCacheCommand: Command, ValidatableCommand {
 /// Result of a single text embedding operation
 public struct EmbeddingResult: Sendable {
     public let embedding: EmbeddingVector
-    public let modelIdentifier: String
+    public let modelIdentifier: ModelIdentifier
     public let duration: TimeInterval
     public let fromCache: Bool
     
     public init(
         embedding: EmbeddingVector,
-        modelIdentifier: String,
+        modelIdentifier: ModelIdentifier,
         duration: TimeInterval,
         fromCache: Bool
     ) {
@@ -230,14 +226,14 @@ public struct EmbeddingResult: Sendable {
 /// Result of a batch embedding operation
 public struct BatchEmbeddingResult: Sendable {
     public let embeddings: [EmbeddingVector]
-    public let modelIdentifier: String
+    public let modelIdentifier: ModelIdentifier
     public let totalDuration: TimeInterval
     public let averageDuration: TimeInterval
     public let cacheHitRate: Double
     
     public init(
         embeddings: [EmbeddingVector],
-        modelIdentifier: String,
+        modelIdentifier: ModelIdentifier,
         totalDuration: TimeInterval,
         averageDuration: TimeInterval,
         cacheHitRate: Double
@@ -255,14 +251,14 @@ public struct StreamingEmbeddingResult: Sendable {
     public let embedding: EmbeddingVector
     public let text: String
     public let index: Int
-    public let modelIdentifier: String
+    public let modelIdentifier: ModelIdentifier
     public let timestamp: Date
     
     public init(
         embedding: EmbeddingVector,
         text: String,
         index: Int,
-        modelIdentifier: String,
+        modelIdentifier: ModelIdentifier,
         timestamp: Date
     ) {
         self.embedding = embedding
@@ -275,14 +271,14 @@ public struct StreamingEmbeddingResult: Sendable {
 
 /// Result of a model load operation
 public struct ModelLoadResult: Sendable {
-    public let modelIdentifier: String
+    public let modelIdentifier: ModelIdentifier
     public let loadDuration: TimeInterval
     public let modelSize: Int64
     public let success: Bool
     public let error: String?
     
     public init(
-        modelIdentifier: String,
+        modelIdentifier: ModelIdentifier,
         loadDuration: TimeInterval,
         modelSize: Int64,
         success: Bool,
@@ -298,14 +294,14 @@ public struct ModelLoadResult: Sendable {
 
 /// Result of a model swap operation
 public struct ModelSwapResult: Sendable {
-    public let previousModel: String?
-    public let newModel: String
+    public let previousModel: ModelIdentifier?
+    public let newModel: ModelIdentifier
     public let swapDuration: TimeInterval
     public let warmupDuration: TimeInterval?
     
     public init(
-        previousModel: String?,
-        newModel: String,
+        previousModel: ModelIdentifier?,
+        newModel: ModelIdentifier,
         swapDuration: TimeInterval,
         warmupDuration: TimeInterval? = nil
     ) {
@@ -318,12 +314,12 @@ public struct ModelSwapResult: Sendable {
 
 /// Result of a model unload operation
 public struct ModelUnloadResult: Sendable {
-    public let modelIdentifier: String?
+    public let modelIdentifier: ModelIdentifier?
     public let freedMemory: Int64
     public let cacheCleared: Bool
     
     public init(
-        modelIdentifier: String?,
+        modelIdentifier: ModelIdentifier?,
         freedMemory: Int64,
         cacheCleared: Bool
     ) {
@@ -364,7 +360,9 @@ public struct CachePreloadResult: Sendable {
 // MARK: - Async Text Source Protocol
 
 /// Protocol for async text sources used in streaming
-public protocol AsyncTextSource: AsyncSequence, Sendable where Element == String {}
+///
+/// Swift 6 Compatibility: Added Element: Sendable constraint for proper concurrency safety
+public protocol AsyncTextSource: AsyncSequence, Sendable where Element == String, Element: Sendable {}
 
 /// Concrete implementation of AsyncTextSource
 public struct ArrayTextSource: AsyncTextSource {

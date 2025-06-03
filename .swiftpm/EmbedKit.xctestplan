@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "2C821497-8A6B-410D-A1DC-E824F9F3C8D4",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "EmbedKitTests",
+        "name" : "EmbedKitTests"
+      }
+    }
+  ],
+  "version" : 1
+}

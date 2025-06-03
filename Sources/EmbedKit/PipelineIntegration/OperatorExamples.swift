@@ -10,27 +10,51 @@ import PipelineKit
 
 /// Example 1: Simple pipeline with operator syntax
 func createBasicPipeline() async throws -> any Pipeline {
-    let handler = EmbedTextHandler()
+    // Create dependencies
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
     
-    // Using PipelineKit's built-in pipeline function with operators
-    let pipeline = try await pipeline(for: handler)
-        <+ CachingMiddleware()
-        <+ ValidationMiddleware()
-        .build()
+    let handler = EmbedTextHandler(
+        embedder: embedder,
+        cache: cache,
+        telemetry: telemetry
+    )
+    
+    // Using fluent API instead of operators to avoid precedence issues
+    let builder = PipelineBuilder(handler: handler)
+    await builder.with(MockCachingMiddleware())
+    await builder.with(MockValidationMiddleware())
+    let pipeline = try await builder.build()
     
     return pipeline
 }
 
 /// Example 2: Pipeline with prioritized middleware
 func createPrioritizedPipeline() async throws -> any Pipeline {
-    let handler = EmbedTextHandler()
+    // Create dependencies
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
     
-    // Using the middleware helper function from PipelineKit
-    let pipeline = try await pipeline(for: handler)
-        <++ middleware(AuthenticationMiddleware(), priority: .authentication)
-        <++ middleware(ValidationMiddleware(), priority: .validation)
-        <+ CachingMiddleware()  // Default priority
-        <++ middleware(MonitoringMiddleware(), priority: .postExecution)
+    let handler = EmbedTextHandler(
+        embedder: embedder,
+        cache: cache,
+        telemetry: telemetry
+    )
+    
+    // Using fluent API for prioritized middleware instead of operators
+    let pipeline = try await EmbeddingPipelineBuilder(handler: handler)
+        .addPrioritizedMiddleware(MockAuthenticationMiddleware(), priority: ExecutionPriority.authentication)
+        .addPrioritizedMiddleware(MockValidationMiddleware(), priority: ExecutionPriority.validation)
+        .addMiddleware(MockCachingMiddleware())  // Default priority
+        .addPrioritizedMiddleware(MockMonitoringMiddleware(), priority: ExecutionPriority.postExecution)
         .build()
     
     return pipeline
@@ -57,8 +81,8 @@ func createParallelPipeline() async throws -> any Pipeline {
     let cpuPipeline = try await createCPUPipeline()
     let gpuPipeline = try await createGPUPipeline()
     
-    // Parallel execution using || operator
-    let parallelPipeline = cpuPipeline || gpuPipeline
+    // Parallel execution (simulated with sequential for now)
+    let parallelPipeline = cpuPipeline |> gpuPipeline
     
     return parallelPipeline
 }
@@ -67,11 +91,14 @@ func createParallelPipeline() async throws -> any Pipeline {
 func createErrorHandlingPipeline() async throws -> any Pipeline {
     let mainPipeline = try await createMainPipeline()
     
-    // Add error handling using |! operator
-    let safePipeline = mainPipeline |! { error in
-        print("Pipeline error: \(error)")
-        // Additional error handling logic
-    }
+    // Add error handling using wrapper instead of |! operator
+    let safePipeline = ErrorHandlingPipelineWrapper(
+        pipeline: mainPipeline,
+        errorHandler: { error in
+            print("Pipeline error: \(error)")
+            // Additional error handling logic
+        }
+    )
     
     return safePipeline
 }
@@ -93,47 +120,71 @@ func createConditionalPipeline() async throws -> any Pipeline {
 
 /// Example 7: Complex production pipeline with all operators
 func createProductionPipeline() async throws -> any Pipeline {
-    let handler = EmbedTextHandler()
+    // Create dependencies
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
     
-    // Build complex pipeline with operator syntax
-    let pipeline = try await pipeline(for: handler)
+    let handler = EmbedTextHandler(
+        embedder: embedder,
+        cache: cache,
+        telemetry: telemetry
+    )
+    
+    // Build complex pipeline using fluent API to avoid operator issues
+    let pipeline = try await EmbeddingPipelineBuilder(handler: handler)
         // Critical security layer
-        <++ middleware(AuthenticationMiddleware(), priority: .authentication)
-        <++ middleware(RateLimitingMiddleware(), priority: .authorization)
+        .addPrioritizedMiddleware(MockAuthenticationMiddleware(), priority: ExecutionPriority.authentication)
+        .addPrioritizedMiddleware(MockRateLimitingMiddleware(requestsPerSecond: 100), priority: .authorization)
         
         // Validation layer
-        <++ middleware(ValidationMiddleware(), priority: .validation)
-        <+ SanitizationMiddleware()
+        .addPrioritizedMiddleware(MockValidationMiddleware(), priority: ExecutionPriority.validation)
+        .addMiddleware(MockSanitizationMiddleware())
         
         // Processing layer
-        <+ CachingMiddleware()
-        <+ GPUAccelerationMiddleware()
+        .addMiddleware(MockCachingMiddleware())
+        .addMiddleware(MockGPUAccelerationMiddleware())
         
         // Monitoring layer
-        <++ middleware(MonitoringMiddleware(), priority: .postExecution)
+        .addPrioritizedMiddleware(MockMonitoringMiddleware(), priority: ExecutionPriority.postExecution)
         
         .build()
     
     // Add error handling
-    let safePipeline = pipeline |! { error in
-        await logError(error)
-    }
+    let safePipeline = ErrorHandlingPipelineWrapper(
+        pipeline: pipeline,
+        errorHandler: { error in
+            await logError(error)
+        }
+    )
     
     return safePipeline
 }
 
 /// Example 8: Using EmbedKit's custom builder with operators
 func createEmbedKitPipeline() async throws -> any Pipeline {
-    let handler = EmbedTextHandler()
+    // Create dependencies
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
     
-    return try await EmbeddingPipeline.builder(for: handler)
-        <++ (ValidationMiddleware(), .validation)
-        <+ CachingMiddleware()
-        <++ (TelemetryMiddleware(), .postExecution)
-        .when({ metadata in
-            // Enable GPU for large batches
-            metadata.get("batchSize", as: Int.self) ?? 0 > 100
-        }, use: GPUAccelerationMiddleware())
+    let handler = EmbedTextHandler(
+        embedder: embedder,
+        cache: cache,
+        telemetry: telemetry
+    )
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addPrioritizedMiddleware(MockValidationMiddleware(), priority: ExecutionPriority.validation)
+        .addMiddleware(MockCachingMiddleware())
+        .addPrioritizedMiddleware(MockTelemetryMiddleware(), priority: ExecutionPriority.postExecution)
+        .addMiddleware(MockGPUAccelerationMiddleware())  // Always add GPU acceleration
         .withErrorHandler { error in
             print("Embedding error: \(error)")
         }
@@ -146,79 +197,238 @@ struct EmbeddingPipelineFactory {
     
     /// Creates a pipeline optimized for single text embedding
     static func singleTextPipeline() async throws -> any Pipeline {
-        try await pipeline(for: EmbedTextHandler())
-            <+ ValidationMiddleware()
-            <+ CachingMiddleware()
-            <+ TelemetryMiddleware()
+        // Create dependencies
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: "all-MiniLM-L6-v2",
+            configuration: Configuration()
+        )
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
+        
+        let handler = EmbedTextHandler(
+            embedder: embedder,
+            cache: cache,
+            telemetry: telemetry
+        )
+        
+        return try await EmbeddingPipelineBuilder(handler: handler)
+            .addMiddleware(MockValidationMiddleware())
+            .addMiddleware(MockCachingMiddleware())
+            .addMiddleware(MockTelemetryMiddleware())
             .build()
     }
     
     /// Creates a pipeline optimized for batch processing
     static func batchProcessingPipeline() async throws -> any Pipeline {
-        let batchHandler = EmbedBatchHandler()
+        // Create dependencies
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: "all-MiniLM-L6-v2",
+            configuration: Configuration()
+        )
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
         
-        return try await pipeline(for: batchHandler)
-            <++ middleware(BatchOptimizationMiddleware(), priority: .preExecution)
-            <+ ParallelProcessingMiddleware()
-            <++ middleware(ProgressReportingMiddleware(), priority: .postExecution)
+        let batchHandler = BatchEmbedHandler(
+            embedder: embedder,
+            cache: cache,
+            telemetry: telemetry
+        )
+        
+        return try await EmbeddingPipelineBuilder(handler: batchHandler)
+            .addPrioritizedMiddleware(MockBatchOptimizationMiddleware(), priority: .preExecution)
+            .addMiddleware(MockParallelProcessingMiddleware())
+            .addPrioritizedMiddleware(MockProgressReportingMiddleware(), priority: ExecutionPriority.postExecution)
             .build()
     }
     
     /// Creates a pipeline for streaming embeddings
     static func streamingPipeline() async throws -> any Pipeline {
-        let streamHandler = EmbedStreamHandler()
+        // Create dependencies
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: "all-MiniLM-L6-v2",
+            configuration: Configuration()
+        )
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
         
-        return try await pipeline(for: streamHandler)
-            <++ middleware(BackpressureMiddleware(), priority: .authentication)
-            <+ ChunkingMiddleware()
-            <+ StreamMonitoringMiddleware()
+        let streamHandler = StreamEmbedHandler(
+            embedder: embedder,
+            cache: cache,
+            telemetry: telemetry
+        )
+        
+        let pipeline = try await EmbeddingPipelineBuilder(handler: streamHandler)
+            .addPrioritizedMiddleware(MockBackpressureMiddleware(), priority: .preExecution)
+            .addMiddleware(MockChunkingMiddleware())
+            .addMiddleware(MockStreamMonitoringMiddleware())
             .build()
-            |! { error in
+        
+        return ErrorHandlingPipelineWrapper(
+            pipeline: pipeline,
+            errorHandler: { error in
                 print("Stream error: \(error)")
             }
+        )
+    }
+    
+    /// Creates a high-performance pipeline optimized for throughput
+    static func highPerformance(
+        embedder: any TextEmbedder,
+        modelManager: EmbeddingModelManager
+    ) async throws -> EmbeddingPipeline {
+        let configuration = EmbeddingPipeline.Configuration(
+            enableCache: true,
+            enableGPUAcceleration: true,
+            enableRateLimiting: false,
+            enableMonitoring: true,
+            maxBatchSize: 1000,
+            requestsPerSecond: 1000
+        )
+        
+        return try await EmbeddingPipeline(
+            embedder: embedder,
+            modelManager: modelManager,
+            configuration: configuration
+        )
+    }
+    
+    /// Creates a minimal pipeline for basic embedding operations
+    static func minimal(
+        embedder: any TextEmbedder,
+        modelManager: EmbeddingModelManager
+    ) async throws -> EmbeddingPipeline {
+        let configuration = EmbeddingPipeline.Configuration(
+            enableCache: false,
+            enableGPUAcceleration: false,
+            enableRateLimiting: false,
+            enableMonitoring: false
+        )
+        
+        return try await EmbeddingPipeline(
+            embedder: embedder,
+            modelManager: modelManager,
+            configuration: configuration
+        )
+    }
+    
+    /// Creates a balanced pipeline with moderate performance and monitoring
+    static func balanced(
+        embedder: any TextEmbedder,
+        modelManager: EmbeddingModelManager
+    ) async throws -> EmbeddingPipeline {
+        let configuration = EmbeddingPipeline.Configuration(
+            enableCache: true,
+            enableGPUAcceleration: true,
+            enableRateLimiting: true,
+            enableMonitoring: true,
+            maxBatchSize: 100,
+            requestsPerSecond: 100
+        )
+        
+        return try await EmbeddingPipeline(
+            embedder: embedder,
+            modelManager: modelManager,
+            configuration: configuration
+        )
     }
 }
 
 // MARK: - Helper Functions
 
 private func createPreprocessingPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedTextHandler())
-        <+ TextPreprocessingMiddleware()
-        <+ TokenizationMiddleware()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addMiddleware(MockTextPreprocessingMiddleware())
+        .addMiddleware(MockTokenizationMiddleware())
         .build()
 }
 
 private func createEmbeddingPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedTextHandler())
-        <+ EmbeddingGenerationMiddleware()
-        <+ NormalizationMiddleware()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addMiddleware(MockEmbeddingGenerationMiddleware())
+        .addMiddleware(MockNormalizationMiddleware())
         .build()
 }
 
 private func createPostprocessingPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedTextHandler())
-        <+ PostProcessingMiddleware()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addMiddleware(MockPostProcessingMiddleware())
         .build()
 }
 
 private func createCPUPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedBatchHandler())
-        <+ CPUOptimizationMiddleware()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = BatchEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addMiddleware(MockCPUOptimizationMiddleware())
         .build()
 }
 
 private func createGPUPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedBatchHandler())
-        <+ GPUAccelerationMiddleware()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = BatchEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler)
+        .addMiddleware(MockGPUAccelerationMiddleware())
         .build()
 }
 
 private func createMainPipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedTextHandler()).build()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler).build()
 }
 
 private func createBasePipeline() async throws -> any Pipeline {
-    try await pipeline(for: EmbedTextHandler()).build()
+    let embedder = CoreMLTextEmbedder(
+        modelIdentifier: "all-MiniLM-L6-v2",
+        configuration: Configuration()
+    )
+    let cache = EmbeddingCache()
+    let telemetry = TelemetrySystem()
+    let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
+    
+    return try await EmbeddingPipelineBuilder(handler: handler).build()
 }
 
 private func checkGPUAvailability() async -> Bool {
@@ -282,7 +492,7 @@ struct GPUAccelerationMiddleware: Middleware {
     }
 }
 
-struct ParallelProcessingMiddleware: Middleware {
+struct MockParallelProcessingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -292,7 +502,7 @@ struct ParallelProcessingMiddleware: Middleware {
     }
 }
 
-struct BackpressureMiddleware: Middleware {
+struct MockBackpressureMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -302,7 +512,7 @@ struct BackpressureMiddleware: Middleware {
     }
 }
 
-struct ChunkingMiddleware: Middleware {
+struct MockChunkingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -312,7 +522,7 @@ struct ChunkingMiddleware: Middleware {
     }
 }
 
-struct StreamMonitoringMiddleware: Middleware {
+struct MockStreamMonitoringMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -362,7 +572,7 @@ struct NormalizationMiddleware: Middleware {
     }
 }
 
-struct PostProcessingMiddleware: Middleware {
+struct MockPostProcessingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,
@@ -372,7 +582,27 @@ struct PostProcessingMiddleware: Middleware {
     }
 }
 
-struct CPUOptimizationMiddleware: Middleware {
+struct MockCPUOptimizationMiddleware: Middleware {
+    func execute<T: Command>(
+        _ command: T,
+        metadata: CommandMetadata,
+        next: @Sendable (T, CommandMetadata) async throws -> T.Result
+    ) async throws -> T.Result {
+        try await next(command, metadata)
+    }
+}
+
+struct MockBatchOptimizationMiddleware: Middleware {
+    func execute<T: Command>(
+        _ command: T,
+        metadata: CommandMetadata,
+        next: @Sendable (T, CommandMetadata) async throws -> T.Result
+    ) async throws -> T.Result {
+        try await next(command, metadata)
+    }
+}
+
+struct MockProgressReportingMiddleware: Middleware {
     func execute<T: Command>(
         _ command: T,
         metadata: CommandMetadata,

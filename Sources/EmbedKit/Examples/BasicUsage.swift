@@ -8,11 +8,14 @@ public struct EmbedKitExample {
     public static func directEmbeddingExample() async throws {
         // Create a text embedder
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: "all-MiniLM-L6-v2",
-            configuration: EmbeddingConfiguration(
-                maxSequenceLength: 128,
-                normalizeEmbeddings: true,
-                poolingStrategy: .mean
+            modelIdentifier: .miniLM_L6_v2,
+            configuration: Configuration(
+                model: ModelConfiguration(
+                    identifier: .miniLM_L6_v2,
+                    maxSequenceLength: 128,
+                    normalizeEmbeddings: true,
+                    poolingStrategy: .mean
+                )
             )
         )
         
@@ -49,11 +52,13 @@ public struct EmbedKitExample {
         let _ = DefaultEmbeddingModelManager()
         let embedder = MockTextEmbedder() // Using mock for example
         
-        // Create command handler from PipelineIntegration
-        let handler = PipelineIntegration.EmbedTextHandler(embedder: embedder)
+        // Create command handler
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
+        let handler = EmbedTextHandler(embedder: embedder, cache: cache, telemetry: telemetry)
         
         // Create and execute command
-        let command = PipelineIntegration.EmbedTextCommand(
+        let command = EmbedTextCommand(
             text: "Understanding context through embeddings"
         )
         
@@ -65,10 +70,12 @@ public struct EmbedKitExample {
     public static func batchCommandExample() async throws {
         // Create components
         let embedder = MockTextEmbedder()
-        let batchHandler = PipelineIntegration.BatchEmbedHandler(embedder: embedder)
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
+        let batchHandler = BatchEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry)
         
         // Create batch command
-        let batchCommand = PipelineIntegration.BatchEmbedCommand(
+        let batchCommand = BatchEmbedCommand(
             texts: [
                 "First document about technology",
                 "Second document about science", 
@@ -83,22 +90,18 @@ public struct EmbedKitExample {
     /// Example 4: Streaming embeddings
     public static func streamingExample() async throws {
         let embedder = MockTextEmbedder()
-        let streamHandler = PipelineIntegration.StreamEmbedHandler(embedder: embedder)
+        let cache = EmbeddingCache()
+        let telemetry = TelemetrySystem()
+        let streamHandler = StreamEmbedHandler(embedder: embedder, cache: cache, telemetry: telemetry)
         
-        // Create async sequence of texts
-        let texts = AsyncStream<String> { continuation in
-            Task {
-                for i in 1...10 {
-                    continuation.yield("Document \(i): This is sample text for streaming")
-                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                }
-                continuation.finish()
-            }
+        // Create array of texts for streaming
+        let texts = (1...10).map { i in
+            "Document \(i): This is sample text for streaming"
         }
         
         // Create stream command
-        let streamCommand = PipelineIntegration.StreamEmbedCommand(
-            texts: texts,
+        let streamCommand = StreamEmbedCommand(
+            textSource: ArrayTextSource(texts),
             maxConcurrency: 3
         )
         
@@ -106,14 +109,13 @@ public struct EmbedKitExample {
         let resultStream = try await streamHandler.handle(streamCommand)
         
         var processedCount = 0
-        for await result in resultStream {
-            switch result {
-            case .success(let embedding):
+        do {
+            for try await result in resultStream {
                 processedCount += 1
-                print("Processed embedding \(processedCount) with \(embedding.dimensions) dimensions")
-            case .failure(let error):
-                print("Error processing embedding: \(error)")
+                print("Processed embedding \(processedCount) with \(result.embedding.dimensions) dimensions")
             }
+        } catch {
+            print("Stream processing error: \(error)")
         }
     }
     
@@ -157,42 +159,4 @@ public struct EmbedKitExample {
     }
 }
 
-// Mock embedder implementation for examples
-actor MockTextEmbedder: TextEmbedder {
-    let configuration = EmbeddingConfiguration()
-    let dimensions: Int
-    let modelIdentifier = "mock-embedder"
-    private(set) var isReady = false
-    
-    init(dimensions: Int = 768) {
-        self.dimensions = dimensions
-    }
-    
-    func embed(_ text: String) async throws -> EmbeddingVector {
-        guard isReady else { throw EmbeddingError.modelNotLoaded }
-        
-        // Generate deterministic mock embedding based on text
-        var values = [Float](repeating: 0, count: dimensions)
-        let hash = text.hashValue
-        
-        for i in 0..<dimensions {
-            values[i] = Float((hash &+ i)) / Float(Int32.max)
-        }
-        
-        // Normalize
-        let norm = sqrt(values.reduce(0) { $0 + $1 * $1 })
-        if norm > 0 {
-            values = values.map { $0 / norm }
-        }
-        
-        return EmbeddingVector(values)
-    }
-    
-    func loadModel() async throws {
-        isReady = true
-    }
-    
-    func unloadModel() async throws {
-        isReady = false
-    }
-}
+// Note: MockTextEmbedder is defined in ComprehensiveBenchmarks.swift

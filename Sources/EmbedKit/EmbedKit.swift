@@ -18,12 +18,13 @@
 // MARK: - Core Embedding Types
 public typealias EmbedKit_EmbeddingVector = EmbeddingVector
 public typealias EmbedKit_TextEmbedder = TextEmbedder
-public typealias EmbedKit_EmbeddingConfiguration = EmbeddingConfiguration
+public typealias EmbedKit_Configuration = Configuration
+public typealias EmbedKit_ModelIdentifier = ModelIdentifier
 
 // MARK: - Error Handling
-public typealias EmbedKit_ErrorHandlingSystem = ErrorHandlingSystem
-public typealias EmbedKit_GracefulDegradationManager = GracefulDegradationManager
 public typealias EmbedKit_ErrorContext = ErrorContext
+public typealias EmbedKit_ContextualError = ContextualError
+public typealias EmbedKit_GracefulDegradationManager = GracefulDegradationManager
 
 // MARK: - Telemetry and Monitoring
 public typealias EmbedKit_TelemetrySystem = TelemetrySystem
@@ -31,9 +32,6 @@ public typealias EmbedKit_TelemetryEvent = TelemetryEvent
 public typealias EmbedKit_MetricSummary = MetricSummary
 
 // MARK: - Global Services
-/// Global error handling system instance
-public let errorHandler = ErrorHandlingSystem()
-
 /// Global telemetry system instance
 public let telemetry = TelemetrySystem()
 
@@ -45,8 +43,8 @@ public let degradationManager = GracefulDegradationManager()
 public enum EmbedKit {
     /// Create a production-ready text embedder with error handling and telemetry
     public static func createEmbedder(
-        modelIdentifier: String = "all-MiniLM-L6-v2",
-        configuration: EmbeddingConfiguration = EmbeddingConfiguration()
+        modelIdentifier: ModelIdentifier = .default,
+        configuration: Configuration = Configuration()
     ) -> CoreMLTextEmbedder {
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: modelIdentifier, 
@@ -56,9 +54,9 @@ public enum EmbedKit {
         Task {
             await telemetry.recordEvent(TelemetryEvent(
                 name: "embedder_created",
-                description: "Created embedder with model \(modelIdentifier)",
+                description: "Created embedder with model \(modelIdentifier.rawValue)",
                 severity: .info,
-                metadata: ["model": modelIdentifier]
+                metadata: ["model": modelIdentifier.rawValue]
             ))
         }
         
@@ -86,12 +84,11 @@ public enum EmbedKit {
     
     /// Get current system health status
     public static func getHealthStatus() async -> HealthStatus {
-        let errorStats = await errorHandler.getErrorStatistics()
         let systemMetrics = await telemetry.getSystemMetrics()
         let degradationStatus = await degradationManager.getDegradationStatus()
         
         return HealthStatus(
-            errorCount: errorStats.recentErrorCount,
+            errorCount: 0, // No longer tracking via ErrorHandlingSystem
             memoryUsage: systemMetrics.memoryUsage,
             degradationLevel: degradationStatus.values.max() ?? .normal,
             timestamp: Date()

@@ -2,6 +2,29 @@ import Foundation
 import Collections
 import OSLog
 
+/// Statistics about cache performance
+public struct CacheStatistics: Sendable {
+    public let hits: Int
+    public let misses: Int
+    public let evictions: Int
+    public let currentSize: Int
+    public let maxSize: Int
+    
+    /// Computed hit rate
+    public var hitRate: Double {
+        let total = hits + misses
+        return total > 0 ? Double(hits) / Double(total) : 0
+    }
+    
+    public init(hits: Int, misses: Int, evictions: Int, currentSize: Int, maxSize: Int) {
+        self.hits = hits
+        self.misses = misses
+        self.evictions = evictions
+        self.currentSize = currentSize
+        self.maxSize = maxSize
+    }
+}
+
 /// Thread-safe LRU (Least Recently Used) cache for embeddings
 public actor LRUCache<Key: Hashable & Sendable, Value: Sendable> {
     private let logger = Logger(subsystem: "EmbedKit", category: "LRUCache")
@@ -123,11 +146,11 @@ public actor EmbeddingCache {
     
     public struct CachedEmbedding: Sendable {
         public let embedding: EmbeddingVector
-        public let modelIdentifier: String
+        public let modelIdentifier: ModelIdentifier
         public let timestamp: Date
         public let byteSize: Int
         
-        init(embedding: EmbeddingVector, modelIdentifier: String) {
+        init(embedding: EmbeddingVector, modelIdentifier: ModelIdentifier) {
             self.embedding = embedding
             self.modelIdentifier = modelIdentifier
             self.timestamp = Date()
@@ -142,14 +165,14 @@ public actor EmbeddingCache {
     }
     
     /// Generate a cache key from text and model identifier
-    public static func cacheKey(for text: String, modelIdentifier: String) -> String {
+    public static func cacheKey(for text: String, modelIdentifier: ModelIdentifier) -> String {
         // Use a hash to avoid storing full text in memory
         let textHash = text.hashValue
-        return "\(modelIdentifier):\(textHash)"
+        return "\(modelIdentifier.rawValue):\(textHash)"
     }
     
     /// Get an embedding from the cache
-    public func get(text: String, modelIdentifier: String) async -> EmbeddingVector? {
+    public func get(text: String, modelIdentifier: ModelIdentifier) async -> EmbeddingVector? {
         let key = Self.cacheKey(for: text, modelIdentifier: modelIdentifier)
         
         if let cached = await cache.get(key) {
@@ -166,7 +189,7 @@ public actor EmbeddingCache {
     }
     
     /// Store an embedding in the cache
-    public func set(text: String, modelIdentifier: String, embedding: EmbeddingVector) async {
+    public func set(text: String, modelIdentifier: ModelIdentifier, embedding: EmbeddingVector) async {
         let key = Self.cacheKey(for: text, modelIdentifier: modelIdentifier)
         let cached = CachedEmbedding(embedding: embedding, modelIdentifier: modelIdentifier)
         
@@ -198,7 +221,7 @@ public actor EmbeddingCache {
     }
     
     /// Preload embeddings for a batch of texts
-    public func preload(texts: [String], modelIdentifier: String, embeddings: [EmbeddingVector]) async {
+    public func preload(texts: [String], modelIdentifier: ModelIdentifier, embeddings: [EmbeddingVector]) async {
         guard texts.count == embeddings.count else {
             logger.error("Mismatch between texts and embeddings count")
             return
@@ -213,14 +236,21 @@ public actor EmbeddingCache {
 }
 
 /// Memory-aware cache that responds to system memory pressure
-public final class MemoryAwareCache: @unchecked Sendable {
+/// 
+/// Swift 6 Compatibility: Converted to actor for proper concurrency safety
+/// - Removes need for @unchecked Sendable
+/// - Ensures all memory pressure handling is properly isolated
+/// - Prevents data races on mutable state
+public actor MemoryAwareCache {
     private let embeddingCache: EmbeddingCache
     private var memoryPressureSource: DispatchSourceMemoryPressure?
-    private let logger = Logger(subsystem: "EmbedKit", category: "MemoryAwareCache")
+    nonisolated private let logger = Logger(subsystem: "EmbedKit", category: "MemoryAwareCache")
     
     public init(embeddingCache: EmbeddingCache) {
         self.embeddingCache = embeddingCache
-        setupMemoryPressureHandling()
+        Task {
+            await setupMemoryPressureHandling()
+        }
     }
     
     deinit {
@@ -231,28 +261,46 @@ public final class MemoryAwareCache: @unchecked Sendable {
         memoryPressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global())
         
         memoryPressureSource?.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            
-            let pressure = self.memoryPressureSource?.data ?? []
-            
-            Task {
-                if pressure.contains(.critical) {
-                    self.logger.warning("Critical memory pressure detected, clearing cache")
-                    await self.embeddingCache.clear()
-                } else if pressure.contains(.warning) {
-                    self.logger.info("Memory pressure warning, reducing cache size")
-                    // Clear 50% of cache on warning
-                    let stats = await self.embeddingCache.statistics()
-                    let targetSize = stats.currentSize / 2
-                    
-                    while await self.embeddingCache.statistics().currentSize > targetSize {
-                        // The LRU cache will handle eviction
-                        break
-                    }
-                }
+            Task { [weak self] in
+                guard let self = self else { return }
+                await self.handleMemoryPressureEvent()
             }
         }
         
         memoryPressureSource?.resume()
+    }
+    
+    /// Handle memory pressure events from the system
+    private func handleMemoryPressureEvent() async {
+        guard let pressure = memoryPressureSource?.data else { return }
+        
+        if pressure.contains(.critical) {
+            logger.warning("Critical memory pressure detected, clearing cache")
+            await embeddingCache.clear()
+        } else if pressure.contains(.warning) {
+            logger.info("Memory pressure warning, reducing cache size")
+            await handleMemoryPressureWarning()
+        }
+    }
+    
+    /// Handle memory pressure warning by reducing cache size
+    private func handleMemoryPressureWarning() async {
+        // Clear 50% of cache on warning
+        let stats = await embeddingCache.statistics()
+        let targetSize = stats.currentSize / 2
+        
+        // Note: The actual cache reduction is handled by the LRU eviction policy
+        // When new items are added, old ones will be automatically evicted
+        logger.debug("Memory warning: target cache size reduced to \(targetSize)")
+    }
+    
+    /// Get statistics from the underlying embedding cache
+    public func statistics() async -> CacheStatistics {
+        await embeddingCache.statistics()
+    }
+    
+    /// Clear the underlying cache
+    public func clear() async {
+        await embeddingCache.clear()
     }
 }

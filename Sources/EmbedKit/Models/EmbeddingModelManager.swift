@@ -5,13 +5,13 @@ import OSLog
 public protocol EmbeddingModelManager: Actor {
     func loadModel(
         from url: URL,
-        identifier: String,
+        identifier: ModelIdentifier,
         configuration: ModelBackendConfiguration?
     ) async throws -> ModelMetadata
     
-    func unloadModel(identifier: String) async throws
+    func unloadModel(identifier: ModelIdentifier) async throws
     
-    func getModel(identifier: String?) async -> (any TextEmbedder)?
+    func getModel(identifier: ModelIdentifier?) async -> (any TextEmbedder)?
 }
 
 /// Manager for multiple embedding models
@@ -19,28 +19,28 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
     private let logger = Logger(subsystem: "EmbedKit", category: "ModelManager")
     
     private var models: [String: any TextEmbedder] = [:]
-    private var defaultModelIdentifier: String?
+    private var defaultModelIdentifier: ModelIdentifier?
     
     public init() {}
     
     public func loadModel(
         from url: URL,
-        identifier: String,
+        identifier: ModelIdentifier,
         configuration: ModelBackendConfiguration? = nil
     ) async throws -> ModelMetadata {
-        logger.info("Loading model: \(identifier)")
+        logger.info("Loading model: \(identifier.rawValue)")
         
         // Create a new embedder for this model
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: identifier,
-            configuration: EmbeddingConfiguration()
+            configuration: Configuration()
         )
         
         // Load the model
         try await embedder.loadModel()
         
         // Store the embedder
-        models[identifier] = embedder
+        models[identifier.rawValue] = embedder
         
         // Set as default if it's the first model
         if defaultModelIdentifier == nil {
@@ -49,68 +49,97 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
         
         // Return metadata
         return ModelMetadata(
-            name: identifier,
+            name: identifier.rawValue,
             version: "1.0",
             embeddingDimensions: await embedder.dimensions,
-            maxSequenceLength: embedder.configuration.maxSequenceLength,
+            maxSequenceLength: embedder.configuration.model.maxSequenceLength,
             vocabularySize: 30522, // Default
             modelType: "coreml",
             additionalInfo: [:]
         )
     }
     
-    public func unloadModel(identifier: String) async throws {
-        logger.info("Unloading model: \(identifier)")
+    public func unloadModel(identifier: ModelIdentifier) async throws {
+        logger.info("Unloading model: \(identifier.rawValue)")
         
-        guard let embedder = models[identifier] else {
-            throw EmbeddingError.resourceUnavailable("Model not found: \(identifier)")
+        guard let embedder = models[identifier.rawValue] else {
+            throw ContextualEmbeddingError.resourceUnavailable(
+                context: ErrorContext(
+                    operation: .resourceManagement,
+                    modelIdentifier: identifier,
+                    metadata: ErrorMetadata()
+                        .with(key: "action", value: "unload"),
+                    sourceLocation: SourceLocation()
+                ),
+                resource: .model
+            )
         }
         
         try await embedder.unloadModel()
-        models.removeValue(forKey: identifier)
+        models.removeValue(forKey: identifier.rawValue)
         
         // Update default if needed
         if defaultModelIdentifier == identifier {
-            defaultModelIdentifier = models.keys.first
+            defaultModelIdentifier = models.keys.first.map { try? ModelIdentifier($0) } ?? nil
         }
     }
     
-    public func getModel(identifier: String?) async -> (any TextEmbedder)? {
+    public func getModel(identifier: ModelIdentifier?) async -> (any TextEmbedder)? {
         if let identifier = identifier {
-            return models[identifier]
+            return models[identifier.rawValue]
         } else if let defaultId = defaultModelIdentifier {
-            return models[defaultId]
+            return models[defaultId.rawValue]
         }
         return nil
     }
     
     /// Set the default model identifier
-    public func setDefaultModel(identifier: String) async throws {
-        guard models[identifier] != nil else {
-            throw EmbeddingError.resourceUnavailable("Model not found: \(identifier)")
+    public func setDefaultModel(identifier: ModelIdentifier) async throws {
+        guard models[identifier.rawValue] != nil else {
+            throw ContextualEmbeddingError.resourceUnavailable(
+                context: ErrorContext(
+                    operation: .resourceManagement,
+                    modelIdentifier: identifier,
+                    metadata: ErrorMetadata()
+                        .with(key: "action", value: "unload"),
+                    sourceLocation: SourceLocation()
+                ),
+                resource: .model
+            )
         }
         defaultModelIdentifier = identifier
     }
     
     /// Get all loaded model identifiers
-    public func loadedModels() async -> [String] {
-        Array(models.keys)
+    public func loadedModels() async -> [ModelIdentifier] {
+        models.keys.compactMap { try? ModelIdentifier($0) }
     }
     
     /// Get information about a specific model
-    public func modelInfo(for identifier: String?) async -> EmbeddingModelInfo? {
+    public func modelInfo(for identifier: ModelIdentifier?) async -> ModelInfo? {
         guard let embedder = await getModel(identifier: identifier) else {
             return nil
         }
         
-        let modelId = identifier ?? defaultModelIdentifier ?? "unknown"
+        let modelId = identifier ?? defaultModelIdentifier ?? ModelIdentifier(family: "unknown")
         
-        return EmbeddingModelInfo(
+        return ModelInfo(
             identifier: modelId,
             dimensions: await embedder.dimensions,
-            metadata: nil, // TODO: Store metadata
-            isReady: await embedder.isReady,
-            cacheStatistics: nil // TODO: Implement caching
+            isReady: await embedder.isReady
         )
+    }
+}
+
+/// Information about a loaded model
+public struct ModelInfo: Sendable {
+    public let identifier: ModelIdentifier
+    public let dimensions: Int
+    public let isReady: Bool
+    
+    public init(identifier: ModelIdentifier, dimensions: Int, isReady: Bool) {
+        self.identifier = identifier
+        self.dimensions = dimensions
+        self.isReady = isReady
     }
 }
