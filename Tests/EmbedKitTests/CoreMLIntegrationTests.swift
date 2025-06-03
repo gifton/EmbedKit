@@ -6,16 +6,19 @@ import Foundation
 @Suite("Core ML Integration Tests")
 struct CoreMLIntegrationTests {
     
-    @Test("Core ML model integration")
-    func testCoreMLModelIntegration() async throws {
-        // Skip if no model is available
-        guard Bundle.main.url(
+    // Helper to check if a Core ML model is available
+    static var isModelAvailable: Bool {
+        Bundle.main.url(
             forResource: "all-MiniLM-L6-v2",
             withExtension: "mlpackage"
-        ) != nil else {
-            // Skip test if model not available
-            return
-        }
+        ) != nil || Bundle.main.url(
+            forResource: "all-MiniLM-L6-v2",
+            withExtension: "mlmodelc"
+        ) != nil
+    }
+    
+    @Test("Core ML model integration", .enabled(if: isModelAvailable))
+    func testCoreMLModelIntegration() async throws {
         
         // Create model loader
         let loader = CoreMLModelLoader()
@@ -56,15 +59,8 @@ struct CoreMLIntegrationTests {
         #expect(similarity2 < 0.5) // Should be dissimilar
     }
     
-    @Test("Batch processing performance")
+    @Test("Batch processing performance", .enabled(if: isModelAvailable))
     func testBatchProcessingPerformance() async throws {
-        guard Bundle.main.url(
-            forResource: "all-MiniLM-L6-v2",
-            withExtension: "mlpackage"
-        ) != nil else {
-            // Skip test if model not available
-            return
-        }
         
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1"),
@@ -96,7 +92,7 @@ struct CoreMLIntegrationTests {
         #expect(embeddingsPerSecond > 50)
     }
     
-    @Test("Model memory footprint")
+    @Test("Model memory footprint", .enabled(if: isModelAvailable))
     func testModelMemoryFootprint() async throws {
         let loader = CoreMLModelLoader()
         

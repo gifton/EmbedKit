@@ -2,16 +2,17 @@
 .DS_Store
 *.xcuserdatad
 xcuserdata/
+._*
 
 # Swift Package Manager
 .build/
 .swiftpm/
 *.xcodeproj
+Package.resolved
 
 # Xcode
 build/
 DerivedData/
-/Models
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
@@ -25,13 +26,14 @@ DerivedData/
 
 # Dependencies
 Packages/
-.build/
 
 # Temporary files
 *.tmp
 *.temp
 *.swp
 *~
+.*.swp
+*.orig
 
 # Logs
 *.log
@@ -55,27 +57,56 @@ venv/
 .venv/
 env/
 .env/
+*.pyc
 
-# Model files (if too large)
+# Model files
+/Models/
 *.mlmodel
 *.mlpackage
+*.mlmodelc
 *.coreml
-# Uncomment if you want to exclude model files from the repo
-# Models/
+*.compiled
+
+# SQLite databases
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Disabled files
+*.disabled
 
 # Benchmarks output
 benchmark_results/
+BenchmarkResults/
 *.benchmark
+*.benchmarkresults
 
 # Cache directories
 .cache/
 cache/
 
 # Metal shader cache
+*.metallib
 *.metallib-air
 *.air
+*.metal-air
+
+# Build artifacts
+.build-examples/
 
 # Other
 .env
 .env.local
-*.orig
+
+# System files
+Thumbs.db
+Desktop.ini
+
+# SPM resolution cache
+.swiftpm/resolution-cache/
+.swiftpm/manifest.db
+
+# Xcode SPM integration
+.swiftpm/xcode/

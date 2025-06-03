@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  SWIFT_VERSION: '6.0'
+
+jobs:
+  # Swift build and test on multiple platforms
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS with Metal support
+          - os: macos-14
+            xcode: '16.0'
+            platform: 'macOS'
+            enable-metal: true
+          
+          # macOS without Metal (older version)
+          - os: macos-13
+            xcode: '15.4'
+            platform: 'macOS'
+            enable-metal: false
+          
+          # Ubuntu Linux
+          - os: ubuntu-latest
+            platform: 'Linux'
+            swift-version: '6.0'
+            enable-metal: false
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    # Setup Xcode on macOS
+    - name: Select Xcode
+      if: matrix.platform == 'macOS'
+      run: sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app
+    
+    # Setup Swift on Linux
+    - name: Setup Swift
+      if: matrix.platform == 'Linux'
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: ${{ matrix.swift-version }}
+    
+    # Cache Swift Package Manager dependencies
+    - name: Cache SPM dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          .build
+          ~/Library/Developer/Xcode/DerivedData
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+    
+    # Build the package
+    - name: Build
+      run: swift build -v
+    
+    # Run tests with appropriate configuration
+    - name: Run Tests
+      run: |
+        if [[ "${{ matrix.enable-metal }}" == "true" ]]; then
+          echo "Running tests with Metal support"
+          swift test -v
+        else
+          echo "Running tests without Metal support"
+          swift test -v
+        fi
+      shell: bash
+    
+    # Upload test results
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.os }}
+        path: |
+          .build/**/TestResults/
+          .build/**/codecov/
+    
+  # Performance benchmarks (macOS only)
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: macos-14
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app
+    
+    - name: Run Benchmarks
+      run: |
+        swift build -c release
+        swift run -c release EmbedKitBenchmarks
+    
+    - name: Upload Benchmark Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: benchmark-results/
+    
+  # Code coverage
+  coverage:
+    name: Code Coverage
+    runs-on: macos-14
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app
+    
+    - name: Generate Coverage
+      run: |
+        swift test --enable-code-coverage
+        xcrun llvm-cov export -format="lcov" \
+          .build/debug/EmbedKitPackageTests.xctest/Contents/MacOS/EmbedKitPackageTests \
+          -instr-profile .build/debug/codecov/default.profdata > coverage.lcov
+    
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.lcov
+        fail_ci_if_error: false
+    
+  # Lint Swift code
+  lint:
+    name: Swift Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: '6.0'
+    
+    - name: Install SwiftLint
+      run: |
+        git clone https://github.com/realm/SwiftLint.git
+        cd SwiftLint
+        swift build -c release
+        sudo cp .build/release/swiftlint /usr/local/bin/
+    
+    - name: Run SwiftLint
+      run: swiftlint --strict
+    
+  # Documentation generation
+  documentation:
+    name: Generate Documentation
+    runs-on: macos-14
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app
+    
+    - name: Install Swift-DocC
+      run: brew install swift-docc
+    
+    - name: Generate Documentation
+      run: |
+        swift package generate-documentation \
+          --target EmbedKit \
+          --output-path ./docs
+    
+    - name: Upload Documentation
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./docs
+    
+  # Deploy documentation to GitHub Pages
+  deploy-docs:
+    needs: documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

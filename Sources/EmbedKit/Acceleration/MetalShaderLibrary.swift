@@ -12,6 +12,7 @@ public struct MetalShaderLibrary {
         case meanPool = "mean_pool"
         case maxPool = "max_pool"
         case cosineSimilarity = "cosine_similarity"
+        case cosineSimilarityBatch = "cosine_similarity_batch"
         case attentionWeightedPool = "attention_weighted_pool"
     }
     
@@ -24,8 +25,22 @@ public struct MetalShaderLibrary {
     #pragma METAL internals : enable
     #pragma METAL fast_math enable
     
-    // Use relaxed precision for better performance where appropriate
-    using namespace metal::precise;
+    // Forward declare structs at the beginning
+    struct PoolingParams {
+        int32_t sequenceLength;
+        int32_t dimensions;
+    };
+    
+    struct SimilarityParams {
+        int32_t queryCount;
+        int32_t keyCount;
+        int32_t dimensions;
+    };
+    
+    struct BatchSimilarityParams {
+        int32_t pairCount;
+        int32_t dimensions;
+    };
     
     // L2 normalization kernel with Metal 3 optimizations
     kernel void l2_normalize(device const float* input [[buffer(0)]],
@@ -38,15 +53,15 @@ public struct MetalShaderLibrary {
         const uint dimIndex = gid.x;
         
         // Early exit for out-of-bounds threads
-        if (dimIndex >= dimensions) return;
+        if (dimIndex >= uint(dimensions)) return;
         
-        const uint baseIndex = vectorIndex * dimensions;
+        const uint baseIndex = vectorIndex * uint(dimensions);
         
         // Improved L2 norm calculation using SIMD group operations
         float norm_squared = 0.0f;
         
         // Each thread in the SIMD group processes different elements
-        for (uint i = simd_lane_id; i < dimensions; i += simd_size) {
+        for (uint i = simd_lane_id; i < uint(dimensions); i += simd_size) {
             const float val = input[baseIndex + i];
             norm_squared += val * val;
         }
@@ -56,7 +71,7 @@ public struct MetalShaderLibrary {
         
         // All threads now have the same norm_squared value
         // Use fast inverse square root approximation for better performance
-        const float norm = precise::sqrt(norm_squared);
+        const float norm = metal::sqrt(norm_squared);
         const float inv_norm = (norm > 0.0f) ? (1.0f / norm) : 0.0f;
         
         // Write normalized value (coalesced memory access)
@@ -135,19 +150,19 @@ public struct MetalShaderLibrary {
             
             // Load values conditionally
             if (m0) {
-                maxVal = max(maxVal, input[i * dim + gid]);
+                maxVal = metal::max(maxVal, input[i * dim + gid]);
                 foundValid = true;
             }
             if (m1) {
-                maxVal = max(maxVal, input[(i + 1) * dim + gid]);
+                maxVal = metal::max(maxVal, input[(i + 1) * dim + gid]);
                 foundValid = true;
             }
             if (m2) {
-                maxVal = max(maxVal, input[(i + 2) * dim + gid]);
+                maxVal = metal::max(maxVal, input[(i + 2) * dim + gid]);
                 foundValid = true;
             }
             if (m3) {
-                maxVal = max(maxVal, input[(i + 3) * dim + gid]);
+                maxVal = metal::max(maxVal, input[(i + 3) * dim + gid]);
                 foundValid = true;
             }
         }
@@ -155,7 +170,7 @@ public struct MetalShaderLibrary {
         // Handle remaining elements
         for (; i < seqLen; i++) {
             if (!mask || mask[i] == 1) {
-                maxVal = max(maxVal, input[i * dim + gid]);
+                maxVal = metal::max(maxVal, input[i * dim + gid]);
                 foundValid = true;
             }
         }
@@ -218,11 +233,54 @@ public struct MetalShaderLibrary {
         }
         
         // Use fast inverse square root for normalization
-        const float invNormProduct = rsqrt(queryNorm * keyNorm);
+        const float invNormProduct = metal::rsqrt(queryNorm * keyNorm);
         const float similarity = dotProduct * invNormProduct;
         
         // Clamp to valid cosine similarity range
-        output[queryIdx * params.keyCount + keyIdx] = clamp(similarity, -1.0f, 1.0f);
+        output[queryIdx * params.keyCount + keyIdx] = metal::clamp(similarity, -1.0f, 1.0f);
+    }
+    
+    // Batch cosine similarity kernel - processes multiple vector pairs in parallel
+    kernel void cosine_similarity_batch(device const float* vectorsA [[buffer(0)]],
+                                       device const float* vectorsB [[buffer(1)]],
+                                       device float* output [[buffer(2)]],
+                                       constant BatchSimilarityParams& params [[buffer(3)]],
+                                       uint tid [[thread_position_in_grid]],
+                                       uint simd_lane_id [[thread_index_in_simdgroup]],
+                                       uint simd_size [[threads_per_simdgroup]]) {
+        if (tid >= params.pairCount) return;
+        
+        const uint vectorOffsetA = tid * params.dimensions;
+        const uint vectorOffsetB = tid * params.dimensions;
+        
+        // Use SIMD group operations for efficient reduction
+        float dotProduct = 0.0f;
+        float normA = 0.0f;
+        float normB = 0.0f;
+        
+        const int32_t dims = params.dimensions;
+        
+        // Each thread in SIMD group processes different elements
+        for (uint i = simd_lane_id; i < dims; i += simd_size) {
+            const float a = vectorsA[vectorOffsetA + i];
+            const float b = vectorsB[vectorOffsetB + i];
+            
+            dotProduct += a * b;
+            normA += a * a;
+            normB += b * b;
+        }
+        
+        // SIMD group reduction
+        dotProduct = simd_sum(dotProduct);
+        normA = simd_sum(normA);
+        normB = simd_sum(normB);
+        
+        // All threads in SIMD group now have the same values
+        if (simd_lane_id == 0) {
+            const float invNormProduct = metal::rsqrt(normA * normB);
+            const float similarity = dotProduct * invNormProduct;
+            output[tid] = metal::clamp(similarity, -1.0f, 1.0f);
+        }
     }
     
     // Attention-weighted pooling kernel with optimizations
@@ -270,17 +328,6 @@ public struct MetalShaderLibrary {
         const float invWeightSum = (weightSum > 0.0f) ? (1.0f / weightSum) : 0.0f;
         output[gid] = weightedSum * invWeightSum;
     }
-    
-    struct PoolingParams {
-        int32_t sequenceLength;
-        int32_t dimensions;
-    };
-    
-    struct SimilarityParams {
-        int32_t queryCount;
-        int32_t keyCount;
-        int32_t dimensions;
-    };
     """
 }
 
@@ -296,5 +343,11 @@ public struct PoolingParams {
 public struct SimilarityParams {
     let queryCount: Int32
     let keyCount: Int32
+    let dimensions: Int32
+}
+
+/// Parameters for batch similarity calculations
+public struct BatchSimilarityParams {
+    let pairCount: Int32
     let dimensions: Int32
 }

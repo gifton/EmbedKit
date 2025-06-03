@@ -119,9 +119,9 @@ public actor MetalVectorProcessor {
         }
         
         computeEncoder.endEncoding()
-        commandBuffer.commit()
         
         // Swift 6: Use async completion instead of blocking
+        // Add handler BEFORE committing
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             commandBuffer.addCompletedHandler { buffer in
                 if buffer.error != nil {
@@ -130,6 +130,7 @@ public actor MetalVectorProcessor {
                     continuation.resume(returning: ())
                 }
             }
+            commandBuffer.commit()
         }
     }
     

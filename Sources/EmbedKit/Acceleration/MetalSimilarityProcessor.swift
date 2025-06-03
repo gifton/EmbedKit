@@ -56,6 +56,81 @@ public actor MetalSimilarityProcessor {
         return similarities[0]
     }
     
+    /// Calculate cosine similarity between two vectors
+    ///
+    /// - Parameters:
+    ///   - vectorA: First vector for similarity calculation
+    ///   - vectorB: Second vector for similarity calculation
+    /// - Returns: Cosine similarity score between -1 and 1
+    /// - Throws: MetalError if GPU operations fail or vectors have different dimensions
+    public func cosineSimilarity(_ vectorA: [Float], _ vectorB: [Float]) async throws -> Float {
+        guard vectorA.count == vectorB.count else {
+            throw MetalError.dimensionMismatch
+        }
+        
+        guard !vectorA.isEmpty else {
+            throw MetalError.invalidInput("Empty input vectors")
+        }
+        
+        // For single vector pairs, use optimized kernel if available
+        if let pipeline = try await resourceManager.getPipeline(
+            MetalShaderLibrary.KernelName.cosineSimilarity.rawValue
+        ) {
+            return try await cosineSimilarityKernelSingle(
+                vectorA: vectorA,
+                vectorB: vectorB,
+                pipeline: pipeline
+            )
+        } else {
+            // Fallback to matrix calculation
+            let similarities = try await cosineSimilarityMatrix(queries: [vectorA], keys: [vectorB])
+            return similarities[0][0]
+        }
+    }
+    
+    /// Calculate cosine similarities for multiple vector pairs in batch
+    ///
+    /// - Parameters:
+    ///   - vectorPairs: Array of (vectorA, vectorB) tuples to compute similarities for
+    /// - Returns: Array of cosine similarity scores for each pair
+    /// - Throws: MetalError if GPU operations fail or vectors have mismatched dimensions
+    public func cosineSimilarityBatch(_ vectorPairs: [([Float], [Float])]) async throws -> [Float] {
+        guard !vectorPairs.isEmpty else {
+            return []
+        }
+        
+        let dimensions = vectorPairs[0].0.count
+        
+        // Validate all pairs have same dimensions
+        for (vectorA, vectorB) in vectorPairs {
+            guard vectorA.count == dimensions && vectorB.count == dimensions else {
+                throw MetalError.dimensionMismatch
+            }
+        }
+        
+        // Try to use batch kernel for better performance
+        if let pipeline = try await resourceManager.getPipeline(
+            MetalShaderLibrary.KernelName.cosineSimilarityBatch.rawValue
+        ) {
+            return try await cosineSimilarityKernelBatch(
+                vectorPairs: vectorPairs,
+                dimensions: dimensions,
+                pipeline: pipeline
+            )
+        } else {
+            // Fallback to sequential processing
+            var results: [Float] = []
+            results.reserveCapacity(vectorPairs.count)
+            
+            for (vectorA, vectorB) in vectorPairs {
+                let similarity = try await cosineSimilarity(vectorA, vectorB)
+                results.append(similarity)
+            }
+            
+            return results
+        }
+    }
+    
     // MARK: - Private Implementation
     
     /// Custom Metal kernel implementation for cosine similarity
@@ -154,9 +229,8 @@ public actor MetalSimilarityProcessor {
         }
         computeEncoder.endEncoding()
         
-        commandBuffer.commit()
-        
         // Swift 6: Use async completion instead of blocking
+        // Add completion handler BEFORE committing
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             commandBuffer.addCompletedHandler { buffer in
                 if buffer.error != nil {
@@ -165,6 +239,7 @@ public actor MetalSimilarityProcessor {
                     continuation.resume(returning: ())
                 }
             }
+            commandBuffer.commit()
         }
     }
     
@@ -184,6 +259,150 @@ public actor MetalSimilarityProcessor {
         }
         
         return results
+    }
+    
+    /// Optimized single vector cosine similarity calculation
+    private func cosineSimilarityKernelSingle(
+        vectorA: [Float],
+        vectorB: [Float],
+        pipeline: MTLComputePipelineState
+    ) async throws -> Float {
+        let dimensions = vectorA.count
+        
+        // Create buffers
+        guard let vectorABuffer = await resourceManager.createBuffer(
+                bytes: vectorA,
+                length: vectorA.count * MemoryLayout<Float>.size
+              ),
+              let vectorBBuffer = await resourceManager.createBuffer(
+                bytes: vectorB,
+                length: vectorB.count * MemoryLayout<Float>.size
+              ),
+              let resultBuffer = await resourceManager.createBuffer(
+                length: MemoryLayout<Float>.size
+              ) else {
+            throw MetalError.bufferCreationFailed
+        }
+        
+        // Create command buffer
+        guard let commandBuffer = resourceManager.commandQueue.makeCommandBuffer(),
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            throw MetalError.encoderCreationFailed
+        }
+        
+        computeEncoder.setComputePipelineState(pipeline)
+        computeEncoder.setBuffer(vectorABuffer, offset: 0, index: 0)
+        computeEncoder.setBuffer(vectorBBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(resultBuffer, offset: 0, index: 2)
+        
+        var params = SimilarityParams(
+            queryCount: 1,
+            keyCount: 1,
+            dimensions: Int32(dimensions)
+        )
+        computeEncoder.setBytes(&params, length: MemoryLayout<SimilarityParams>.size, index: 3)
+        
+        // Dispatch single thread since we're computing one similarity value
+        let threadsPerGrid = MTLSize(width: 1, height: 1, depth: 1)
+        let threadsPerThreadgroup = MTLSize(width: 1, height: 1, depth: 1)
+        computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        computeEncoder.endEncoding()
+        
+        // Wait for completion - add handler BEFORE committing
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            commandBuffer.addCompletedHandler { buffer in
+                if buffer.error != nil {
+                    continuation.resume(throwing: MetalError.commandBufferCreationFailed)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+            commandBuffer.commit()
+        }
+        
+        // Extract result
+        let resultPointer = resultBuffer.contents().bindMemory(to: Float.self, capacity: 1)
+        return resultPointer[0]
+    }
+    
+    /// Batch cosine similarity kernel implementation
+    private func cosineSimilarityKernelBatch(
+        vectorPairs: [([Float], [Float])],
+        dimensions: Int,
+        pipeline: MTLComputePipelineState
+    ) async throws -> [Float] {
+        let pairCount = vectorPairs.count
+        
+        // Flatten input vectors
+        var flatVectorsA: [Float] = []
+        var flatVectorsB: [Float] = []
+        flatVectorsA.reserveCapacity(pairCount * dimensions)
+        flatVectorsB.reserveCapacity(pairCount * dimensions)
+        
+        for (vectorA, vectorB) in vectorPairs {
+            flatVectorsA.append(contentsOf: vectorA)
+            flatVectorsB.append(contentsOf: vectorB)
+        }
+        
+        // Create buffers
+        guard let vectorsABuffer = await resourceManager.createBuffer(
+                bytes: flatVectorsA,
+                length: flatVectorsA.count * MemoryLayout<Float>.size
+              ),
+              let vectorsBBuffer = await resourceManager.createBuffer(
+                bytes: flatVectorsB,
+                length: flatVectorsB.count * MemoryLayout<Float>.size
+              ),
+              let resultBuffer = await resourceManager.createBuffer(
+                length: pairCount * MemoryLayout<Float>.size
+              ) else {
+            throw MetalError.bufferCreationFailed
+        }
+        
+        // Create command buffer
+        guard let commandBuffer = resourceManager.commandQueue.makeCommandBuffer(),
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            throw MetalError.encoderCreationFailed
+        }
+        
+        computeEncoder.setComputePipelineState(pipeline)
+        computeEncoder.setBuffer(vectorsABuffer, offset: 0, index: 0)
+        computeEncoder.setBuffer(vectorsBBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(resultBuffer, offset: 0, index: 2)
+        
+        var params = BatchSimilarityParams(
+            pairCount: Int32(pairCount),
+            dimensions: Int32(dimensions)
+        )
+        computeEncoder.setBytes(&params, length: MemoryLayout<BatchSimilarityParams>.size, index: 3)
+        
+        // Dispatch threads for batch processing
+        let threadsPerGrid = MTLSize(width: pairCount, height: 1, depth: 1)
+        let threadsPerThreadgroup = MTLSize(
+            width: min(pairCount, pipeline.threadExecutionWidth),
+            height: 1,
+            depth: 1
+        )
+        computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        computeEncoder.endEncoding()
+        
+        // Wait for completion - add handler BEFORE committing
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            commandBuffer.addCompletedHandler { buffer in
+                if buffer.error != nil {
+                    continuation.resume(throwing: MetalError.commandBufferCreationFailed)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+            commandBuffer.commit()
+        }
+        
+        // Extract results
+        let resultPointer = resultBuffer.contents().bindMemory(to: Float.self, capacity: pairCount)
+        return Array(UnsafeBufferPointer(start: resultPointer, count: pairCount))
     }
     
     /// MPS-based fallback implementation
@@ -259,9 +478,8 @@ public actor MetalSimilarityProcessor {
             resultMatrix: resultMatrix
         )
         
-        commandBuffer.commit()
-        
         // Swift 6: Use async completion instead of blocking
+        // Add handler BEFORE committing
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             commandBuffer.addCompletedHandler { buffer in
                 if buffer.error != nil {
@@ -270,6 +488,7 @@ public actor MetalSimilarityProcessor {
                     continuation.resume(returning: ())
                 }
             }
+            commandBuffer.commit()
         }
         
         // Extract results

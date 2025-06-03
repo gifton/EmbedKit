@@ -6,10 +6,10 @@ import PackageDescription
 let package = Package(
     name: "EmbedKit",
     platforms: [
-        .iOS(.v16),      // iOS 16+ for broader compatibility
+        .iOS(.v17),      // iOS 17+ for latest features
         .macOS(.v13),    // macOS 13+ for Metal 3 support
-        .tvOS(.v16),     // tvOS 16+ for Metal 3 support
-        .watchOS(.v9),   // watchOS 9+ support
+        .tvOS(.v17),     // tvOS 17+ for consistency with iOS
+        .watchOS(.v10),  // watchOS 10+ for consistency
         .visionOS(.v1)   // visionOS for future AR/VR embeddings
     ],
     products: [

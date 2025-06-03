@@ -1,0 +1,47 @@
+* text=auto eol=lf
+
+# Source code
+*.swift text eol=lf
+*.h text eol=lf
+*.m text eol=lf
+*.mm text eol=lf
+*.cpp text eol=lf
+*.c text eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.py text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
+README text eol=lf
+
+# Configuration
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Swift Package Manager
+Package.swift text eol=lf
+Package.resolved text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.mlmodel binary
+*.mlpackage binary
+*.mlmodelc binary
+*.metallib binary
+*.bin binary
+*.weights binary

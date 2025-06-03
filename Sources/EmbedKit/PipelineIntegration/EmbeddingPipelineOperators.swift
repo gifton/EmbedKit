@@ -528,21 +528,6 @@ struct ProgressReportingMiddleware: Middleware {
 
 // MARK: - Additional Middleware for Streaming and Development
 
-/// Middleware that handles backpressure in streaming scenarios
-struct BackpressureMiddleware: Middleware {
-    let maxBufferSize: Int
-    
-    func execute<T: Command>(
-        _ command: T,
-        metadata: CommandMetadata,
-        next: @Sendable (T, CommandMetadata) async throws -> T.Result
-    ) async throws -> T.Result {
-        print("[Backpressure] Monitoring buffer (max: \(maxBufferSize))")
-        // In a real implementation, would manage buffer sizes and apply backpressure
-        return try await next(command, metadata)
-    }
-}
-
 /// Middleware that chunks large operations into smaller pieces
 struct ChunkingMiddleware: Middleware {
     let chunkSize: Int

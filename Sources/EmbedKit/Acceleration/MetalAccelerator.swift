@@ -16,7 +16,7 @@ import OSLog
 /// - Better testability: Components can be tested in isolation
 /// - Improved maintainability: Changes to one operation type don't affect others
 /// - Enhanced flexibility: Easy to add new operation types or swap implementations
-public actor MetalAccelerator {
+public actor MetalAccelerator: MetalAcceleratorProtocol {
     nonisolated private let logger = EmbedKitLogger.metal()
     
     // Specialized processor components
@@ -107,6 +107,27 @@ public actor MetalAccelerator {
     /// Calculate similarity between a single query and multiple keys
     public func cosineSimilarity(query: [Float], keys: [[Float]]) async throws -> [Float] {
         return try await similarityProcessor.cosineSimilarity(query: query, keys: keys)
+    }
+    
+    /// Calculate cosine similarity between two vectors
+    ///
+    /// - Parameters:
+    ///   - vectorA: First vector for similarity calculation
+    ///   - vectorB: Second vector for similarity calculation
+    /// - Returns: Cosine similarity score between -1 and 1
+    /// - Throws: MetalError if GPU operations fail or vectors have different dimensions
+    public func cosineSimilarity(_ vectorA: [Float], _ vectorB: [Float]) async throws -> Float {
+        return try await similarityProcessor.cosineSimilarity(vectorA, vectorB)
+    }
+    
+    /// Calculate cosine similarities for multiple vector pairs in batch
+    ///
+    /// - Parameters:
+    ///   - vectorPairs: Array of (vectorA, vectorB) tuples to compute similarities for
+    /// - Returns: Array of cosine similarity scores for each pair
+    /// - Throws: MetalError if GPU operations fail or vectors have mismatched dimensions
+    public func cosineSimilarityBatch(_ vectorPairs: [([Float], [Float])]) async throws -> [Float] {
+        return try await similarityProcessor.cosineSimilarityBatch(vectorPairs)
     }
     
     // MARK: - Resource Management

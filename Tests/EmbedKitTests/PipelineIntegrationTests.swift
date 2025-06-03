@@ -203,13 +203,13 @@ struct PipelineIntegrationTests {
         #expect(stats2.currentSize == 0)
     }
     
-    @Test("Integration validation")
+    @Test("Integration validation", .enabled(if: CoreMLIntegrationTests.isModelAvailable))
     func testIntegrationValidation() async throws {
         // This should validate the entire setup
         try await PipelineIntegration.validateSetup()
     }
     
-    @Test("Quick start helper")
+    @Test("Quick start helper", .enabled(if: CoreMLIntegrationTests.isModelAvailable))
     func testQuickStart() async throws {
         let (pipeline, cleanup) = try await PipelineIntegration.quickStart()
         
