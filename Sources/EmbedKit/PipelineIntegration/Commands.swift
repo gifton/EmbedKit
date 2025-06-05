@@ -154,13 +154,18 @@ public struct SwapModelCommand: Command, ValidatableCommand {
     }
 }
 
-/// Command to unload the current model
+/// Command to unload a model
 public struct UnloadModelCommand: Command {
     public typealias Result = ModelUnloadResult
     
+    /// Optional model identifier to unload. If nil, unloads the current/default model
+    public let modelIdentifier: ModelIdentifier?
+    
+    /// Whether to clear the cache after unloading
     public let clearCache: Bool
     
-    public init(clearCache: Bool = true) {
+    public init(modelIdentifier: ModelIdentifier? = nil, clearCache: Bool = true) {
+        self.modelIdentifier = modelIdentifier
         self.clearCache = clearCache
     }
 }

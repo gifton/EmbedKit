@@ -1,5 +1,8 @@
 import Foundation
 import PipelineKit
+#if canImport(Darwin)
+import Darwin
+#endif
 
 // MARK: - Embedding Handlers
 
@@ -149,18 +152,17 @@ public actor BatchEmbedHandler: CommandHandler {
             let batchEnd = min(batchStart + command.batchSize, command.texts.count)
             let batchTexts = Array(command.texts[batchStart..<batchEnd])
             
-            var batchEmbeddings: [EmbeddingVector] = []
+            var batchEmbeddings: [EmbeddingVector?] = Array(repeating: nil, count: batchTexts.count)
             var textsToEmbed: [(String, Int)] = []
             
             // Check cache for each text
             for (index, text) in batchTexts.enumerated() {
                 if command.useCache,
                    let cachedEmbedding = await cache.get(text: text, modelIdentifier: modelId) {
-                    batchEmbeddings.append(cachedEmbedding)
+                    batchEmbeddings[index] = cachedEmbedding
                     cacheHits += 1
                 } else {
                     textsToEmbed.append((text, index))
-                    batchEmbeddings.append(EmbeddingVector([])) // Placeholder
                 }
             }
             
@@ -185,7 +187,10 @@ public actor BatchEmbedHandler: CommandHandler {
                 }
             }
             
-            embeddings.append(contentsOf: batchEmbeddings)
+            // Convert optionals to non-optionals (all should be filled at this point)
+            let filledBatchEmbeddings = batchEmbeddings.compactMap { $0 }
+            
+            embeddings.append(contentsOf: filledBatchEmbeddings)
             
             let progress = Double(batchEnd) / Double(command.texts.count)
             logger.processing("batch", progress: progress)
@@ -421,10 +426,19 @@ public actor SwapModelHandler: CommandHandler {
         logger.start("swapping model", details: "to \(command.newModelIdentifier)")
         let startTime = CFAbsoluteTimeGetCurrent()
         
-        // Get current model ID (if any)
-        // Note: Since EmbeddingModelManager protocol doesn't expose loaded models,
-        // we'll assume the previous model is the one we're swapping from
-        let previousModel: ModelIdentifier? = nil
+        // Get current model ID before loading the new one
+        let previousModel = await modelManager.getCurrentModel()
+        
+        // Check if the new model is already the current model
+        if let currentModel = previousModel, currentModel == command.newModelIdentifier {
+            logger.info("Model already loaded", context: command.newModelIdentifier.rawValue)
+            return ModelSwapResult(
+                previousModel: currentModel,
+                newModel: command.newModelIdentifier,
+                swapDuration: 0,
+                warmupDuration: nil
+            )
+        }
         
         // Load new model
         let url = Bundle.main.url(forResource: command.newModelIdentifier.rawValue, withExtension: "mlmodelc") ?? URL(fileURLWithPath: command.newModelIdentifier.rawValue)
@@ -445,7 +459,7 @@ public actor SwapModelHandler: CommandHandler {
             )
         }
         
-        // Unload previous model if requested
+        // Unload previous model if requested and it exists
         if command.unloadCurrent, let previousModel = previousModel {
             logger.info("Unloading previous model", context: previousModel.rawValue)
             try await modelManager.unloadModel(identifier: previousModel)
@@ -462,8 +476,7 @@ public actor SwapModelHandler: CommandHandler {
             logger.performance("Model warmup", duration: warmupDuration!)
         }
         
-        // The model is automatically current when loaded
-        
+        // Log completion with proper model tracking
         logger.complete("model swap", result: "from \(previousModel?.rawValue ?? "none") to \(command.newModelIdentifier.rawValue)")
         
         return ModelSwapResult(
@@ -492,27 +505,56 @@ public actor UnloadModelHandler: CommandHandler {
     }
     
     public func handle(_ command: UnloadModelCommand) async throws -> ModelUnloadResult {
-        // Since we don't have access to loaded models through the protocol,
-        // we'll handle this differently
-        logger.start("unloading model", details: "current model")
+        // Determine which model to unload
+        let modelToUnload: ModelIdentifier?
         
-        let initialMemory = ProcessInfo.processInfo.physicalMemory
+        if let specificModel = command.modelIdentifier {
+            // Unload specific model
+            modelToUnload = specificModel
+            logger.start("unloading model", details: specificModel.rawValue)
+        } else {
+            // Unload current/default model
+            modelToUnload = await modelManager.getCurrentModel()
+            logger.start("unloading model", details: modelToUnload?.rawValue ?? "current model")
+        }
         
-        // Unload specific model if provided, otherwise this is a no-op
-        // since we can't determine which models are loaded through the protocol
-        // In a real implementation, you might want to track loaded models separately
+        // Track memory before unloading
+        var info = mach_task_basic_info()
+        let initialMemory = getMemoryUsage(&info)
+        
+        var unloadedModel: ModelIdentifier? = nil
+        
+        // Unload the model if we identified one
+        if let modelId = modelToUnload {
+            // Check if the model is actually loaded
+            let loadedModels = await modelManager.loadedModels()
+            if loadedModels.contains(modelId) {
+                try await modelManager.unloadModel(identifier: modelId)
+                unloadedModel = modelId
+                logger.info("Model unloaded", context: modelId.rawValue)
+            } else {
+                logger.warning("Model not loaded", context: modelId.rawValue)
+            }
+        } else {
+            logger.warning("No model to unload")
+        }
         
         // Clear cache if requested
         if command.clearCache {
             await cache.clear()
+            logger.info("Cache cleared")
         }
         
-        let freedMemory = Int64(ProcessInfo.processInfo.physicalMemory) - Int64(initialMemory)
+        // Measure memory after unloading
+        // Note: This is a best-effort approach as Swift doesn't guarantee immediate memory release
+        var infoAfter = mach_task_basic_info()
+        let finalMemory = getMemoryUsage(&infoAfter)
+        let freedMemory = max(0, initialMemory - finalMemory)
         
-        logger.complete("model unload", result: "freed \(freedMemory / 1024 / 1024)MB")
+        logger.complete("model unload", result: "freed ~\(freedMemory / 1024 / 1024)MB")
         
         return ModelUnloadResult(
-            modelIdentifier: nil, // Can't determine which model was unloaded through the protocol
+            modelIdentifier: unloadedModel,
             freedMemory: freedMemory,
             cacheCleared: command.clearCache
         )
@@ -603,3 +645,32 @@ public actor PreloadCacheHandler: CommandHandler {
         )
     }
 }
+
+// MARK: - Memory Measurement Helpers
+
+#if canImport(Darwin)
+/// Get current memory usage of the process in bytes
+private func getMemoryUsage(_ info: inout mach_task_basic_info) -> Int64 {
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+    
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+            task_info(
+                mach_task_self_,
+                task_flavor_t(MACH_TASK_BASIC_INFO),
+                $0,
+                &count
+            )
+        }
+    }
+    
+    return result == KERN_SUCCESS ? Int64(info.resident_size) : 0
+}
+#else
+/// Fallback memory measurement for non-Darwin platforms
+private func getMemoryUsage(_ info: inout mach_task_basic_info) -> Int64 {
+    // On non-Darwin platforms, we can't get accurate memory usage
+    // Return 0 to indicate unknown
+    return 0
+}
+#endif

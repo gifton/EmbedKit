@@ -271,6 +271,43 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
             logger.info("Evicted model \\(identifier) due to memory constraints")
         }
     }
+    
+    // MARK: - Protocol Requirements
+    
+    /// Get all currently loaded model identifiers
+    public func loadedModels() async -> [ModelIdentifier] {
+        loadedModels.keys.compactMap { try? ModelIdentifier($0) }
+    }
+    
+    /// Get the currently active/default model identifier
+    public func getCurrentModel() async -> ModelIdentifier? {
+        // Return the most recently loaded model
+        // Dictionary.Keys doesn't have .last, so convert to array first
+        let keys = Array(loadedModels.keys)
+        return keys.last.flatMap { try? ModelIdentifier($0) }
+    }
+    
+    /// Get information about a specific model
+    public func modelInfo(for identifier: ModelIdentifier?) async -> ModelInfo? {
+        guard let embedder = await getModel(identifier: identifier) else {
+            return nil
+        }
+        
+        let modelId: ModelIdentifier
+        if let identifier = identifier {
+            modelId = identifier
+        } else if let currentModel = await getCurrentModel() {
+            modelId = currentModel
+        } else {
+            modelId = ModelIdentifier(family: "unknown")
+        }
+        
+        return ModelInfo(
+            identifier: modelId,
+            dimensions: await embedder.dimensions,
+            isReady: await embedder.isReady
+        )
+    }
 }
 
 /// A/B testing manager for comparing model versions

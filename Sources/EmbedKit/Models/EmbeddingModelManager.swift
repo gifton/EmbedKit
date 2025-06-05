@@ -12,6 +12,15 @@ public protocol EmbeddingModelManager: Actor {
     func unloadModel(identifier: ModelIdentifier) async throws
     
     func getModel(identifier: ModelIdentifier?) async -> (any TextEmbedder)?
+    
+    /// Get all currently loaded model identifiers
+    func loadedModels() async -> [ModelIdentifier]
+    
+    /// Get the currently active/default model identifier
+    func getCurrentModel() async -> ModelIdentifier?
+    
+    /// Get information about a specific model
+    func modelInfo(for identifier: ModelIdentifier?) async -> ModelInfo?
 }
 
 /// Manager for multiple embedding models
@@ -113,6 +122,11 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
     /// Get all loaded model identifiers
     public func loadedModels() async -> [ModelIdentifier] {
         models.keys.compactMap { try? ModelIdentifier($0) }
+    }
+    
+    /// Get the currently active/default model identifier
+    public func getCurrentModel() async -> ModelIdentifier? {
+        defaultModelIdentifier
     }
     
     /// Get information about a specific model

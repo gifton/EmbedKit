@@ -70,26 +70,6 @@ public struct EmbeddingVector: Collection, Sendable {
 }
 
 
-/// Strategy for pooling token embeddings into a single vector
-///
-/// Transformer models output one embedding per token. This enum defines
-/// how to combine these into a single vector representing the entire text.
-///
-/// Performance implications:
-/// - `cls`: Fastest, O(1) - just returns first token
-/// - `mean`: O(n) - requires averaging all tokens
-/// - `max`: O(n) - requires comparing all tokens
-/// - `attentionWeighted`: O(n) - most expensive but potentially most accurate
-public enum PoolingStrategy: String, CaseIterable, Sendable {
-    /// Average all token embeddings
-    case mean
-    /// Use only the CLS token embedding
-    case cls
-    /// Take the maximum value across all tokens
-    case max
-    /// Average pooling with attention weights
-    case attentionWeighted
-}
 
 
 /// Protocol for text embedding generation
