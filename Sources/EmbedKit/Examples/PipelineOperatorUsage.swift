@@ -224,7 +224,28 @@ struct PipelineOperatorUsage {
 
 // MARK: - Mock Command and Handler
 
-// Using types from EmbeddingPipelineOperators.swift to avoid duplication
+struct MockEmbedTextCommand: Command {
+    typealias Result = MockEmbedResult
+    let text: String
+}
+
+struct MockEmbedResult: Sendable {
+    let text: String
+    let embedding: [Float]
+    
+    init(text: String) {
+        self.text = text
+        self.embedding = Array(repeating: 0.1, count: 384) // Mock embedding
+    }
+}
+
+struct MockEmbedTextHandler: CommandHandler {
+    typealias CommandType = MockEmbedTextCommand
+    
+    func handle(_ command: MockEmbedTextCommand) async throws -> MockEmbedResult {
+        MockEmbedResult(text: command.text)
+    }
+}
 
 // MARK: - Custom Metadata
 

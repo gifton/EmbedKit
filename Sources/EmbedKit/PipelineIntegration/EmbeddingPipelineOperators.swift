@@ -1,6 +1,9 @@
 import Foundation
 import PipelineKit
 
+// Type alias to avoid namespace conflict with EmbeddingPipeline.Configuration
+typealias EmbedKitConfiguration = Configuration
+
 // MARK: - Helper Functions
 
 /// Creates an embedding pipeline builder for the given handler
@@ -244,7 +247,11 @@ public extension EmbeddingPipeline {
     /// This example shows how to build a pipeline with various middleware components
     static func createWithOperators() async throws -> any Pipeline {
         // Create real dependencies
-        let embedder = MockTextEmbedder()
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: .default,
+            configuration: EmbedKitConfiguration(),
+            enableCaching: true
+        )
         let cache = EmbeddingCache()
         let telemetrySystem = TelemetrySystem()
         
@@ -275,7 +282,13 @@ public extension EmbeddingPipeline {
     /// This example demonstrates pipeline configuration for batch processing scenarios
     static func createBatchPipelineWithOperators() async throws -> any Pipeline {
         // Create dependencies for batch processing
-        let embedder = MockTextEmbedder()
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: .default,
+            configuration: EmbedKitConfiguration(
+                performance: PerformanceConfiguration(useMetalAcceleration: true)
+            ),
+            enableCaching: true
+        )
         let cache = EmbeddingCache()
         let telemetrySystem = TelemetrySystem()
         
@@ -313,7 +326,13 @@ public extension EmbeddingPipeline {
     /// This example shows how to configure a pipeline for streaming scenarios
     static func createStreamingPipeline() async throws -> any Pipeline {
         // Create dependencies
-        let embedder = MockTextEmbedder()
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: .default,
+            configuration: EmbedKitConfiguration(
+                performance: PerformanceConfiguration()
+            ),
+            enableCaching: true
+        )
         let cache = EmbeddingCache()
         let telemetrySystem = TelemetrySystem()
         
@@ -344,7 +363,11 @@ public extension EmbeddingPipeline {
     /// Useful for testing or when maximum performance is needed
     static func createMinimalPipeline() async throws -> any Pipeline {
         // Create minimal dependencies
-        let embedder = MockTextEmbedder()
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: .default,
+            configuration: EmbedKitConfiguration(),
+            enableCaching: false  // Disable caching for minimal setup
+        )
         let cache = EmbeddingCache()
         let telemetrySystem = TelemetrySystem()
         
@@ -361,7 +384,13 @@ public extension EmbeddingPipeline {
     /// Creates a development pipeline with extensive logging and debugging
     static func createDevelopmentPipeline() async throws -> any Pipeline {
         // Create dependencies
-        let embedder = MockTextEmbedder()
+        let embedder = CoreMLTextEmbedder(
+            modelIdentifier: .default,
+            configuration: EmbedKitConfiguration(
+                monitoring: MonitoringConfiguration()
+            ),
+            enableCaching: true
+        )
         let cache = EmbeddingCache()
         let telemetrySystem = TelemetrySystem()
         
@@ -396,86 +425,13 @@ public extension EmbeddingPipeline {
     }
 }
 
-// MARK: - Mock Middleware Types (for examples and testing)
+// MARK: - Additional Middleware Types (for examples and testing)
 
-/// Mock caching middleware that simulates cache operations
-struct CachingMiddleware: Middleware {
-    // Using a simple dictionary for thread-safe caching
-    private let cacheActor = CacheActor()
-    
-    func execute<T: Command>(
-        _ command: T,
-        metadata: CommandMetadata,
-        next: @Sendable (T, CommandMetadata) async throws -> T.Result
-    ) async throws -> T.Result {
-        // Simple cache key based on command type and metadata
-        let cacheKey = "\(type(of: command))-\(metadata.id)"
-        
-        // Check cache first
-        if await cacheActor.hasValue(for: cacheKey) {
-            print("[CachingMiddleware] Cache hit for \(cacheKey)")
-            // In a real implementation, we'd deserialize and return the cached result
-        }
-        
-        // Execute the command
-        let result = try await next(command, metadata)
-        
-        // Cache the result (in a real implementation, we'd serialize it)
-        await cacheActor.setValue(true, for: cacheKey)
-        print("[CachingMiddleware] Cached result for \(cacheKey)")
-        
-        return result
-    }
-}
-
-/// Actor to manage cache state in a thread-safe way
-private actor CacheActor {
-    private var cache: [String: Bool] = [:]
-    
-    func hasValue(for key: String) -> Bool {
-        cache[key] != nil
-    }
-    
-    func setValue(_ value: Bool, for key: String) {
-        cache[key] = value
-    }
-}
-
-/// Mock validation middleware that performs basic command validation
-struct ValidationMiddleware: Middleware {
-    func execute<T: Command>(
-        _ command: T,
-        metadata: CommandMetadata,
-        next: @Sendable (T, CommandMetadata) async throws -> T.Result
-    ) async throws -> T.Result {
-        // Perform validation based on command type
-        if let embedCommand = command as? EmbedTextCommand {
-            guard !embedCommand.text.isEmpty else {
-                throw ContextualEmbeddingError.invalidInput(
-                    context: ErrorContext(
-                        operation: .validation,
-                        metadata: ErrorMetadata().with(key: "reason", value: "Empty text"),
-                        sourceLocation: SourceLocation()
-                    ),
-                    reason: .empty
-                )
-            }
-            guard embedCommand.text.count <= 10_000 else {
-                throw ContextualEmbeddingError.invalidInput(
-                    context: ErrorContext(
-                        operation: .validation,
-                        metadata: ErrorMetadata().with(key: "textLength", value: "\(embedCommand.text.count)"),
-                        sourceLocation: SourceLocation()
-                    ),
-                    reason: .tooLong
-                )
-            }
-        }
-        
-        print("[ValidationMiddleware] Validation passed for \(type(of: command))")
-        return try await next(command, metadata)
-    }
-}
+// Note: Production middleware implementations are available:
+// - EmbeddingCacheMiddleware for caching (in Middleware.swift)
+// - EmbeddingValidationMiddleware for validation (in Middleware.swift)
+// - TelemetryMiddleware for monitoring (in Middleware.swift)
+// - EmbeddingRateLimitMiddleware for rate limiting (in Middleware.swift)
 
 /// Middleware that optimizes batch operations
 struct BatchOptimizationMiddleware: Middleware {
@@ -600,49 +556,9 @@ struct TimingMiddleware: Middleware {
     }
 }
 
-// MARK: - Additional Mock Types for Examples
-
-struct SimpleMockTextEmbedder {
-    init() throws {}
-}
-
-struct MockEmbeddingCache {}
-
-struct MockTelemetrySystem {}
-
-// Note: Real implementations of these types are defined in their respective files:
-// - TelemetryMiddleware is in Middleware.swift
-// - EmbeddingValidationMiddleware is in Middleware.swift
-// - EmbeddingCacheMiddleware is in Middleware.swift
-// - EmbeddingRateLimitMiddleware is in Middleware.swift
-
-struct MockEmbedBatchHandler: CommandHandler {
-    typealias CommandType = MockEmbedTextCommand
-    
-    func handle(_ command: MockEmbedTextCommand) async throws -> MockEmbedResult {
-        MockEmbedResult(text: command.text)
-    }
-}
-
-struct MockEmbedTextCommand: Command {
-    typealias Result = MockEmbedResult
-    let text: String
-}
-
-struct MockEmbedResult: Sendable {
-    let text: String
-    let embedding: [Float]
-    
-    init(text: String) {
-        self.text = text
-        self.embedding = Array(repeating: 0.1, count: 384) // Mock embedding
-    }
-}
-
-struct MockEmbedTextHandler: CommandHandler {
-    typealias CommandType = MockEmbedTextCommand
-    
-    func handle(_ command: MockEmbedTextCommand) async throws -> MockEmbedResult {
-        MockEmbedResult(text: command.text)
-    }
-}
+// Note: All production implementations are available in their respective files:
+// - CoreMLTextEmbedder for embeddings (in Models/CoreMLTextEmbedder.swift)
+// - EmbeddingCache for caching (in Cache/LRUCache.swift)
+// - TelemetrySystem for monitoring (in Monitoring/Telemetry.swift)
+// - All handlers in PipelineIntegration/Handlers.swift
+// - All middleware in PipelineIntegration/Middleware.swift

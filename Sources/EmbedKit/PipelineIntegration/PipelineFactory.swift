@@ -27,8 +27,8 @@ public struct EmbeddingPipelineFactory {
         // Add embedding validation middleware
         middlewares.append(EmbeddingValidationMiddleware())
         
-        // Add caching middleware (defined in EmbeddingPipelineOperators.swift)
-        middlewares.append(CachingMiddleware())
+        // Add caching middleware
+        middlewares.append(EmbeddingCacheMiddleware(cache: EmbeddingCache()))
         
         return middlewares
     }
@@ -338,7 +338,7 @@ public struct PipelineBuilderHelper {
         
         builder = builder
             .addMiddleware(EmbeddingValidationMiddleware())
-            .addMiddleware(CachingMiddleware())
+            .addMiddleware(EmbeddingCacheMiddleware(cache: EmbeddingCache()))
         
         return builder
     }

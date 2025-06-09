@@ -340,18 +340,83 @@ public struct TelemetryMiddleware: ContextAwareMiddleware {
     }
 }
 
+// MARK: - Rate Limiting
+
+/// Token bucket rate limiter implementation
+actor RateLimiter {
+    private var tokens: Double
+    private let capacity: Double
+    private let refillRate: Double // tokens per second
+    private var lastRefillTime: Date
+    
+    init(capacity: Double, refillRate: Double) {
+        self.capacity = capacity
+        self.refillRate = refillRate
+        self.tokens = capacity
+        self.lastRefillTime = Date()
+    }
+    
+    /// Attempts to consume the specified number of tokens
+    /// Returns true if tokens were available, false if rate limit exceeded
+    func tryConsume(_ count: Double) async -> Bool {
+        // Refill tokens based on elapsed time
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastRefillTime)
+        let tokensToAdd = elapsed * refillRate
+        
+        tokens = min(capacity, tokens + tokensToAdd)
+        lastRefillTime = now
+        
+        // Check if we have enough tokens
+        if tokens >= count {
+            tokens -= count
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Waits until the specified number of tokens are available
+    func waitAndConsume(_ count: Double) async throws {
+        while true {
+            if await tryConsume(count) {
+                return
+            }
+            
+            // Calculate wait time
+            let tokensNeeded = count - tokens
+            let waitTime = tokensNeeded / refillRate
+            
+            // Wait with a maximum of 1 second at a time to allow for cancellation
+            let actualWaitTime = min(waitTime, 1.0)
+            try await Task.sleep(nanoseconds: UInt64(actualWaitTime * 1_000_000_000))
+        }
+    }
+    
+    /// Gets current token count (for monitoring)
+    func getCurrentTokens() async -> Double {
+        // Refill before reporting
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastRefillTime)
+        let tokensToAdd = elapsed * refillRate
+        return min(capacity, tokens + tokensToAdd)
+    }
+}
+
 // MARK: - Rate Limiting Middleware
 
 /// Middleware for rate limiting embedding requests
 public struct EmbeddingRateLimitMiddleware: Middleware {
     private let rateLimiter: RateLimiter
     private let logger = EmbedKitLogger.embeddings()
+    private let waitForTokens: Bool
     
-    public init(requestsPerSecond: Double = 100, burstSize: Int = 200) {
+    public init(requestsPerSecond: Double = 100, burstSize: Int = 200, waitForTokens: Bool = true) {
         self.rateLimiter = RateLimiter(
-            strategy: .tokenBucket(capacity: Double(burstSize), refillRate: requestsPerSecond),
-            scope: .global
+            capacity: Double(burstSize),
+            refillRate: requestsPerSecond
         )
+        self.waitForTokens = waitForTokens
     }
     
     public func execute<T: Command>(
@@ -362,10 +427,67 @@ public struct EmbeddingRateLimitMiddleware: Middleware {
         // Calculate cost based on command type
         let cost = calculateCost(for: command)
         
-        // Simple rate limiting implementation
-        // In a real implementation, this would check against actual rate limits
-        logger.debug("Rate limit check passed", context: "cost: \(cost)")
-        return try await next(command, metadata)
+        // Check current token count for monitoring
+        let currentTokens = await rateLimiter.getCurrentTokens()
+        logger.debug("Rate limiter state", context: "tokens: \(currentTokens), cost: \(cost)")
+        
+        // Apply rate limiting
+        if waitForTokens {
+            // Wait until tokens are available
+            do {
+                try await rateLimiter.waitAndConsume(cost)
+                logger.debug("Rate limit check passed after waiting", context: "cost: \(cost)")
+            } catch {
+                logger.error("Rate limiting interrupted", error: error)
+                throw ContextualEmbeddingError.resourceUnavailable(
+                    context: ErrorContext(
+                        operation: .validation,
+                        metadata: ErrorMetadata()
+                            .with(key: "reason", value: "rate_limit_interrupted")
+                            .with(key: "cost", value: "\(cost)")
+                            .with(key: "error", value: error.localizedDescription),
+                        sourceLocation: SourceLocation()
+                    ),
+                    resource: .network
+                )
+            }
+        } else {
+            // Fail fast if no tokens available
+            let consumed = await rateLimiter.tryConsume(cost)
+            if !consumed {
+                logger.warning("Rate limit exceeded", context: "cost: \(cost), tokens: \(currentTokens)")
+                throw ContextualEmbeddingError.resourceUnavailable(
+                    context: ErrorContext(
+                        operation: .validation,
+                        metadata: ErrorMetadata()
+                            .with(key: "reason", value: "rate_limit_exceeded")
+                            .with(key: "cost", value: "\(cost)")
+                            .with(key: "availableTokens", value: "\(currentTokens)")
+                            .with(key: "retryAfter", value: "\((cost - currentTokens) / 100.0)"),
+                        sourceLocation: SourceLocation()
+                    ),
+                    resource: .network
+                )
+            }
+            logger.debug("Rate limit check passed", context: "cost: \(cost)")
+        }
+        
+        // Execute the command
+        let startTime = CFAbsoluteTimeGetCurrent()
+        do {
+            let result = try await next(command, metadata)
+            let duration = CFAbsoluteTimeGetCurrent() - startTime
+            
+            // Log successful execution
+            logger.debug("Command executed within rate limit", 
+                        context: "type: \(type(of: command)), cost: \(cost), duration: \(duration)s")
+            
+            return result
+        } catch {
+            // Log failed execution but don't refund tokens (to prevent abuse)
+            logger.error("Command failed after rate limit check", error: error)
+            throw error
+        }
     }
     
     private func calculateCost<T: Command>(for command: T) -> Double {
