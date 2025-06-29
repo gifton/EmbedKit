@@ -19,12 +19,14 @@ public actor MetalPoolingProcessor {
     ///   - tokenEmbeddings: Array of token embeddings to pool
     ///   - strategy: Pooling strategy to use
     ///   - attentionMask: Optional attention mask for ignoring padding tokens
+    ///   - attentionWeights: Optional attention weights for attention-weighted pooling
     /// - Returns: Single pooled embedding vector
     /// - Throws: MetalError if GPU operations fail
     public func poolEmbeddings(
         _ tokenEmbeddings: [[Float]],
         strategy: PoolingStrategy,
-        attentionMask: [Int]? = nil
+        attentionMask: [Int]? = nil,
+        attentionWeights: [Float]? = nil
     ) async throws -> [Float] {
         guard !tokenEmbeddings.isEmpty else {
             throw MetalError.invalidInput("Empty token embeddings")
@@ -48,10 +50,9 @@ public actor MetalPoolingProcessor {
             )
             
         case .attentionWeighted:
-            // Use attention-weighted pooling if attention weights are available
-            // For now, use uniform weights (equivalent to mean pooling)
-            let uniformWeights = [Float](repeating: 1.0 / Float(sequenceLength), count: sequenceLength)
-            return try await attentionWeightedPooling(tokenEmbeddings, attentionWeights: uniformWeights)
+            // Use provided attention weights if available, otherwise use uniform weights
+            let weights = attentionWeights ?? [Float](repeating: 1.0 / Float(sequenceLength), count: sequenceLength)
+            return try await attentionWeightedPooling(tokenEmbeddings, attentionWeights: weights)
         }
     }
     

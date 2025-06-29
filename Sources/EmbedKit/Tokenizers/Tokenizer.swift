@@ -55,8 +55,8 @@ public actor SimpleTokenizer: Tokenizer {
     private var inverseVocabulary: [Int: String] = [:]
     
     public init(
-        maxSequenceLength: Int = 512,
-        vocabularySize: Int = 30522,
+        maxSequenceLength: Int,
+        vocabularySize: Int,
         specialTokens: SpecialTokens = SpecialTokens()
     ) {
         self.maxSequenceLength = maxSequenceLength
@@ -142,18 +142,28 @@ public struct TokenizerConfiguration: Sendable {
     /// Truncation strategy
     public let truncationStrategy: TruncationStrategy
     
+    /// Maximum sequence length
+    public let maxSequenceLength: Int
+    
+    /// Vocabulary size
+    public let vocabularySize: Int
+    
     public init(
         doLowerCase: Bool = true,
         stripAccents: Bool = true,
         addSpecialTokens: Bool = true,
         paddingStrategy: PaddingStrategy = .maxLength,
-        truncationStrategy: TruncationStrategy = .longestFirst
+        truncationStrategy: TruncationStrategy = .longestFirst,
+        maxSequenceLength: Int,
+        vocabularySize: Int
     ) {
         self.doLowerCase = doLowerCase
         self.stripAccents = stripAccents
         self.addSpecialTokens = addSpecialTokens
         self.paddingStrategy = paddingStrategy
         self.truncationStrategy = truncationStrategy
+        self.maxSequenceLength = maxSequenceLength
+        self.vocabularySize = vocabularySize
     }
 }
 

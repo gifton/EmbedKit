@@ -42,7 +42,7 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
         // Create a new embedder for this model
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: identifier,
-            configuration: Configuration()
+            configuration: Configuration.default(for: identifier)
         )
         
         // Load the model
@@ -146,7 +146,7 @@ public actor DefaultEmbeddingModelManager: EmbeddingModelManager {
 }
 
 /// Information about a loaded model
-public struct ModelInfo: Sendable {
+public struct LoadedModelInfo: Sendable {
     public let identifier: ModelIdentifier
     public let dimensions: Int
     public let isReady: Bool

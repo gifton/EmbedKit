@@ -249,7 +249,7 @@ public extension EmbeddingPipeline {
         // Create real dependencies
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: .default,
-            configuration: EmbedKitConfiguration(),
+            configuration: EmbedKitConfiguration.default(for: .default),
             enableCaching: true
         )
         let cache = EmbeddingCache()
@@ -285,6 +285,7 @@ public extension EmbeddingPipeline {
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: .default,
             configuration: EmbedKitConfiguration(
+                model: ModelConfiguration.custom(identifier: .default, maxSequenceLength: 512),
                 performance: PerformanceConfiguration(useMetalAcceleration: true)
             ),
             enableCaching: true
@@ -329,6 +330,7 @@ public extension EmbeddingPipeline {
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: .default,
             configuration: EmbedKitConfiguration(
+                model: ModelConfiguration.custom(identifier: .default, maxSequenceLength: 512),
                 performance: PerformanceConfiguration()
             ),
             enableCaching: true
@@ -365,7 +367,7 @@ public extension EmbeddingPipeline {
         // Create minimal dependencies
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: .default,
-            configuration: EmbedKitConfiguration(),
+            configuration: EmbedKitConfiguration.default(for: .default),
             enableCaching: false  // Disable caching for minimal setup
         )
         let cache = EmbeddingCache()
@@ -387,6 +389,7 @@ public extension EmbeddingPipeline {
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: .default,
             configuration: EmbedKitConfiguration(
+                model: ModelConfiguration.custom(identifier: .default, maxSequenceLength: 512),
                 monitoring: MonitoringConfiguration()
             ),
             enableCaching: true

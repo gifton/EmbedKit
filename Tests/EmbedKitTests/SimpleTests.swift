@@ -17,7 +17,7 @@ struct SimpleTests {
     
     @Test("Configuration initialization")
     func testConfiguration() {
-        let config = Configuration()
+        let config = Configuration.default(for: .miniLM_L6_v2)
         #expect(config.resources.batchSize == 32)
         #expect(config.model.maxSequenceLength == 512)
     }

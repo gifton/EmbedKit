@@ -25,14 +25,16 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     public let modelIdentifier: ModelIdentifier
     
     private let backend: CoreMLBackend
-    private let tokenizer: any Tokenizer
-    private var _dimensions: Int?
+    private var tokenizer: any Tokenizer
+    nonisolated(unsafe) private var _dimensions: Int?
     private let metalAccelerator: MetalAccelerator?
     private let cache: EmbeddingCache?
     private let memoryAwareCache: MemoryAwareCache?
     
-    public var dimensions: Int {
-        _dimensions ?? 768 // Default BERT dimensions
+    nonisolated public var dimensions: Int {
+        // Return cached dimensions or 0 if unknown
+        // This is updated after model loading
+        _dimensions ?? 0
     }
     
     public var isReady: Bool {
@@ -55,15 +57,19 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     /// - Cache is memory-aware and will auto-evict under pressure
     public init(
         modelIdentifier: ModelIdentifier,
-        configuration: Configuration = Configuration(),
+        configuration: Configuration,
         tokenizer: (any Tokenizer)? = nil,
         enableCaching: Bool = true
     ) {
         self.modelIdentifier = modelIdentifier
         self.configuration = configuration
         self.backend = CoreMLBackend(identifier: modelIdentifier.rawValue)
+        
+        // Use provided tokenizer or create simple one initially with placeholder vocab size
+        // This should be updated after model loading when vocab size is known
         self.tokenizer = tokenizer ?? SimpleTokenizer(
-            maxSequenceLength: configuration.model.maxSequenceLength
+            maxSequenceLength: configuration.model.maxSequenceLength,
+            vocabularySize: 30522 // Default BERT vocab size, will be updated if model provides different value
         )
         
         // Setup Metal acceleration if requested and available
@@ -125,12 +131,38 @@ public actor CoreMLTextEmbedder: TextEmbedder {
         // Update dimensions from model
         if let outputDims = await backend.outputDimensions() {
             self._dimensions = outputDims
+        } else if let metadata = await backend.metadata, metadata.embeddingDimensions > 0 {
+            self._dimensions = metadata.embeddingDimensions
+        }
+        
+        // Log if dimensions are still unknown
+        if self._dimensions == nil {
+            logger.warning("Could not determine embedding dimensions from loaded model")
+        }
+        
+        // Update tokenizer configuration if we have metadata
+        if let metadata = await backend.metadata {
+            // If using SimpleTokenizer and metadata has better info, update it
+            if tokenizer is SimpleTokenizer && metadata.vocabularySize > 0 {
+                let updatedTokenizer = SimpleTokenizer(
+                    maxSequenceLength: metadata.maxSequenceLength > 0 ? metadata.maxSequenceLength : configuration.model.maxSequenceLength,
+                    vocabularySize: metadata.vocabularySize
+                )
+                self.tokenizer = updatedTokenizer
+                logger.info("Updated SimpleTokenizer with metadata: vocab=\(metadata.vocabularySize), maxLength=\(metadata.maxSequenceLength)")
+            }
         }
     }
     
     public func unloadModel() async throws {
         try await backend.unloadModel()
         self._dimensions = nil
+    }
+    
+    /// Update the tokenizer (useful for loading specialized tokenizers after init)
+    public func updateTokenizer(_ newTokenizer: any Tokenizer) async {
+        self.tokenizer = newTokenizer
+        logger.info("Updated tokenizer to \(type(of: newTokenizer))")
     }
     
     public func embed(_ text: String) async throws -> EmbeddingVector {
@@ -166,10 +198,15 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             pooled = try await accelerator.poolEmbeddings(
                 output.tokenEmbeddings,
                 strategy: configuration.model.poolingStrategy,
-                attentionMask: tokenized.attentionMask
+                attentionMask: tokenized.attentionMask,
+                attentionWeights: output.attentionWeights?.first
             )
         } else {
-            pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.model.poolingStrategy)
+            pooled = try pool(
+                tokenEmbeddings: output.tokenEmbeddings, 
+                strategy: configuration.model.poolingStrategy,
+                attentionWeights: output.attentionWeights?.first
+            )
         }
         
         // Normalize if requested
@@ -258,7 +295,8 @@ public actor CoreMLTextEmbedder: TextEmbedder {
                     let pooled = try await accelerator.poolEmbeddings(
                         output.tokenEmbeddings,
                         strategy: configuration.model.poolingStrategy,
-                        attentionMask: tokenized.attentionMask
+                        attentionMask: tokenized.attentionMask,
+                        attentionWeights: output.attentionWeights?.first // Use first batch if available
                     )
                     pooledBatch.append(pooled)
                 }
@@ -277,7 +315,11 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             } else {
                 // CPU processing
                 for output in outputs {
-                    let pooled = try pool(tokenEmbeddings: output.tokenEmbeddings, strategy: configuration.model.poolingStrategy)
+                    let pooled = try pool(
+                        tokenEmbeddings: output.tokenEmbeddings, 
+                        strategy: configuration.model.poolingStrategy,
+                        attentionWeights: output.attentionWeights?.first
+                    )
                     let final = configuration.model.normalizeEmbeddings ? normalize(pooled) : pooled
                     results.append(EmbeddingVector(final))
                 }
@@ -298,7 +340,7 @@ public actor CoreMLTextEmbedder: TextEmbedder {
     /// - Consider pre-allocating result buffer for repeated calls
     /// - Investigate vDSP batch operations for multiple sequences
     /// - Profile Metal kernel vs Accelerate for specific pool strategies
-    private func pool(tokenEmbeddings: [[Float]], strategy: PoolingStrategy) throws -> [Float] {
+    private func pool(tokenEmbeddings: [[Float]], strategy: PoolingStrategy, attentionWeights: [Float]? = nil) throws -> [Float] {
         guard !tokenEmbeddings.isEmpty else {
             throw ContextualEmbeddingError.inferenceFailed(
                 context: ErrorContext(
@@ -371,9 +413,53 @@ public actor CoreMLTextEmbedder: TextEmbedder {
             return result
             
         case .attentionWeighted:
-            // For now, fall back to mean pooling
-            // TODO: Implement attention-weighted pooling when attention weights are available
-            return try pool(tokenEmbeddings: tokenEmbeddings, strategy: .mean)
+            // Use provided attention weights or fall back to uniform weights (mean pooling)
+            let weights = attentionWeights ?? [Float](repeating: 1.0 / Float(tokenEmbeddings.count), count: tokenEmbeddings.count)
+            
+            guard weights.count == tokenEmbeddings.count else {
+                throw ContextualEmbeddingError.inferenceFailed(
+                    context: ErrorContext(
+                        operation: .inference,
+                        modelIdentifier: modelIdentifier,
+                        metadata: ErrorMetadata()
+                            .with(key: "reason", value: "Attention weights count mismatch"),
+                        sourceLocation: SourceLocation()
+                    )
+                )
+            }
+            
+            var result = [Float](repeating: 0, count: embeddingSize)
+            var weightSum: Float = 0
+            
+            // Apply attention weights to each token embedding
+            for (embedding, weight) in zip(tokenEmbeddings, weights) {
+                guard embedding.count == embeddingSize else {
+                    throw ContextualEmbeddingError.dimensionMismatch(
+                        context: ErrorContext(
+                            operation: .inference,
+                            modelIdentifier: modelIdentifier,
+                            metadata: ErrorMetadata()
+                                .with(key: "poolingStrategy", value: "attentionWeighted"),
+                            sourceLocation: SourceLocation()
+                        ),
+                        expected: embeddingSize,
+                        actual: embedding.count
+                    )
+                }
+                
+                // Scale embedding by weight and add to result
+                var scaledEmbedding = embedding
+                vDSP_vsmul(embedding, 1, [weight], &scaledEmbedding, 1, vDSP_Length(embeddingSize))
+                vDSP_vadd(result, 1, scaledEmbedding, 1, &result, 1, vDSP_Length(embeddingSize))
+                weightSum += weight
+            }
+            
+            // Normalize by weight sum
+            if weightSum > 0 {
+                vDSP_vsdiv(result, 1, [weightSum], &result, 1, vDSP_Length(embeddingSize))
+            }
+            
+            return result
         }
     }
     
@@ -399,5 +485,10 @@ public actor CoreMLTextEmbedder: TextEmbedder {
         vDSP_vsdiv(vector, 1, &norm, &result, 1, vDSP_Length(vector.count))
         
         return result
+    }
+    
+    /// Get model metadata
+    public func getMetadata() async -> ModelMetadata? {
+        await backend.metadata
     }
 }

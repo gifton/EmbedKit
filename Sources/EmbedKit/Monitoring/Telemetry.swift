@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 /// Comprehensive telemetry system for monitoring EmbedKit operations
-public actor TelemetrySystem {
+public actor TelemetrySystem: TelemetryProtocol {
     private let logger = Logger(subsystem: "EmbedKit", category: "Telemetry")
     
     private var metrics: [String: Metric] = [:]
@@ -237,6 +237,57 @@ public actor TelemetrySystem {
         return ProcessInfo.processInfo.processorCount > 0 ? 
             (1.0 / Double(ProcessInfo.processInfo.processorCount)) * 100.0 : 0.0
     }
+    
+    // MARK: - TelemetryProtocol Conformance
+    
+    /// Record an event
+    public func recordEvent(_ name: String, properties: [String: Any]) async {
+        let event = TelemetryEvent(
+            name: name,
+            properties: properties.compactMapValues { value in
+                // Convert Any to String for Codable compliance
+                String(describing: value)
+            },
+            timestamp: Date(),
+            severity: .info
+        )
+        recordEvent(event)
+    }
+    
+    /// Record a metric
+    public func recordMetric(_ name: String, value: Double, unit: MetricUnit) async {
+        let metric = Metric(
+            name: name,
+            type: .gauge,
+            value: value,
+            tags: ["unit": unit.rawValue],
+            timestamp: Date()
+        )
+        recordMetric(metric)
+    }
+    
+    /// Track error
+    public func trackError(_ error: Error, context: [String: Any]) async {
+        let errorProperties = context.merging([
+            "error_type": String(describing: type(of: error)),
+            "error_description": error.localizedDescription
+        ]) { _, new in new }
+        
+        let event = TelemetryEvent(
+            name: "error",
+            properties: errorProperties.compactMapValues { String(describing: $0) },
+            timestamp: Date(),
+            severity: .error
+        )
+        recordEvent(event)
+    }
+    
+    /// Flush telemetry data
+    public func flush() async {
+        // Existing events and metrics are already stored
+        // This method can be used to trigger any batch processing
+        logger.info("Flushing telemetry data: \(events.count) events, \(metrics.count) metrics")
+    }
 }
 
 /// Configuration for telemetry system
@@ -288,7 +339,7 @@ public enum MetricType: String, Codable, CaseIterable {
 }
 
 /// Telemetry event for tracking significant occurrences
-public struct TelemetryEvent: Codable {
+public struct TelemetryEvent: Codable, Sendable {
     public let name: String
     public let description: String
     public let severity: EventSeverity
@@ -311,7 +362,7 @@ public struct TelemetryEvent: Codable {
 }
 
 /// Event severity levels
-public enum EventSeverity: String, Codable, CaseIterable {
+public enum EventSeverity: String, Codable, CaseIterable, Sendable {
     case debug = "debug"
     case info = "info"
     case warning = "warning"
@@ -323,18 +374,18 @@ public enum EventSeverity: String, Codable, CaseIterable {
 public struct TimerToken: Sendable {
     private let name: String
     private let startTime: Date
-    private let telemetry: TelemetrySystem
+    private let telemetrySystem: TelemetrySystem
     
     init(name: String, startTime: Date, telemetry: TelemetrySystem) {
         self.name = name
         self.startTime = startTime
-        self.telemetry = telemetry
+        self.telemetrySystem = telemetry
     }
     
     /// Stop the timer and record the duration
     public func stop(tags: [String: String] = [:]) async {
         let duration = Date().timeIntervalSince(startTime)
-        await telemetry.recordTiming(name, duration: duration, tags: tags)
+        await telemetrySystem.recordTiming(name, duration: duration, tags: tags)
     }
 }
 

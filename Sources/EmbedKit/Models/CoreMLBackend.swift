@@ -52,9 +52,12 @@ public actor CoreMLBackend: ModelBackend {
         
         self.model = loadedModel
         
-        // Extract metadata from model description
-        let modelDescription = loadedModel.modelDescription
-        self._metadata = extractMetadata(from: modelDescription)
+        // Extract metadata using enhanced extractor
+        self._metadata = try await CoreMLMetadataExtractor.extractMetadata(
+            from: loadedModel,
+            modelIdentifier: identifier,
+            modelURL: url
+        )
         
         let duration = Date().timeIntervalSince(startTime)
         logger.info("Model loaded successfully in \(duration)s with \(self._metadata?.embeddingDimensions ?? 0) dimensions")
@@ -128,44 +131,6 @@ public actor CoreMLBackend: ModelBackend {
     
     // MARK: - Private Helpers
     
-    private func extractMetadata(from description: MLModelDescription) -> ModelMetadata {
-        // Extract dimensions from output shape
-        var embeddingDimensions = 768 // Default
-        var maxSequenceLength = 512 // Default
-        
-        // Try to find embedding dimensions from outputs
-        for (name, output) in description.outputDescriptionsByName {
-            if let shape = output.multiArrayConstraint?.shape,
-               (name.lowercased().contains("embedding") || name.lowercased().contains("output")) {
-                if let lastDim = shape.last {
-                    embeddingDimensions = lastDim.intValue
-                }
-            }
-        }
-        
-        // Try to find sequence length from inputs
-        for (name, input) in description.inputDescriptionsByName {
-            if let shape = input.multiArrayConstraint?.shape,
-               (name.lowercased().contains("input") || name.lowercased().contains("token")) {
-                if shape.count >= 2 {
-                    maxSequenceLength = shape[shape.count - 2].intValue
-                }
-            }
-        }
-        
-        let metadata = description.metadata[MLModelMetadataKey.description] as? [String: Any] ?? [:]
-        
-        return ModelMetadata(
-            name: metadata["name"] as? String ?? "CoreML Model",
-            version: metadata["version"] as? String ?? "1.0",
-            embeddingDimensions: embeddingDimensions,
-            maxSequenceLength: maxSequenceLength,
-            vocabularySize: 30522, // Default BERT vocab size
-            modelType: "coreml",
-            additionalInfo: [:]
-        )
-    }
-    
 }
 
 // MARK: - Helper for non-isolated predictions
@@ -183,9 +148,12 @@ struct CoreMLPredictionHelper {
         // Extract embeddings from output
         let embeddings = try extractEmbeddings(from: output, model: model)
         
+        // Try to extract attention weights if available
+        let attentionWeights = try? extractAttentionWeights(from: output, model: model)
+        
         return ModelOutput(
             tokenEmbeddings: embeddings,
-            attentionWeights: nil,
+            attentionWeights: attentionWeights,
             metadata: [:]
         )
     }
@@ -287,6 +255,94 @@ struct CoreMLPredictionHelper {
         }
         
         return result
+    }
+    
+    private func extractAttentionWeights(from output: MLFeatureProvider, model: MLModel) throws -> [[Float]]? {
+        let outputDescription = model.modelDescription.outputDescriptionsByName
+        
+        // Look for attention weights in the output
+        // Common names: "attentions", "attention_weights", "attention_scores"
+        for (name, _) in outputDescription {
+            if name.lowercased().contains("attention") && !name.lowercased().contains("mask") {
+                if let featureValue = output.featureValue(for: name),
+                   let multiArray = featureValue.multiArrayValue {
+                    // Extract the last attention layer's weights
+                    // Shape is typically [batch, num_heads, seq_len, seq_len]
+                    // We want to average across heads and extract diagonal or mean
+                    return try extractAttentionFromMultiArray(multiArray)
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractAttentionFromMultiArray(_ multiArray: MLMultiArray) throws -> [[Float]] {
+        let shape = multiArray.shape
+        
+        // Handle different attention tensor shapes
+        if shape.count == 4 {
+            // [batch, num_heads, seq_len, seq_len]
+            let batch = shape[0].intValue
+            let numHeads = shape[1].intValue
+            let seqLen = shape[2].intValue
+            
+            // Average attention weights across all heads
+            var averagedWeights: [[Float]] = []
+            
+            for b in 0..<batch {
+                var tokenWeights = [Float](repeating: 0, count: seqLen)
+                
+                // Average across heads
+                for h in 0..<numHeads {
+                    for i in 0..<seqLen {
+                        // Sum attention from all tokens to token i
+                        var sum: Float = 0
+                        for j in 0..<seqLen {
+                            let index = [b, h, i, j] as [NSNumber]
+                            sum += multiArray[index].floatValue
+                        }
+                        tokenWeights[i] += sum / Float(seqLen)
+                    }
+                }
+                
+                // Average across heads
+                tokenWeights = tokenWeights.map { $0 / Float(numHeads) }
+                averagedWeights.append(tokenWeights)
+            }
+            
+            return averagedWeights
+        } else if shape.count == 3 {
+            // [batch, seq_len, seq_len] - already averaged across heads
+            let batch = shape[0].intValue
+            let seqLen = shape[1].intValue
+            
+            var weights: [[Float]] = []
+            
+            for b in 0..<batch {
+                var tokenWeights = [Float](repeating: 0, count: seqLen)
+                
+                for i in 0..<seqLen {
+                    // Average attention from all tokens to token i
+                    var sum: Float = 0
+                    for j in 0..<seqLen {
+                        let index = [b, i, j] as [NSNumber]
+                        sum += multiArray[index].floatValue
+                    }
+                    tokenWeights[i] = sum / Float(seqLen)
+                }
+                
+                weights.append(tokenWeights)
+            }
+            
+            return weights
+        } else if shape.count == 2 {
+            // [batch, seq_len] - pre-computed attention weights
+            return try convertToFloat2D(multiArray)
+        }
+        
+        // Unsupported shape - return empty array
+        return []
     }
 }
 

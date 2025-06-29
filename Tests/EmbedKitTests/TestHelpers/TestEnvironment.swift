@@ -137,7 +137,8 @@ public actor MockMetalAccelerator: MetalAcceleratorProtocol {
     public func poolEmbeddings(
         _ tokenEmbeddings: [[Float]],
         strategy: PoolingStrategy,
-        attentionMask: [Int]? = nil
+        attentionMask: [Int]? = nil,
+        attentionWeights: [Float]? = nil
     ) async throws -> [Float] {
         guard !tokenEmbeddings.isEmpty else {
             throw MetalError.invalidInput("Empty token embeddings")
@@ -171,9 +172,9 @@ public actor MockMetalAccelerator: MetalAcceleratorProtocol {
             }
             return result
         case .attentionWeighted:
-            // Use uniform weights for testing
-            let uniformWeights = [Float](repeating: 1.0 / Float(tokenEmbeddings.count), count: tokenEmbeddings.count)
-            return try await attentionWeightedPooling(tokenEmbeddings, attentionWeights: uniformWeights)
+            // Use provided weights or uniform weights
+            let weights = attentionWeights ?? [Float](repeating: 1.0 / Float(tokenEmbeddings.count), count: tokenEmbeddings.count)
+            return try await attentionWeightedPooling(tokenEmbeddings, attentionWeights: weights)
         }
     }
     

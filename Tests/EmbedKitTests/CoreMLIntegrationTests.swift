@@ -32,9 +32,10 @@ struct CoreMLIntegrationTests {
         #expect(metadata.modelType == "coreml")
         
         // Create embedder with the model
+        let modelId = ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1")
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1"),
-            configuration: Configuration()
+            modelIdentifier: modelId,
+            configuration: Configuration.default(for: modelId)
         )
         
         // Test embedding
@@ -62,9 +63,14 @@ struct CoreMLIntegrationTests {
     @Test("Batch processing performance", .enabled(if: isModelAvailable))
     func testBatchProcessingPerformance() async throws {
         
+        let modelId = ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1")
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: ModelIdentifier(family: "all-MiniLM", variant: "L6-v2", version: "v1"),
+            modelIdentifier: modelId,
             configuration: Configuration(
+                model: ModelConfiguration.custom(
+                    identifier: modelId,
+                    maxSequenceLength: 512
+                ),
                 resources: ResourceConfiguration(
                     batchSize: 32
                 )

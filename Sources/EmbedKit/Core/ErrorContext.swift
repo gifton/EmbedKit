@@ -241,6 +241,8 @@ public enum ContextualEmbeddingError: ContextualError, LocalizedError {
     case dimensionMismatch(context: ErrorContext, expected: Int, actual: Int, underlyingError: Error? = nil)
     case resourceUnavailable(context: ErrorContext, resource: ResourceType, underlyingError: Error? = nil)
     case configurationError(context: ErrorContext, issue: ConfigurationIssue, underlyingError: Error? = nil)
+    case networkError(context: ErrorContext, statusCode: Int, underlyingError: Error? = nil)
+    case validationFailed(context: ErrorContext, reason: String, underlyingError: Error? = nil)
     
     // MARK: - Context
     
@@ -252,7 +254,9 @@ public enum ContextualEmbeddingError: ContextualError, LocalizedError {
              .invalidInput(let context, _, _),
              .dimensionMismatch(let context, _, _, _),
              .resourceUnavailable(let context, _, _),
-             .configurationError(let context, _, _):
+             .configurationError(let context, _, _),
+             .networkError(let context, _, _),
+             .validationFailed(let context, _, _):
             return context
         }
     }
@@ -265,7 +269,9 @@ public enum ContextualEmbeddingError: ContextualError, LocalizedError {
              .invalidInput(_, _, let error),
              .dimensionMismatch(_, _, _, let error),
              .resourceUnavailable(_, _, let error),
-             .configurationError(_, _, let error):
+             .configurationError(_, _, let error),
+             .networkError(_, _, let error),
+             .validationFailed(_, _, let error):
             return error
         }
     }
@@ -313,6 +319,10 @@ public enum ContextualEmbeddingError: ContextualError, LocalizedError {
             return "\(resource.rawValue) unavailable during \(context.operation.description)"
         case .configurationError(let context, let issue, _):
             return "Configuration error (\(issue.rawValue)) during \(context.operation.description)"
+        case .networkError(let context, let statusCode, _):
+            return "Network error (status code: \(statusCode)) during \(context.operation.description)"
+        case .validationFailed(let context, let reason, _):
+            return "Validation failed (\(reason)) during \(context.operation.description)"
         }
     }
     
@@ -343,6 +353,18 @@ public enum ContextualEmbeddingError: ContextualError, LocalizedError {
             case .incompatible: return "The configuration is incompatible"
             case .outOfRange: return "Configuration values are out of valid range"
             }
+        case .networkError(_, let statusCode, _):
+            if statusCode == 404 {
+                return "The requested resource was not found"
+            } else if statusCode >= 500 {
+                return "Server error occurred"
+            } else if statusCode >= 400 {
+                return "Client request error"
+            } else {
+                return "Network request failed"
+            }
+        case .validationFailed(_, let reason, _):
+            return reason
         default:
             return nil
         }

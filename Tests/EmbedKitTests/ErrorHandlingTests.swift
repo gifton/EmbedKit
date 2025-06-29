@@ -224,7 +224,7 @@ struct ErrorHandlingTests {
     func testGracefulDegradationConfigurationAdjustment() async {
         let manager = GracefulDegradationManager()
         
-        let originalConfig = Configuration()
+        let originalConfig = Configuration.default(for: .miniLM_L6_v2)
         
         // Test normal level - no changes
         var adjustedConfig = await manager.applyDegradation(level: .normal, configuration: originalConfig)

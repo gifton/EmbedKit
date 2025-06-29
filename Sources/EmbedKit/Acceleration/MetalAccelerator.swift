@@ -4,18 +4,13 @@ import OSLog
 
 /// Slim coordinator for Metal-accelerated operations
 /// 
-/// This refactored MetalAccelerator now acts as a lightweight coordinator that delegates
+/// This  MetalAccelerator  acts as a lightweight coordinator that delegates
 /// to specialized processor actors for different types of operations:
 /// - MetalVectorProcessor: Vector normalization and mathematical operations
 /// - MetalPoolingProcessor: Pooling strategies (mean, max, CLS, attention-weighted)
 /// - MetalSimilarityProcessor: Cosine similarity and matrix operations
 /// - MetalResourceManager: Device, queue, and pipeline management
 ///
-/// Benefits of this architecture:
-/// - Single Responsibility Principle: Each component has a focused purpose
-/// - Better testability: Components can be tested in isolation
-/// - Improved maintainability: Changes to one operation type don't affect others
-/// - Enhanced flexibility: Easy to add new operation types or swap implementations
 public actor MetalAccelerator: MetalAcceleratorProtocol {
     nonisolated private let logger = EmbedKitLogger.metal()
     
@@ -75,12 +70,14 @@ public actor MetalAccelerator: MetalAcceleratorProtocol {
     public func poolEmbeddings(
         _ tokenEmbeddings: [[Float]],
         strategy: PoolingStrategy,
-        attentionMask: [Int]? = nil
+        attentionMask: [Int]? = nil,
+        attentionWeights: [Float]? = nil
     ) async throws -> [Float] {
         return try await poolingProcessor.poolEmbeddings(
             tokenEmbeddings,
             strategy: strategy,
-            attentionMask: attentionMask
+            attentionMask: attentionMask,
+            attentionWeights: attentionWeights
         )
     }
     

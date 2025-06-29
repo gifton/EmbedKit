@@ -645,7 +645,7 @@ public actor MockTextEmbedder: TextEmbedder {
     
     public init(dimensions: Int = 768) {
         self.dimensions = dimensions
-        self.configuration = Configuration()
+        self.configuration = Configuration.default(for: .miniLM_L6_v2)
     }
     
     public func loadModel() async throws {

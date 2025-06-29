@@ -39,7 +39,7 @@ let package = Package(
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
             ],
-            exclude: ["PipelineIntegration/README.md"]
+            exclude: ["PipelineIntegration/README.md", "Examples/README.md"]
         ),
         .testTarget(
             name: "EmbedKitTests",

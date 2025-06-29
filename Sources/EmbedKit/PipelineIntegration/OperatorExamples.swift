@@ -13,7 +13,7 @@ func createBasicPipeline() async throws -> any Pipeline {
     // Create dependencies
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -38,7 +38,7 @@ func createPrioritizedPipeline() async throws -> any Pipeline {
     // Create dependencies
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -123,7 +123,7 @@ func createProductionPipeline() async throws -> any Pipeline {
     // Create dependencies
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -169,7 +169,7 @@ func createEmbedKitPipeline() async throws -> any Pipeline {
     // Create dependencies
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -198,7 +198,7 @@ func createEmbedKitPipeline() async throws -> any Pipeline {
 private func createPreprocessingPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -213,7 +213,7 @@ private func createPreprocessingPipeline() async throws -> any Pipeline {
 private func createEmbeddingPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -228,7 +228,7 @@ private func createEmbeddingPipeline() async throws -> any Pipeline {
 private func createPostprocessingPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -242,7 +242,7 @@ private func createPostprocessingPipeline() async throws -> any Pipeline {
 private func createCPUPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -256,7 +256,7 @@ private func createCPUPipeline() async throws -> any Pipeline {
 private func createGPUPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -270,7 +270,7 @@ private func createGPUPipeline() async throws -> any Pipeline {
 private func createMainPipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()
@@ -282,7 +282,7 @@ private func createMainPipeline() async throws -> any Pipeline {
 private func createBasePipeline() async throws -> any Pipeline {
     let embedder = CoreMLTextEmbedder(
         modelIdentifier: "all-MiniLM-L6-v2",
-        configuration: Configuration()
+        configuration: Configuration.default(for: .miniLM_L6_v2)
     )
     let cache = EmbeddingCache()
     let telemetry = TelemetrySystem()

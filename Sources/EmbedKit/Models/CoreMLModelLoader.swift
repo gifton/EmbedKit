@@ -48,7 +48,11 @@ public actor CoreMLModelLoader {
             let modelURL = Bundle.main.url(forResource: model.bundleName, withExtension: "mlmodelc")
                 ?? Bundle.main.url(forResource: model.bundleName, withExtension: "mlpackage")
                 ?? URL(fileURLWithPath: "/tmp/\(model.rawValue).mlmodel") // Fallback
-            let metadata = try await extractMetadata(from: cached, modelId: model.rawValue, url: modelURL)
+            let metadata = try await CoreMLMetadataExtractor.extractMetadata(
+                from: cached,
+                modelIdentifier: model.rawValue,
+                modelURL: modelURL
+            )
             return (cached, metadata)
         }
         
@@ -97,8 +101,12 @@ public actor CoreMLModelLoader {
             // Cache the model
             loadedModels[identifier] = model
             
-            // Extract metadata
-            let metadata = try await extractMetadata(from: model, modelId: identifier, url: url)
+            // Extract metadata using enhanced extractor
+            let metadata = try await CoreMLMetadataExtractor.extractMetadata(
+                from: model,
+                modelIdentifier: identifier,
+                modelURL: url
+            )
             
             logger.complete("Model loaded", result: "\(metadata.embeddingDimensions) dimensions")
             
@@ -119,54 +127,6 @@ public actor CoreMLModelLoader {
         }
     }
     
-    /// Extract metadata from a Core ML model
-    private func extractMetadata(from model: MLModel, modelId: String, url: URL) async throws -> ModelMetadata {
-        let description = model.modelDescription
-        
-        // Get embedding dimensions from output shape
-        guard let outputFeature = description.outputDescriptionsByName.values.first,
-              let multiArray = outputFeature.multiArrayConstraint else {
-            throw ContextualEmbeddingError.inferenceFailed(
-                context: ErrorContext(
-                    operation: .modelLoading,
-                    modelIdentifier: try? ModelIdentifier(modelId),
-                    metadata: ErrorMetadata()
-                        .with(key: "reason", value: "Cannot determine output dimensions"),
-                    sourceLocation: SourceLocation()
-                )
-            )
-        }
-        
-        let dimensions = multiArray.shape.last?.intValue ?? 0
-        
-        // Extract custom metadata if available
-        let userMetadata = description.metadata[MLModelMetadataKey.creatorDefinedKey] as? [String: String] ?? [:]
-        
-        let maxLength = Int(userMetadata["max_length"] ?? "256") ?? 256
-        let poolingStrategy = userMetadata["pooling_strategy"] ?? "mean"
-        let normalize = (userMetadata["normalize"] ?? "true").lowercased() == "true"
-        
-        // Calculate model size from the URL we loaded
-        let modelSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
-        
-        return ModelMetadata(
-            name: modelId,
-            version: description.metadata[.versionString] as? String ?? "1.0",
-            embeddingDimensions: dimensions,
-            maxSequenceLength: maxLength,
-            vocabularySize: Int(userMetadata["vocab_size"] ?? "30522") ?? 30522,
-            modelType: "coreml",
-            additionalInfo: [
-                "source_model": userMetadata["source_model"] ?? modelId,
-                "pooling_strategy": poolingStrategy,
-                "normalize": String(normalize),
-                "compute_units": "all",
-                "fileSize": String(modelSize ?? 0),
-                "author": description.metadata[.author] as? String ?? "",
-                "description": description.metadata[.description] as? String ?? ""
-            ]
-        )
-    }
     
     /// Unload a model from memory
     public func unloadModel(_ identifier: String) async {
@@ -248,9 +208,14 @@ public extension CoreMLModelLoader {
         while let url = enumerator?.nextObject() as? URL {
             if url.pathExtension == "mlmodelc" || url.pathExtension == "mlpackage" {
                 do {
-                    let (_, metadata) = try await loadModel(
+                    let (model, _) = try await loadModel(
                         from: url,
                         identifier: url.deletingPathExtension().lastPathComponent
+                    )
+                    let metadata = try await CoreMLMetadataExtractor.extractMetadata(
+                        from: model,
+                        modelIdentifier: url.deletingPathExtension().lastPathComponent,
+                        modelURL: url
                     )
                     discovered.append(metadata)
                     logger.info("Discovered model", context: metadata.name)

@@ -180,7 +180,7 @@ public actor HotSwappableModelManager: EmbeddingModelManager {
         let modelId = try ModelIdentifier(version.identifier)
         let embedder = CoreMLTextEmbedder(
             modelIdentifier: modelId,
-            configuration: Configuration()
+            configuration: Configuration.default(for: modelId)
         )
         
         try await embedder.loadModel()

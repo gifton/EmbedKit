@@ -64,7 +64,7 @@ struct MetalAcceleratorTests {
             [9.0, 10.0, 11.0, 12.0]
         ]
         
-        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .mean, attentionMask: nil)
+        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .mean, attentionMask: nil, attentionWeights: nil)
         
         // Expected: mean of each dimension
         let expected: [Float] = [5.0, 6.0, 7.0, 8.0]  // (1+5+9)/3, (2+6+10)/3, etc.
@@ -91,7 +91,7 @@ struct MetalAcceleratorTests {
         // Mask: only use first two tokens
         let attentionMask = [1, 1, 0]
         
-        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .mean, attentionMask: attentionMask)
+        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .mean, attentionMask: attentionMask, attentionWeights: nil)
         
         // Expected: mean of first two tokens only
         let expected: [Float] = [2.0, 3.0]  // (1+3)/2, (2+4)/2
@@ -115,7 +115,7 @@ struct MetalAcceleratorTests {
             [3.0, 6.0, 1.0, 12.0]
         ]
         
-        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .max, attentionMask: nil)
+        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .max, attentionMask: nil, attentionWeights: nil)
         
         // Expected: max of each dimension
         let expected: [Float] = [5.0, 10.0, 7.0, 12.0]
@@ -139,7 +139,7 @@ struct MetalAcceleratorTests {
             [9.0, 10.0, 11.0, 12.0]
         ]
         
-        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .cls, attentionMask: nil)
+        let pooled = try await accelerator.poolEmbeddings(tokenEmbeddings, strategy: .cls, attentionMask: nil, attentionWeights: nil)
         
         // Expected: first token (CLS)
         let expected: [Float] = [1.0, 2.0, 3.0, 4.0]

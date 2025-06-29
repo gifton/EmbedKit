@@ -49,7 +49,7 @@ func testTokenizedInput() {
 
 @Test("SimpleTokenizer basic functionality")
 func testSimpleTokenizer() async throws {
-    let tokenizer = SimpleTokenizer(maxSequenceLength: 10)
+    let tokenizer = SimpleTokenizer(maxSequenceLength: 10, vocabularySize: 30522)
     
     let text = "Hello world"
     let tokenized = try await tokenizer.tokenize(text)
@@ -75,7 +75,7 @@ func testSimpleTokenizer() async throws {
 
 @Test("SimpleTokenizer batch processing")
 func testSimpleTokenizerBatch() async throws {
-    let tokenizer = SimpleTokenizer(maxSequenceLength: 8)
+    let tokenizer = SimpleTokenizer(maxSequenceLength: 8, vocabularySize: 30522)
     
     let texts = ["Hello", "World peace", "Testing tokenization"]
     let tokenizedBatch = try await tokenizer.tokenize(batch: texts)
@@ -91,7 +91,7 @@ func testSimpleTokenizerBatch() async throws {
 
 @Test("Configuration defaults")
 func testConfiguration() {
-    let config = Configuration()
+    let config = Configuration.default(for: .miniLM_L6_v2)
     
     #expect(config.model.maxSequenceLength == 512)
     #expect(config.model.normalizeEmbeddings == true)

@@ -23,8 +23,8 @@ public struct ModelConfiguration: Sendable {
     public let computeUnits: ComputeUnits
     
     public init(
-        identifier: ModelIdentifier = .default,
-        maxSequenceLength: Int = 512,
+        identifier: ModelIdentifier,
+        maxSequenceLength: Int,
         normalizeEmbeddings: Bool = true,
         poolingStrategy: PoolingStrategy = .mean,
         loadingOptions: LoadingOptions = LoadingOptions(),
@@ -38,33 +38,68 @@ public struct ModelConfiguration: Sendable {
         self.computeUnits = computeUnits
     }
     
-    // MARK: - Presets
+    // MARK: - Model-Specific Factory Methods
     
-    public static let `default` = ModelConfiguration()
+    /// Create configuration for MiniLM-L6-v2 model
+    public static func miniLM_L6_v2(
+        normalizeEmbeddings: Bool = true,
+        poolingStrategy: PoolingStrategy = .mean,
+        loadingOptions: LoadingOptions = LoadingOptions(),
+        computeUnits: ComputeUnits = .auto
+    ) -> ModelConfiguration {
+        ModelConfiguration(
+            identifier: .miniLM_L6_v2,
+            maxSequenceLength: 512,
+            normalizeEmbeddings: normalizeEmbeddings,
+            poolingStrategy: poolingStrategy,
+            loadingOptions: loadingOptions,
+            computeUnits: computeUnits
+        )
+    }
     
-    public static let highPerformance = ModelConfiguration(
-        maxSequenceLength: 256,
-        computeUnits: .cpuAndGPU
-    )
+    /// Create configuration for a custom model with explicit dimensions
+    public static func custom(
+        identifier: ModelIdentifier,
+        maxSequenceLength: Int,
+        normalizeEmbeddings: Bool = true,
+        poolingStrategy: PoolingStrategy = .mean,
+        loadingOptions: LoadingOptions = LoadingOptions(),
+        computeUnits: ComputeUnits = .auto
+    ) -> ModelConfiguration {
+        ModelConfiguration(
+            identifier: identifier,
+            maxSequenceLength: maxSequenceLength,
+            normalizeEmbeddings: normalizeEmbeddings,
+            poolingStrategy: poolingStrategy,
+            loadingOptions: loadingOptions,
+            computeUnits: computeUnits
+        )
+    }
     
-    public static let memoryOptimized = ModelConfiguration(
-        maxSequenceLength: 128,
-        loadingOptions: LoadingOptions(preloadWeights: false),
-        computeUnits: .cpuOnly
-    )
+    /// Create high-performance configuration with explicit dimensions
+    public static func highPerformance(
+        identifier: ModelIdentifier,
+        maxSequenceLength: Int
+    ) -> ModelConfiguration {
+        ModelConfiguration(
+            identifier: identifier,
+            maxSequenceLength: maxSequenceLength,
+            computeUnits: .cpuAndGPU
+        )
+    }
     
-    public static let production = ModelConfiguration(
-        identifier: .miniLM_L6_v2,
-        maxSequenceLength: 512,
-        normalizeEmbeddings: true,
-        poolingStrategy: .mean,
-        loadingOptions: LoadingOptions(
-            preloadWeights: true,
-            enableOptimizations: true,
-            verifyIntegrity: true
-        ),
-        computeUnits: .auto
-    )
+    /// Create memory-optimized configuration with explicit dimensions
+    public static func memoryOptimized(
+        identifier: ModelIdentifier,
+        maxSequenceLength: Int
+    ) -> ModelConfiguration {
+        ModelConfiguration(
+            identifier: identifier,
+            maxSequenceLength: maxSequenceLength,
+            loadingOptions: LoadingOptions(preloadWeights: false),
+            computeUnits: .cpuOnly
+        )
+    }
 }
 
 /// Model loading options

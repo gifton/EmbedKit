@@ -110,3 +110,5 @@ Desktop.ini
 
 # Xcode SPM integration
 .swiftpm/xcode/
+.claude
+devdocs

@@ -14,6 +14,7 @@
 
 // MARK: - Core Protocols and Types
 @_exported import Foundation
+@_exported import PipelineKit
 
 // MARK: - Core Embedding Types
 public typealias EmbedKit_EmbeddingVector = EmbeddingVector
@@ -32,9 +33,6 @@ public typealias EmbedKit_TelemetryEvent = TelemetryEvent
 public typealias EmbedKit_MetricSummary = MetricSummary
 
 // MARK: - Global Services
-/// Global telemetry system instance
-public let telemetry = TelemetrySystem()
-
 /// Global graceful degradation manager
 public let degradationManager = GracefulDegradationManager()
 
@@ -44,11 +42,12 @@ public enum EmbedKit {
     /// Create a production-ready text embedder with error handling and telemetry
     public static func createEmbedder(
         modelIdentifier: ModelIdentifier = .default,
-        configuration: Configuration = Configuration()
+        configuration: Configuration? = nil
     ) -> CoreMLTextEmbedder {
+        let config = configuration ?? Configuration.default(for: modelIdentifier)
         let embedder = CoreMLTextEmbedder(
-            modelIdentifier: modelIdentifier, 
-            configuration: configuration
+            modelIdentifier: modelIdentifier,
+            configuration: config
         )
         
         Task {
@@ -68,7 +67,7 @@ public enum EmbedKit {
         embedder: Embedder,
         configuration: StreamingEmbedder<Embedder>.StreamingConfiguration = StreamingEmbedder<Embedder>.StreamingConfiguration()
     ) -> StreamingEmbedder<Embedder> {
-        return StreamingEmbedder(embedder: embedder, configuration: configuration)
+        StreamingEmbedder(embedder: embedder, configuration: configuration)
     }
     
     /// Create a hot-swappable model manager
@@ -76,7 +75,7 @@ public enum EmbedKit {
         registry: ModelVersionRegistry = ModelVersionRegistry(),
         maxConcurrentModels: Int = 3
     ) -> HotSwappableModelManager {
-        return HotSwappableModelManager(
+        HotSwappableModelManager(
             registry: registry,
             maxConcurrentModels: maxConcurrentModels
         )
@@ -87,8 +86,15 @@ public enum EmbedKit {
         let systemMetrics = await telemetry.getSystemMetrics()
         let degradationStatus = await degradationManager.getDegradationStatus()
         
+        // Calculate error count from recent telemetry events
+        let recentEvents = await telemetry.getRecentEvents(limit: 1000)
+        let recentErrors = recentEvents.filter { event in
+            event.severity == .error && 
+            Date().timeIntervalSince(event.timestamp) <= 300 // Last 5 minutes
+        }.count
+        
         return HealthStatus(
-            errorCount: 0, // No longer tracking via ErrorHandlingSystem
+            errorCount: recentErrors,
             memoryUsage: systemMetrics.memoryUsage,
             degradationLevel: degradationStatus.values.max() ?? .normal,
             timestamp: Date()
@@ -104,8 +110,8 @@ public struct HealthStatus {
     public let timestamp: Date
     
     public var isHealthy: Bool {
-        errorCount < 10 && 
-        memoryUsage < 0.8 && 
+        errorCount < 10 &&
+        memoryUsage < 0.8 &&
         degradationLevel.rawValue <= GracefulDegradationManager.DegradationLevel.reduced.rawValue
     }
     

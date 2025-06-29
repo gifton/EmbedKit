@@ -42,7 +42,7 @@ public struct Configuration: Sendable {
     // MARK: - Initialization
     
     public init(
-        model: ModelConfiguration = ModelConfiguration(),
+        model: ModelConfiguration,
         resources: ResourceConfiguration = ResourceConfiguration(),
         performance: PerformanceConfiguration = PerformanceConfiguration(),
         monitoring: MonitoringConfiguration = MonitoringConfiguration(),
@@ -57,30 +57,53 @@ public struct Configuration: Sendable {
         self.errorHandling = errorHandling
     }
     
-    // MARK: - Presets
+    // MARK: - Factory Methods
     
-    /// Default balanced configuration
-    public static let `default` = Configuration()
+    /// Create default configuration for a specific model
+    public static func `default`(for modelIdentifier: ModelIdentifier) -> Configuration {
+        Configuration(
+            model: ModelConfiguration.custom(
+                identifier: modelIdentifier,
+                maxSequenceLength: 512
+            )
+        )
+    }
     
-    /// High-performance configuration
-    public static let highPerformance = Configuration(
-        model: .highPerformance,
-        resources: .unlimited,
-        performance: .maximum,
-        cache: .aggressive
-    )
+    /// Create high-performance configuration for a specific model
+    public static func highPerformance(
+        for modelIdentifier: ModelIdentifier,
+        maxSequenceLength: Int = 256
+    ) -> Configuration {
+        Configuration(
+            model: ModelConfiguration.highPerformance(
+                identifier: modelIdentifier,
+                maxSequenceLength: maxSequenceLength
+            ),
+            resources: .unlimited,
+            performance: .maximum,
+            cache: .aggressive
+        )
+    }
     
-    /// Memory-optimized configuration
-    public static let memoryOptimized = Configuration(
-        model: .memoryOptimized,
-        resources: .constrained,
-        performance: .balanced,
-        cache: .minimal
-    )
+    /// Create memory-optimized configuration for a specific model
+    public static func memoryOptimized(
+        for modelIdentifier: ModelIdentifier,
+        maxSequenceLength: Int = 128
+    ) -> Configuration {
+        Configuration(
+            model: ModelConfiguration.memoryOptimized(
+                identifier: modelIdentifier,
+                maxSequenceLength: maxSequenceLength
+            ),
+            resources: .constrained,
+            performance: .balanced,
+            cache: .minimal
+        )
+    }
     
-    /// Production configuration with full monitoring
-    public static let production = Configuration(
-        model: .production,
+    /// Create production configuration for miniLM model
+    public static let productionMiniLM = Configuration(
+        model: ModelConfiguration.miniLM_L6_v2(),
         resources: .managed,
         performance: .optimized,
         monitoring: .comprehensive,

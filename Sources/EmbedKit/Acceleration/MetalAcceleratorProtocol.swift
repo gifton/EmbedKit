@@ -18,7 +18,8 @@ public protocol MetalAcceleratorProtocol: Actor {
     func poolEmbeddings(
         _ tokenEmbeddings: [[Float]],
         strategy: PoolingStrategy,
-        attentionMask: [Int]?
+        attentionMask: [Int]?,
+        attentionWeights: [Float]?
     ) async throws -> [Float]
     
     /// Attention-weighted pooling implementation

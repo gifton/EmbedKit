@@ -229,7 +229,7 @@ struct PipelineIntegrationTests {
 // Using MockTextEmbedder from ComprehensiveBenchmarks.swift
 
 actor FailingTextEmbedder: TextEmbedder {
-    let configuration = Configuration()
+    let configuration = Configuration.default(for: ModelIdentifier(family: "failing", variant: "test", version: "v1"))
     let dimensions = 384
     let modelIdentifier = ModelIdentifier(family: "failing", variant: "test", version: "v1")
     let isReady = true
