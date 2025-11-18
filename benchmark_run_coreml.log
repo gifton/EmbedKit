@@ -1,0 +1,220 @@
+Building for production...
+[0/2] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.37s)
+Test Suite 'Selected tests' started at 2025-10-21 23:28:04.867.
+Test Suite 'EmbedKitPackageTests.xctest' started at 2025-10-21 23:28:04.870.
+Test Suite 'CoreMLInferenceBenchmarks' started at 2025-10-21 23:28:04.870.
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_20items]' started.
+/Users/goftin/dev/gsuite/VSK/EmbedKit/Tests/EmbedKitBenchmarks/CoreBenchmarks/CoreMLInferenceBenchmarks.swift:123: error: -[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_20items] : XCTAssertLessThan failed: ("3.1352680921554565") is not less than ("1.0") - Batch inference (20 items) p50: 3135.27 ms
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_20items]' failed (108.636 seconds).
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_50items]' started.
+/Users/goftin/dev/gsuite/VSK/EmbedKit/Tests/EmbedKitBenchmarks/CoreBenchmarks/CoreMLInferenceBenchmarks.swift:150: error: -[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_50items] : XCTAssertLessThan failed: ("7.849295020103455") is not less than ("2.5") - Large batch inference (50 items) p50: 7849.30 ms
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_50items]' failed (196.880 seconds).
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_5items]' started.
+/Users/goftin/dev/gsuite/VSK/EmbedKit/Tests/EmbedKitBenchmarks/CoreBenchmarks/CoreMLInferenceBenchmarks.swift:93: error: -[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_5items] : XCTAssertLessThan failed: ("0.7983289957046509") is not less than ("0.25") - Batch inference (5 items) p50: 798.33 ms
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testBatchInference_5items]' failed (87.858 seconds).
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testInferenceLatency_CPUvsCPUAndNeuralEngine]' started.
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testInferenceLatency_CPUvsCPUAndNeuralEngine]' passed (13.000 seconds).
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testInferenceLatency_VariableLength]' started.
+/Users/goftin/dev/gsuite/VSK/EmbedKit/Sources/EmbedKit/Core/CoreMLBackend.swift:191: error: -[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testInferenceLatency_VariableLength] : failed: caught error: "Error Domain=com.apple.CoreML Code=0 "MultiArray shape (1 x 128) does not match the shape (1 x 512) specified in the model description" UserInfo={NSLocalizedDescription=MultiArray shape (1 x 128) does not match the shape (1 x 512) specified in the model description}"
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testInferenceLatency_VariableLength]' failed (0.037 seconds).
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testSingleInferenceLatency]' started.
+/Users/goftin/dev/gsuite/VSK/EmbedKit/Tests/EmbedKitBenchmarks/CoreBenchmarks/CoreMLInferenceBenchmarks.swift:64: error: -[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testSingleInferenceLatency] : XCTAssertTrue failed - Single inference performance target not met:
+- p50: 177.01 ms (target: <50ms)
+- p99: 181.97 ms (target: <100ms)
+Test Case '-[EmbedKitBenchmarks.CoreMLInferenceBenchmarks testSingleInferenceLatency]' failed (19.481 seconds).
+Test Suite 'CoreMLInferenceBenchmarks' failed at 2025-10-21 23:35:10.764.
+	 Executed 6 tests, with 5 failures (1 unexpected) in 425.892 (425.894) seconds
+Test Suite 'EmbedKitPackageTests.xctest' failed at 2025-10-21 23:35:10.764.
+	 Executed 6 tests, with 5 failures (1 unexpected) in 425.892 (425.894) seconds
+Test Suite 'Selected tests' failed at 2025-10-21 23:35:10.764.
+	 Executed 6 tests, with 5 failures (1 unexpected) in 425.892 (425.897) seconds
+📊 Benchmarking: CoreML Batch Inference (20×512 tokens)
+  🔥 Warming up (5 iterations)...
+  ⏱️  Measuring (20 iterations)...
+    25% complete
+    50% complete
+    75% complete
+  ✅ Complete:
+     p50: 3135.27 ms
+     p95: 10168.26 ms
+     p99: 10168.26 ms
+     Memory: -20480 bytes per operation
+     ⚠️  High variability (CV: 0.42)
+
+✅ Batch Inference (20 items):
+   p50: 3135.27 ms
+   Per-item: 156.76 ms
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+📊 CoreML Batch Inference (20×512 tokens)
+   p50: 3135.27 ms
+   p95: 10168.26 ms
+   p99: 10168.26 ms
+   Memory: -20480 bytes
+   ⚠️  High variability (CV: 0.42)
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-29-53Z.json
+   - BENCHMARK_RESULTS_COREML.md
+📊 Benchmarking: CoreML Large Batch Inference (50×512 tokens)
+  🔥 Warming up (5 iterations)...
+  ⏱️  Measuring (20 iterations)...
+    25% complete
+    50% complete
+    75% complete
+  ✅ Complete:
+     p50: 7849.30 ms
+     p95: 8444.63 ms
+     p99: 8444.63 ms
+     Memory: -1120665 bytes per operation
+
+✅ Large Batch Inference (50 items):
+   p50: 7849.30 ms
+   Per-item: 156.99 ms
+   Throughput: 6.4 inferences/sec
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+📊 CoreML Large Batch Inference (50×512 tokens)
+   p50: 7849.30 ms
+   p95: 8444.63 ms
+   p99: 8444.63 ms
+   Memory: -1120665 bytes
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-33-10Z.json
+   - BENCHMARK_RESULTS_COREML.md
+📊 Benchmarking: CoreML Batch Inference (5×512 tokens)
+  🔥 Warming up (10 iterations)...
+  ⏱️  Measuring (100 iterations)...
+    25% complete
+    50% complete
+    75% complete
+  ✅ Complete:
+     p50: 798.33 ms
+     p95: 807.50 ms
+     p99: 848.01 ms
+     Memory: 9.44 KB per operation
+
+✅ Batch Inference (5 items):
+   p50: 798.33 ms
+   Per-item: 159.67 ms
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+📊 CoreML Batch Inference (5×512 tokens)
+   p50: 798.33 ms
+   p95: 807.50 ms
+   p99: 848.01 ms
+   Memory: 9.44 KB
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-34-38Z.json
+   - BENCHMARK_RESULTS_COREML.md
+📊 Benchmarking: CoreML Inference (CPU-only)
+  🔥 Warming up (5 iterations)...
+  ⏱️  Measuring (30 iterations)...
+    50% complete
+  ✅ Complete:
+     p50: 186.73 ms
+     p95: 188.19 ms
+     p99: 188.22 ms
+     Memory: 1.07 KB per operation
+
+📊 Benchmarking: CoreML Inference (ANE-enabled)
+  🔥 Warming up (5 iterations)...
+  ⏱️  Measuring (30 iterations)...
+    50% complete
+  ✅ Complete:
+     p50: 177.39 ms
+     p95: 180.38 ms
+     p99: 180.44 ms
+     Memory: -5461 bytes per operation
+
+⚡ CPU vs ANE Comparison:
+   CPU-only: 186.73 ms
+   ANE-enabled: 177.39 ms
+   Speedup: 1.1x
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+📊 CoreML Inference (CPU-only)
+   p50: 186.73 ms
+   p95: 188.19 ms
+   p99: 188.22 ms
+   Memory: 1.07 KB
+
+📊 CoreML Inference (ANE-enabled)
+   p50: 177.39 ms
+   p95: 180.38 ms
+   p99: 180.44 ms
+   Memory: -5461 bytes
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-34-51Z.json
+   - BENCHMARK_RESULTS_COREML.md
+📊 Benchmarking: CoreML Inference (128 tokens)
+  🔥 Warming up (5 iterations)...
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-34-51Z.json
+   - BENCHMARK_RESULTS_COREML.md
+📊 Benchmarking: CoreML Single Inference (512 tokens)
+  🔥 Warming up (10 iterations)...
+  ⏱️  Measuring (100 iterations)...
+    25% complete
+    50% complete
+    75% complete
+  ✅ Complete:
+     p50: 177.01 ms
+     p95: 179.79 ms
+     p99: 181.97 ms
+     Memory: 0 bytes per operation
+
+✅ Single Inference:
+   p50: 177.01 ms
+   p99: 181.97 ms
+
+================================================================================
+BENCHMARK SUMMARY
+================================================================================
+
+📊 CoreML Single Inference (512 tokens)
+   p50: 177.01 ms
+   p95: 179.79 ms
+   p99: 181.97 ms
+   Memory: 0 bytes
+
+================================================================================
+
+📄 Results exported to:
+   - /Users/goftin/dev/gsuite/VSK/EmbedKit/benchmark_results_coreml_2025-10-22T06-35-10Z.json
+   - BENCHMARK_RESULTS_COREML.md
+􀟈  Test run started.
+􀄵  Testing Library Version: 1085
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.

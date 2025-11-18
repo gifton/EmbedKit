@@ -1,0 +1,33 @@
+{
+  "originHash" : "49bdd43bffb1dc1b9c5fa37526f0e1da3968eee5b0cf01404038d7ac28c7c497",
+  "pins" : [
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log.git",
+      "state" : {
+        "revision" : "ce592ae52f982c847a4efc0dd881cc9eb32d29f2",
+        "version" : "1.6.4"
+      }
+    },
+    {
+      "identity" : "vectorcore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gifton/VectorCore.git",
+      "state" : {
+        "revision" : "8d9c0064855035533f6b61f0fad73c3e813cb7fd",
+        "version" : "0.1.4"
+      }
+    },
+    {
+      "identity" : "vectorindex",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gifton/VectorIndex.git",
+      "state" : {
+        "revision" : "5ce253de14a73a5fbbfec7909ab540a9cfcd89dd",
+        "version" : "0.1.1"
+      }
+    }
+  ],
+  "version" : 3
+}
