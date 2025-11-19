@@ -137,7 +137,7 @@ public struct BatchResult {
 
 ## Day 3-4: Apple Model Basic Implementation
 
-### File: `Sources/EmbedKit/Models/AppleEmbeddingModel.swift`
+### File: `Sources/EmbedKit/Models/DefaultEmbeddingModel.swift`
 
 ```swift
 // IMPLEMENTATION CHECKLIST:
@@ -150,7 +150,7 @@ public struct BatchResult {
 **Minimum Viable Implementation:**
 
 ```swift
-public actor AppleEmbeddingModel: EmbeddingModel {
+public actor DefaultEmbeddingModel: EmbeddingModel {
     // Week 1: Get it working, optimize later
 
     public func embed(_ text: String) async throws -> Embedding {

@@ -36,10 +36,10 @@ let package = Package(
         // VSK dependencies - Official releases
         .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.4"),
         .package(url: "https://github.com/gifton/VectorIndex.git", from: "0.1.1"),
-        // .package(path: "../VectorAccelerate"),  // Temporarily disabled due to Swift 6 concurrency issues
-
+        
         // System dependencies
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+        .package(url: "https://github.com/apple/swift-async-algorithms", from: "0.1.0"),
     ],
     targets: [
         .target(
@@ -47,14 +47,10 @@ let package = Package(
             dependencies: [
                 .product(name: "VectorCore", package: "VectorCore"),
                 .product(name: "VectorIndex", package: "VectorIndex"),
-                // .product(name: "VectorAccelerate", package: "VectorAccelerate"),  // Temporarily disabled
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
             ],
-            exclude: [
-                // Exclude Metal shader source files (using precompiled metallib instead)
-                "Shaders/Kernels",
-                "Shaders/README.md"
-            ],
+            exclude: [],
             resources: [
                 // Precompiled Metal shader library
                 // Compile shaders with: ./Scripts/CompileMetalShaders.sh
@@ -73,18 +69,6 @@ let package = Package(
             name: "EmbedKitTests",
             dependencies: ["EmbedKit"]
         ),
-        .testTarget(
-            name: "EmbedKitBenchmarks",
-            dependencies: ["EmbedKit"],
-            path: "Tests/EmbedKitBenchmarks",
-            swiftSettings: [
-                .enableUpcomingFeature("BareSlashRegexLiterals"),
-                .enableUpcomingFeature("ConciseMagicFile"),
-                .enableUpcomingFeature("ForwardTrailingClosures"),
-                .enableUpcomingFeature("ImplicitOpenExistentials"),
-                .enableUpcomingFeature("DisableOutwardActorInference"),
-                .enableExperimentalFeature("StrictConcurrency"),
-            ]
-        ),
+
     ]
 )
