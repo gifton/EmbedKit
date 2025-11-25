@@ -272,15 +272,16 @@ kernel void tensor_mean_pool_cooperative(
     device float* output            [[buffer(1)]],
     device const int32_t* mask      [[buffer(2)]],
     constant TensorPoolingParams& params [[buffer(3)]],
-    uint2 gid                       [[thread_position_in_grid]],
     uint2 tgid                      [[threadgroup_position_in_grid]],
-    uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
+    uint2 tid2                      [[thread_position_in_threadgroup]],
+    uint2 tgSize2                   [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
     const int d = tgid.x;  // dimension index
     const int b = tgid.y;  // batch index
+    const uint tid = tid2.x;
+    const uint tgSize = tgSize2.x;
 
     if (d >= params.dimensions || b >= params.batchSize) return;
 

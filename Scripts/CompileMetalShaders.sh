@@ -52,13 +52,36 @@ OPTIMIZATION_LEVEL="-O3"
 
 # Expected kernels (for validation)
 EXPECTED_KERNELS=(
+    # Legacy kernels (single-item operations)
     "l2_normalize"
-    "l2_normalize_batch_optimized"  # Batch-optimized kernel for improved throughput
+    "l2_normalize_batch_optimized"
     "mean_pool"
     "max_pool"
     "attention_weighted_pool"
     "cosine_similarity"
     "cosine_similarity_batch"
+
+    # Metal 4 Tensor Pooling kernels (Phase 3)
+    "tensor_mean_pool"
+    "tensor_max_pool"
+    "tensor_cls_pool"
+    "tensor_pool_unified"
+    "tensor_mean_pool_cooperative"
+
+    # Metal 4 Tensor Normalization kernels (Phase 3)
+    "tensor_l2_normalize_with_norms"
+    "tensor_compute_norms"
+    "tensor_l2_normalize_fused"
+    "tensor_l2_normalize_stable"
+    "tensor_l2_normalize_inplace"
+
+    # Metal 4 Fused Operations kernels (Phase 3)
+    "fused_mean_pool_normalize"
+    "fused_max_pool_normalize"
+    "fused_pool_normalize_unified"
+    "tensor_similarity_matrix_normalized"
+    "tensor_similarity_matrix_full"
+    "fused_embed_compare_pipeline"
 )
 
 # ============================================================================

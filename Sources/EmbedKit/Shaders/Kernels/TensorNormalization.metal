@@ -65,13 +65,13 @@ kernel void tensor_compute_norms(
     device const float* input       [[buffer(0)]],
     device float* norms             [[buffer(1)]],  // Output norms [batchSize]
     constant TensorNormParams& params [[buffer(2)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;  // batch index
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 
@@ -128,13 +128,13 @@ kernel void tensor_l2_normalize_fused(
     device const float* input       [[buffer(0)]],
     device float* output            [[buffer(1)]],
     constant TensorNormParams& params [[buffer(2)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;  // batch index
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 
@@ -202,13 +202,13 @@ kernel void tensor_l2_normalize_stable(
     device const float* input       [[buffer(0)]],
     device float* output            [[buffer(1)]],
     constant TensorNormParams& params [[buffer(2)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 
@@ -276,13 +276,13 @@ kernel void tensor_l2_normalize_stable(
 kernel void tensor_l2_normalize_inplace(
     device float* data              [[buffer(0)]],
     constant TensorNormParams& params [[buffer(1)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 

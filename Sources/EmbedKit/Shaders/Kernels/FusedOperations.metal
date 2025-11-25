@@ -41,13 +41,13 @@ kernel void fused_mean_pool_normalize(
     device float* output            [[buffer(1)]],
     device const int32_t* mask      [[buffer(2)]],
     constant FusedPoolNormParams& params [[buffer(3)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;  // batch index
+    // b = batch index (one threadgroup per batch item)
+    const uint tgSize = 256;  // Assumed threadgroup size
 
     if (b >= params.batchSize) return;
 
@@ -149,13 +149,13 @@ kernel void fused_max_pool_normalize(
     device float* output            [[buffer(1)]],
     device const int32_t* mask      [[buffer(2)]],
     constant FusedPoolNormParams& params [[buffer(3)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 
@@ -246,13 +246,13 @@ kernel void fused_pool_normalize_unified(
     device float* output            [[buffer(1)]],
     device const int32_t* mask      [[buffer(2)]],
     constant FusedPoolNormParams& params [[buffer(3)]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
+    uint b                          [[threadgroup_position_in_grid]],
     uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]],
     uint simd_lane                  [[thread_index_in_simdgroup]],
     uint simd_size                  [[threads_per_simdgroup]]
 ) {
-    const int b = tgid.y;
+    // b = batch index
+    const uint tgSize = 256;
 
     if (b >= params.batchSize) return;
 
@@ -466,10 +466,7 @@ kernel void fused_embed_compare_pipeline(
     device float* pooledB           [[buffer(5)]],  // [batchB * dims] intermediate
     device float* similarities      [[buffer(6)]],  // [batchA * batchB] output
     constant EmbeddingPipelineParams& params [[buffer(7)]],
-    uint2 gid                       [[thread_position_in_grid]],
-    uint2 tgid                      [[threadgroup_position_in_grid]],
-    uint tid                        [[thread_index_in_threadgroup]],
-    uint tgSize                     [[threads_per_threadgroup]]
+    uint2 gid                       [[thread_position_in_grid]]
 ) {
     // This kernel processes in phases:
     // Phase 1: Pool + Normalize batch A (if not already done)
