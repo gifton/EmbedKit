@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "id" : "94741223-81EB-4FC7-B489-82D71A9954CB",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "performanceAntipatternCheckerEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "EmbedKitTests",
+        "name" : "EmbedKitTests"
+      }
+    }
+  ],
+  "version" : 1
+}

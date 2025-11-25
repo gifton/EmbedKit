@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "defaultOptions": {
+    "testTimeoutsEnabled": false,
+    "maximumTestRepetitions": 1,
+    "targetForVariableExpansion": {
+      "containerPath": "container:EmbedKit",
+      "identifier": "EmbedKit",
+      "name": "EmbedKit"
+    }
+  },
+  "configurations": [
+    {
+      "name": "Default",
+      "options": {
+        "codeCoverage": false,
+        "systemAttachmentLifetime": "keepNever",
+        "enableAddressSanitizer": false,
+        "enableThreadSanitizer": false,
+        "enableUndefinedBehaviorSanitizer": false
+      }
+    }
+  ],
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:EmbedKit",
+        "identifier": "EmbedKitTests",
+        "name": "EmbedKitTests"
+      }
+    }
+  ]
+}
+
