@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "7EA6189F-5D0D-47E6-92D1-8C07A93A06E5",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "EmbedKitTests",
+        "name" : "EmbedKitTests"
+      }
+    }
+  ],
+  "version" : 1
+}

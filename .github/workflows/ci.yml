@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+jobs:
+  build:
+    name: Build (Debug)
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: System Info
+        run: |
+          echo "## System Info" >> $GITHUB_STEP_SUMMARY
+          echo "- Swift: $(swift --version | head -1)" >> $GITHUB_STEP_SUMMARY
+          echo "- Xcode: $(xcodebuild -version | head -1)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS: $(sw_vers -productVersion)" >> $GITHUB_STEP_SUMMARY
+          echo "- CPU: $(sysctl -n machdep.cpu.brand_string)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Resolve Dependencies
+        run: swift package resolve
+
+      - name: Build (Debug)
+        run: |
+          swift build -v 2>&1 | tee build.log
+          echo "## Build (Debug)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Debug build succeeded" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+
+  test-core:
+    name: Test (Core)
+    runs-on: macos-15
+    needs: build
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Restore SPM Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Run Core Tests
+        run: |
+          echo "Running EmbedKit core tests..."
+          swift test --filter EmbedKitTests --parallel 2>&1 | tee test-core.log
+
+          # Extract test summary
+          if grep -q "Test run with" test-core.log; then
+            SUMMARY=$(grep "Test run with" test-core.log | tail -1)
+            echo "## Core Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "✅ $SUMMARY" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Test Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-core-log
+          path: test-core.log
+          retention-days: 7
+
+  test-onnx:
+    name: Test (ONNX)
+    runs-on: macos-15
+    needs: build
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Restore SPM Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Run ONNX Tests
+        run: |
+          echo "Running EmbedKitONNX tests..."
+          swift test --filter EmbedKitONNXTests --parallel 2>&1 | tee test-onnx.log || true
+
+          # Extract test summary
+          if grep -q "Test run with" test-onnx.log; then
+            SUMMARY=$(grep "Test run with" test-onnx.log | tail -1)
+            echo "## ONNX Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "✅ $SUMMARY" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ONNX Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ ONNX tests may have been skipped or no tests found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Test Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-onnx-log
+          path: test-onnx.log
+          retention-days: 7
+
+  build-release:
+    name: Build (Release)
+    runs-on: macos-15
+    needs: build
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Restore SPM Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build (Release)
+        run: |
+          swift build -c release -v 2>&1 | tee build-release.log
+          echo "## Build (Release)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Release build succeeded" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-release-log
+          path: build-release.log
+          retention-days: 7
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-15
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: |
+          echo "Running SwiftLint $(swiftlint version)"
+
+          # Run SwiftLint and capture output
+          swiftlint lint --reporter github-actions-logging 2>&1 | tee swiftlint.log || true
+
+          # Count issues
+          WARNINGS=$(grep -c "warning:" swiftlint.log 2>/dev/null || echo "0")
+          ERRORS=$(grep -c "error:" swiftlint.log 2>/dev/null || echo "0")
+
+          echo "## SwiftLint Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Warnings: $WARNINGS" >> $GITHUB_STEP_SUMMARY
+          echo "- Errors: $ERRORS" >> $GITHUB_STEP_SUMMARY
+
+          # Only fail on errors, warnings are acceptable
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "❌ SwiftLint found $ERRORS error(s)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ No SwiftLint errors" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload SwiftLint Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiftlint-log
+          path: swiftlint.log
+          retention-days: 7

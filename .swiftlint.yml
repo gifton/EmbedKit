@@ -1,0 +1,98 @@
+# ==============================================================================
+# EmbedKit SwiftLint Configuration
+# ==============================================================================
+#
+# LINTING PHILOSOPHY FOR ML/EMBEDDING LIBRARY
+#
+# EmbedKit is a high-performance text embedding framework with CoreML inference,
+# tokenization, and GPU acceleration. The linting strategy balances Swift best
+# practices with ML/numerical computing conventions.
+#
+# KEY DECISIONS:
+#
+# 1. Mathematical/ML Notation (identifier_name)
+#    - Single letters (M, N, d, k) common in ML literature
+#    - Embedding dimensions, batch sizes follow standard notation
+#
+# 2. Performance-Critical Patterns
+#    - force_try/force_unwrap allowed in validated hot paths
+#    - Large tuples needed for tensor shapes
+#
+# 3. Test Coverage (578 tests)
+#    - Comprehensive test suites have longer files
+#    - Test names may be descriptive with underscores
+#
+# ==============================================================================
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - .swiftpm
+  - DerivedData
+  - .github
+  - Scripts
+
+reporter: xcode
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+disabled_rules:
+  # ML code uses force-unwrap/try in validated inference paths
+  - force_try
+  - force_unwrapping
+  # Test files use force_cast for type validation
+  - force_cast
+  # Allow TODOs without failing CI
+  - todo
+  # ML code often needs larger tuples for tensor dimensions
+  - large_tuple
+  # Trailing closures can be less readable for async/batch operations
+  - trailing_closure
+  # In performance-critical code, count != 0 is sometimes clearer
+  - empty_count
+  # Test names use underscores for clarity
+  - type_name
+  # Identifier naming: Allow ML notation (d, k, M, N, etc.)
+  - identifier_name
+  # Shorthand operators: Explicit forms clearer in numerical code
+  - shorthand_operator
+  # Metal/CoreML kernels often need many parameters for buffer bindings
+  - function_parameter_count
+
+line_length:
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_interpolated_strings: true
+  warning: 140
+  error: 300  # ML inference code with complex tensor descriptions
+
+file_length:
+  ignore_comment_only_lines: true
+  warning: 1200
+  error: 3000
+
+type_body_length:
+  warning: 800
+  error: 2500
+
+function_body_length:
+  warning: 150
+  error: 450  # Complex ML inference pipelines
+
+cyclomatic_complexity:
+  warning: 20
+  error: 60  # ML model inference with many branches
+
+nesting:
+  type_level: 3
+  function_level: 5
+
+# Allow if statements in for loops for complex conditions
+for_where:
+  allow_for_as_filter: true

@@ -1,6 +1,15 @@
 {
-  "originHash" : "49bdd43bffb1dc1b9c5fa37526f0e1da3968eee5b0cf01404038d7ac28c7c497",
+  "originHash" : "c8dee76e7baf0f2c7a6ee0193e890b8081d540ea89831d5ccdd36fada01dd25d",
   "pins" : [
+    {
+      "identity" : "onnxruntime-swift-package-manager",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/microsoft/onnxruntime-swift-package-manager",
+      "state" : {
+        "revision" : "12ce7374c86944e1f68f3a866d10105d8357f074",
+        "version" : "1.20.0"
+      }
+    },
     {
       "identity" : "swift-log",
       "kind" : "remoteSourceControl",
@@ -8,6 +17,15 @@
       "state" : {
         "revision" : "ce592ae52f982c847a4efc0dd881cc9eb32d29f2",
         "version" : "1.6.4"
+      }
+    },
+    {
+      "identity" : "vectoraccelerate",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gifton/VectorAccelerate.git",
+      "state" : {
+        "revision" : "59971c07f94c2a0dbc13b13b55e847d817b4dd1f",
+        "version" : "0.1.0"
       }
     },
     {
