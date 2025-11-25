@@ -35,7 +35,6 @@ import SwiftUI
 ///     }
 /// }
 /// ```
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @MainActor
 @Observable
 public final class EmbeddingViewModel {
@@ -202,7 +201,6 @@ public final class EmbeddingViewModel {
 // MARK: - Similarity View Model
 
 /// A view model for computing and displaying similarity between texts.
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @MainActor
 @Observable
 public final class SimilarityViewModel {
@@ -252,7 +250,6 @@ public final class SimilarityViewModel {
 // MARK: - Clustering View Model
 
 /// A view model for clustering documents.
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @MainActor
 @Observable
 public final class ClusteringViewModel {
@@ -308,7 +305,6 @@ public final class ClusteringViewModel {
 // MARK: - Preview Helpers
 
 #if DEBUG
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 public extension EmbeddingViewModel {
     /// Create a preview instance with mock data.
     static var preview: EmbeddingViewModel {

@@ -87,11 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - onnxruntime-swift-package-manager v1.19.0+ (EmbedKitONNX only)
 
 ### Platforms
-- macOS 14.0+
-- iOS 17.0+
-- tvOS 17.0+
-- watchOS 10.0+
-- visionOS 1.0+
+- macOS 15.0+
+- iOS 18.0+
+- tvOS 18.0+
+- watchOS 11.0+
+- visionOS 2.0+
 
 ---
 

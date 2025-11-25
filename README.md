@@ -3,7 +3,7 @@
 A high-performance text embedding framework for Apple platforms. Generate, store, and search text embeddings on-device using CoreML, with optional GPU acceleration via Metal.
 
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
-![Platforms](https://img.shields.io/badge/Platforms-iOS%2017%20|%20macOS%2014%20|%20tvOS%2017%20|%20visionOS%201-blue.svg)
+![Platforms](https://img.shields.io/badge/Platforms-iOS%2018%20|%20macOS%2015%20|%20tvOS%2018%20|%20visionOS%202-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Tests](https://img.shields.io/badge/Tests-578%20passing-brightgreen.svg)
 
@@ -255,7 +255,7 @@ swift test --filter EmbedKitONNXTests
 
 ## Requirements
 
-- iOS 17.0+ / macOS 14.0+ / tvOS 17.0+ / visionOS 1.0+ / watchOS 10.0+
+- iOS 18.0+ / macOS 15.0+ / tvOS 18.0+ / visionOS 2.0+ / watchOS 11.0+
 - Swift 6.0+
 - Xcode 16.0+
 - Metal-capable device (optional, CPU fallback available)
