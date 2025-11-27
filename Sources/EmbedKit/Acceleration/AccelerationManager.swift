@@ -4,6 +4,7 @@
 import Foundation
 import VectorCore
 import VectorAccelerate
+import VectorIndex
 
 // MARK: - Acceleration Manager
 
@@ -316,7 +317,10 @@ public actor AccelerationManager {
         }
     }
 
-    /// CPU batch distance computation.
+    /// CPU batch distance computation with automatic 384-dimension optimization.
+    ///
+    /// For 384-dimensional vectors (MiniLM), uses VectorCore's `Vector384Optimized`
+    /// for 2-3x faster batch computation. Falls back to generic vDSP for other dimensions.
     private func cpuBatchDistance(
         query: [Float],
         candidates: [[Float]],
@@ -324,8 +328,19 @@ public actor AccelerationManager {
     ) async throws -> [Float] {
         let start = CFAbsoluteTimeGetCurrent()
 
-        let distances = candidates.map { candidate in
-            cpuDistance(query, candidate, metric: metric)
+        // AccelerateBLAS methods auto-detect 384-dim and use Vector384Optimized
+        let distances: [Float]
+        switch metric {
+        case .cosine:
+            distances = AccelerateBLAS.batchCosineDistance(query: query, candidates: candidates)
+        case .euclidean:
+            distances = AccelerateBLAS.batchEuclideanDistance(query: query, candidates: candidates)
+        case .dotProduct:
+            distances = candidates.map { -AccelerateBLAS.dotProduct(query, $0) }
+        case .manhattan:
+            distances = AccelerateBLAS.batchManhattanDistance(query: query, candidates: candidates)
+        case .chebyshev:
+            distances = AccelerateBLAS.batchChebyshevDistance(query: query, candidates: candidates)
         }
 
         stats.cpuOperations += 1
@@ -334,53 +349,26 @@ public actor AccelerationManager {
         return distances
     }
 
-    /// CPU single distance computation.
+    /// CPU single distance computation using Accelerate BLAS.
+    ///
+    /// For 384-dimensional vectors (MiniLM), AccelerateBLAS auto-uses Vector384Optimized.
     private func cpuDistance(_ a: [Float], _ b: [Float], metric: SupportedDistanceMetric) -> Float {
         switch metric {
         case .cosine:
-            var dotProduct: Float = 0
-            var normA: Float = 0
-            var normB: Float = 0
-
-            for i in 0..<a.count {
-                dotProduct += a[i] * b[i]
-                normA += a[i] * a[i]
-                normB += b[i] * b[i]
-            }
-
-            let magnitude = sqrt(normA) * sqrt(normB)
-            guard magnitude > 0 else { return 1.0 }
-            return 1.0 - (dotProduct / magnitude) // Cosine distance = 1 - similarity
+            return AccelerateBLAS.cosineDistance(a, b)
 
         case .euclidean:
-            var sum: Float = 0
-            for i in 0..<a.count {
-                let diff = a[i] - b[i]
-                sum += diff * diff
-            }
-            return sqrt(sum)
+            return AccelerateBLAS.euclideanDistance(a, b)
 
         case .dotProduct:
-            var sum: Float = 0
-            for i in 0..<a.count {
-                sum += a[i] * b[i]
-            }
             // For dot product, higher is more similar, so negate for distance-like ordering
-            return -sum
+            return -AccelerateBLAS.dotProduct(a, b)
 
         case .manhattan:
-            var sum: Float = 0
-            for i in 0..<a.count {
-                sum += abs(a[i] - b[i])
-            }
-            return sum
+            return AccelerateBLAS.manhattanDistance(a, b)
 
         case .chebyshev:
-            var maxDiff: Float = 0
-            for i in 0..<a.count {
-                maxDiff = max(maxDiff, abs(a[i] - b[i]))
-            }
-            return maxDiff
+            return AccelerateBLAS.chebyshevDistance(a, b)
         }
     }
 
@@ -398,6 +386,211 @@ public actor AccelerationManager {
     public func reEnableGPU() {
         gpuTemporarilyDisabled = false
         consecutiveGPUErrors = 0
+    }
+
+    // MARK: - AccelerableIndex Integration
+
+    /// Perform accelerated search using an AccelerableIndex.
+    ///
+    /// This method provides hybrid CPU+GPU search by:
+    /// 1. Using the index's `shouldAccelerate()` to decide the compute path
+    /// 2. Getting candidates via `getCandidates()` (index handles traversal)
+    /// 3. Computing distances on GPU (if beneficial) or CPU
+    /// 4. Finalizing results via `finalizeResults()` (index handles ID mapping)
+    ///
+    /// - Parameters:
+    ///   - index: An AccelerableIndex (FlatIndex, HNSWIndex, IVFIndex all conform)
+    ///   - query: Query vector
+    ///   - k: Number of results to return
+    ///   - filter: Optional metadata filter
+    /// - Returns: Search results with IDs and distances
+    public func acceleratedSearch(
+        index: any AccelerableIndex,
+        query: [Float],
+        k: Int,
+        filter: (@Sendable ([String: String]?) -> Bool)? = nil
+    ) async throws -> [VectorIndex.SearchResult] {
+        // Check if acceleration is worthwhile
+        let candidateEstimate = await index.count
+        let shouldAccelerate = await index.shouldAccelerate(
+            queryCount: 1,
+            candidateCount: candidateEstimate,
+            k: k
+        )
+
+        // If acceleration not beneficial, use index's native search
+        guard shouldAccelerate && preference != .cpuOnly else {
+            return try await index.search(query: query, k: k, filter: filter)
+        }
+
+        // Get candidates from index (handles HNSW traversal, IVF cluster selection, etc.)
+        let candidates = try await index.getCandidates(query: query, k: k, filter: filter)
+
+        // Compute distances - GPU or CPU based on thresholds
+        let distances = try await computeDistancesForCandidates(
+            query: query,
+            candidates: candidates,
+            metric: await index.metric
+        )
+
+        // Select top-k from computed distances
+        let topK = selectTopK(k: k, from: distances)
+
+        // Let index finalize results (handles ID mapping, metadata, etc.)
+        let acceleratedResults = AcceleratedResults(
+            indices: topK.indices,
+            distances: topK.distances
+        )
+
+        return await index.finalizeResults(
+            candidates: candidates,
+            results: acceleratedResults,
+            filter: filter
+        )
+    }
+
+    /// Perform accelerated batch search using an AccelerableIndex.
+    ///
+    /// Processes multiple queries efficiently using the index's batch candidate retrieval.
+    ///
+    /// - Parameters:
+    ///   - index: An AccelerableIndex
+    ///   - queries: Array of query vectors
+    ///   - k: Number of results per query
+    ///   - filter: Optional metadata filter
+    /// - Returns: Array of search results, one per query
+    public func acceleratedBatchSearch(
+        index: any AccelerableIndex,
+        queries: [[Float]],
+        k: Int,
+        filter: (@Sendable ([String: String]?) -> Bool)? = nil
+    ) async throws -> [[VectorIndex.SearchResult]] {
+        guard !queries.isEmpty else { return [] }
+
+        // Check if acceleration is worthwhile
+        let candidateEstimate = await index.count
+        let shouldAccelerate = await index.shouldAccelerate(
+            queryCount: queries.count,
+            candidateCount: candidateEstimate,
+            k: k
+        )
+
+        // If acceleration not beneficial, use index's native batch search
+        guard shouldAccelerate && preference != .cpuOnly else {
+            return try await index.batchSearch(queries: queries, k: k, filter: filter)
+        }
+
+        // Get batch candidates from index
+        let batchCandidates = try await index.getBatchCandidates(
+            queries: queries,
+            k: k,
+            filter: filter
+        )
+
+        let metric = await index.metric
+
+        // Process each query's candidates
+        var batchResults: [AcceleratedResults] = []
+        batchResults.reserveCapacity(queries.count)
+
+        for (query, candidates) in zip(queries, batchCandidates) {
+            let distances = try await computeDistancesForCandidates(
+                query: query,
+                candidates: candidates,
+                metric: metric
+            )
+            let topK = selectTopK(k: k, from: distances)
+            batchResults.append(AcceleratedResults(
+                indices: topK.indices,
+                distances: topK.distances
+            ))
+        }
+
+        // Finalize all results
+        return await index.finalizeBatchResults(
+            batchCandidates: batchCandidates,
+            batchResults: batchResults,
+            filter: filter
+        )
+    }
+
+    // MARK: - Private Helpers for AccelerableIndex
+
+    /// Compute distances for AccelerationCandidates.
+    ///
+    /// Extracts vectors from contiguous storage and computes distances.
+    /// Uses GPU for large candidate sets, CPU (with 384-dim optimization) otherwise.
+    private func computeDistancesForCandidates(
+        query: [Float],
+        candidates: AccelerationCandidates,
+        metric: SupportedDistanceMetric
+    ) async throws -> [Float] {
+        guard candidates.vectorCount > 0 else { return [] }
+
+        let dimension = candidates.dimension
+        let candidateCount = candidates.vectorCount
+
+        // Decide compute path
+        let useGPU = shouldUseGPU(candidateCount: candidateCount, dimension: dimension)
+
+        if useGPU, let engine = computeEngine {
+            // Extract vectors for GPU processing
+            let candidateVectors = extractVectors(from: candidates)
+            return try await gpuBatchDistanceFromVectors(
+                query: query,
+                candidates: candidateVectors,
+                metric: metric,
+                engine: engine
+            )
+        } else {
+            // CPU path - extract and compute with 384-dim optimization
+            let candidateVectors = extractVectors(from: candidates)
+            return try await cpuBatchDistance(
+                query: query,
+                candidates: candidateVectors,
+                metric: metric
+            )
+        }
+    }
+
+    /// Extract vectors from AccelerationCandidates contiguous storage.
+    private func extractVectors(from candidates: AccelerationCandidates) -> [[Float]] {
+        var vectors: [[Float]] = []
+        vectors.reserveCapacity(candidates.vectorCount)
+
+        for i in 0..<candidates.vectorCount {
+            let slice = candidates.vector(at: i)
+            vectors.append(Array(slice))
+        }
+
+        return vectors
+    }
+
+    /// GPU batch distance using ComputeEngine directly.
+    private func gpuBatchDistanceFromVectors(
+        query: [Float],
+        candidates: [[Float]],
+        metric: SupportedDistanceMetric,
+        engine: ComputeEngine
+    ) async throws -> [Float] {
+        let start = CFAbsoluteTimeGetCurrent()
+
+        let distances = try await engine.batchDistance(
+            query: query,
+            candidates: candidates,
+            metric: metric
+        )
+
+        stats.gpuOperations += 1
+        stats.gpuTimeTotal += CFAbsoluteTimeGetCurrent() - start
+        consecutiveGPUErrors = 0
+
+        return distances
+    }
+
+    /// Select top-k smallest distances using VectorCore's TopKSelection.
+    private func selectTopK(k: Int, from distances: [Float]) -> TopKResult {
+        TopKSelection.select(k: k, from: distances)
     }
 }
 

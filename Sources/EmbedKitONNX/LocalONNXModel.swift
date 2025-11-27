@@ -287,6 +287,9 @@ public actor LocalONNXModel: EmbeddingModel {
             return maxPool(values: values, seqLen: seqLen, hiddenDim: hiddenDim)
         case .cls:
             return clsPool(values: values, hiddenDim: hiddenDim)
+        case .attention:
+            // Attention pooling without weights falls back to mean pooling
+            return meanPool(values: values, seqLen: seqLen, hiddenDim: hiddenDim, mask: attentionMask)
         }
     }
 

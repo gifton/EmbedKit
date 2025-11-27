@@ -57,4 +57,97 @@ public enum EmbedKitError: LocalizedError, Sendable {
             return "Failed to create Metal command encoder"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .modelNotFound:
+            return "Verify the model ID is correct and the model is registered with ModelManager. Use ModelManager.availableModels() to list registered models."
+
+        case .modelLoadFailed:
+            return "Check that the model file exists at the expected path, is not corrupted, and is compatible with the current iOS/macOS version. For CoreML models, ensure the .mlpackage or .mlmodelc is properly formatted."
+
+        case .tokenizationFailed:
+            return "Verify the vocabulary file is present and properly formatted. Check that the input text uses supported characters and encoding (UTF-8)."
+
+        case .inferenceFailed:
+            return "Try reducing batch size or input length. If using GPU, try switching to CPU with `.cpuOnly` compute preference. Check system memory availability."
+
+        case .dimensionMismatch:
+            return "Ensure the embedding model output dimensions match the expected configuration. Check that you're using compatible embeddings from the same model."
+
+        case .deviceNotAvailable:
+            return "The requested compute device is not available. Try using `.auto` or `.cpuOnly` as compute preference, or check that Metal is supported on this device."
+
+        case .inputTooLong:
+            return "Shorten the input text or configure a truncation strategy (`.end`, `.start`, or `.middle`) in EmbeddingConfiguration. Consider chunking long documents."
+
+        case .batchSizeExceeded:
+            return "Reduce batch size in BatchOptions or use AdaptiveBatcher which automatically manages batch sizes based on system resources."
+
+        case .processingTimeout:
+            return "Increase the timeout duration, reduce input size/batch size, or try using a lighter compute device. Check if the system is under heavy load."
+
+        case .invalidConfiguration:
+            return "Review the configuration parameters. Check for missing required values, incompatible option combinations, or invalid ranges."
+
+        case .metalDeviceUnavailable:
+            return "Metal GPU acceleration is not available on this device. Use `.cpuOnly` compute preference for CPU-based processing, which works on all devices."
+
+        case .metalBufferFailed:
+            return "The system may be low on GPU memory. Try reducing batch size, using smaller inputs, or freeing GPU resources from other applications."
+
+        case .metalPipelineNotFound:
+            return "The Metal shader library may be missing or corrupted. Ensure EmbedKitShaders.metallib is included in the app bundle. Try recompiling shaders with CompileMetalShaders.sh."
+
+        case .metalEncoderFailed:
+            return "The GPU command queue may be overloaded. Try reducing concurrent GPU operations or adding delays between batches."
+        }
+    }
+
+    /// Additional context about why this error occurred
+    public var failureReason: String? {
+        switch self {
+        case .modelNotFound:
+            return "The requested model identifier was not found in the model registry."
+
+        case .modelLoadFailed:
+            return "The model file could not be loaded into memory or compiled for execution."
+
+        case .tokenizationFailed:
+            return "The tokenizer encountered an error while processing the input text."
+
+        case .inferenceFailed:
+            return "The model inference operation did not complete successfully."
+
+        case .dimensionMismatch:
+            return "The vector dimensions do not match the expected size for this operation."
+
+        case .deviceNotAvailable:
+            return "The specified compute device could not be initialized or is not supported."
+
+        case .inputTooLong:
+            return "The input exceeds the maximum token length supported by the model."
+
+        case .batchSizeExceeded:
+            return "The number of items in the batch exceeds the configured maximum."
+
+        case .processingTimeout:
+            return "The operation did not complete within the allowed time limit."
+
+        case .invalidConfiguration:
+            return "One or more configuration parameters are invalid or incompatible."
+
+        case .metalDeviceUnavailable:
+            return "No Metal-compatible GPU was found on this system."
+
+        case .metalBufferFailed:
+            return "The GPU could not allocate memory for the requested buffer."
+
+        case .metalPipelineNotFound:
+            return "The compiled Metal shader function could not be located."
+
+        case .metalEncoderFailed:
+            return "The GPU command encoder could not be created from the command buffer."
+        }
+    }
 }

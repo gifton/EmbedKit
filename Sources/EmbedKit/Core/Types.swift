@@ -34,24 +34,40 @@ public struct Embedding: Sendable {
         self.metadata = metadata
     }
 
+    /// L2 magnitude (Euclidean norm) of the embedding vector.
+    /// Uses Accelerate/vDSP for SIMD-optimized computation.
     public var magnitude: Float {
-        sqrt(vector.reduce(0) { $0 + $1 * $1 })
+        AccelerateBLAS.magnitude(vector)
     }
 
+    /// Returns an L2-normalized copy of this embedding.
+    /// Uses Accelerate/vDSP for SIMD-optimized computation.
     public func normalized() -> Embedding {
-        let mag = magnitude
-        guard mag > 0 else { return self }
-        let inv = 1.0 / mag
-        let v = vector.map { $0 * Float(inv) }
+        let v = AccelerateBLAS.normalize(vector)
         return Embedding(vector: v, metadata: metadata)
     }
 
+    /// Computes cosine similarity to another embedding.
+    /// Uses Accelerate/vDSP for SIMD-optimized computation.
+    /// - Parameter other: The other embedding to compare against
+    /// - Returns: Cosine similarity in range [-1, 1], or 0 if dimensions don't match
     public func similarity(to other: Embedding) -> Float {
         guard dimensions == other.dimensions else { return 0 }
-        let dot = zip(vector, other.vector).reduce(0) { $0 + $1.0 * $1.1 }
-        let magA = sqrt(max(1e-12, vector.reduce(0) { $0 + $1 * $1 }))
-        let magB = sqrt(max(1e-12, other.vector.reduce(0) { $0 + $1 * $1 }))
-        return dot / Float(magA * magB)
+        return AccelerateBLAS.cosineSimilarity(vector, other.vector)
+    }
+
+    /// Computes cosine distance to another embedding (1 - similarity).
+    /// Uses Accelerate/vDSP for SIMD-optimized computation.
+    public func distance(to other: Embedding) -> Float {
+        guard dimensions == other.dimensions else { return 1 }
+        return AccelerateBLAS.cosineDistance(vector, other.vector)
+    }
+
+    /// Computes Euclidean distance to another embedding.
+    /// Uses Accelerate/vDSP for SIMD-optimized computation.
+    public func euclideanDistance(to other: Embedding) -> Float {
+        guard dimensions == other.dimensions else { return .greatestFiniteMagnitude }
+        return AccelerateBLAS.euclideanDistance(vector, other.vector)
     }
 }
 
@@ -109,7 +125,7 @@ public struct EmbeddingConfiguration: Sendable {
 }
 
 public enum ComputeDevice: String, CaseIterable, Sendable { case cpu, gpu, ane, auto }
-public enum PoolingStrategy: String, CaseIterable, Codable, Sendable { case mean, max, cls }
+public enum PoolingStrategy: String, CaseIterable, Codable, Sendable { case mean, max, cls, attention }
 public enum TruncationStrategy: String, CaseIterable, Codable, Sendable { case none, end, start, middle }
 public enum PaddingStrategy: String, CaseIterable, Codable, Sendable { case none, max, batch }
 
@@ -153,7 +169,12 @@ public struct BatchOptions: Sendable {
     public var timeout: TimeInterval? = nil
     public var bucketSize: Int = 16
     public var maxBatchTokens: Int? = nil
-    public var tokenizationConcurrency: Int? = nil
+
+    /// Number of concurrent tokenization tasks.
+    /// Defaults to the number of active processors for parallel tokenization.
+    /// Set to 1 for sequential tokenization.
+    public var tokenizationConcurrency: Int? = ProcessInfo.processInfo.activeProcessorCount
+
     public var minBatchSize: Int? = nil
     public var maxPaddingRatio: Double? = nil
     public init() {}

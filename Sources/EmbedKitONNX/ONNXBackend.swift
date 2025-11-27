@@ -127,6 +127,25 @@ public enum ONNXBackendError: Error, LocalizedError, Sendable {
             return "Unsupported ONNX model: \(msg)"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .modelNotLoaded:
+            return "Call load() on the backend before attempting inference."
+        case .modelLoadFailed:
+            return "Verify the ONNX model file exists, is not corrupted, and is compatible with the ONNX Runtime version. Check that required operators are supported."
+        case .inferenceError:
+            return "Check input tensor shapes match model expectations. Reduce batch size if running out of memory. Verify input data contains valid values."
+        case .invalidInput:
+            return "Ensure input tensors have correct shapes and data types. Token IDs and attention masks should have matching lengths."
+        case .invalidOutput:
+            return "The model output format may differ from expected. Verify the model produces token embeddings with the expected shape [batch, sequence, hidden]."
+        case .sessionCreationFailed:
+            return "The ONNX Runtime may not support all operators in this model. Try a different execution provider or update to a newer ONNX Runtime version."
+        case .unsupportedModel:
+            return "Convert the model to a supported ONNX opset version. Most embedding models work best with opset 11-17."
+        }
+    }
 }
 
 // MARK: - ONNX Backend

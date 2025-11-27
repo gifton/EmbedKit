@@ -153,4 +153,17 @@ public enum AccelerationError: Error, LocalizedError {
             return "Invalid input: \(reason)"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .gpuNotAvailable:
+            return "Use `.cpuOnly` compute preference for CPU-based processing. GPU acceleration requires a Metal-compatible device (most Macs since 2012, all iOS devices since iPhone 5s)."
+        case .gpuOperationFailed:
+            return "Try reducing batch size or input dimensions. If the error persists, fall back to CPU processing with `.cpuOnly` preference."
+        case .dimensionMismatch:
+            return "Ensure all vectors in the operation have the same dimensions. Check that embeddings come from the same model."
+        case .invalidInput:
+            return "Verify input data is not empty, contains valid values (no NaN/Inf), and meets the operation's requirements."
+        }
+    }
 }
