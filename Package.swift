@@ -44,10 +44,10 @@ let package = Package(
         )
     ],
     dependencies: [
-        // VSK dependencies - Official releases
-        .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.4"),
-        .package(url: "https://github.com/gifton/VectorIndex.git", from: "0.1.1"),
-        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.1.0"),
+        // VSK dependencies - Official releases (updated Nov 2024)
+        .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.6"),
+        .package(url: "https://github.com/gifton/VectorIndex.git", from: "0.1.3"),
+        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.1.2"),
 
         // System dependencies
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
@@ -67,12 +67,12 @@ let package = Package(
             ],
             path: "Sources/EmbedKit",
             exclude: [
-                "Resources/EmbedKitShaders.metallib",
                 "Shaders"  // Metal sources compiled separately via Scripts/CompileMetalShaders.sh
             ],
             resources: [
                 .copy("Resources/vocab.txt"),
-                .copy("Resources/MiniLM-L12-v2.mlpackage")
+                .copy("Resources/MiniLM-L12-v2.mlpackage"),
+                .copy("Resources/EmbedKitShaders.metallib")
             ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals"),

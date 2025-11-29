@@ -7,11 +7,11 @@ struct StageMetricsTestsSuite {
 func stageMetrics_updatesAfterEmbed() async throws {
     let backend = NoOpBackend()
     let tokenizer = SimpleTokenizer()
-    var cfg = EmbeddingConfiguration()
-    cfg.includeSpecialTokens = false
-    cfg.maxTokens = 8
-    cfg.paddingStrategy = .none
-
+    let cfg = EmbeddingConfiguration(
+        maxTokens: 8,
+        paddingStrategy: .none,
+        includeSpecialTokens: false
+    )
     let model = AppleEmbeddingModel(
         backend: backend,
         tokenizer: tokenizer,

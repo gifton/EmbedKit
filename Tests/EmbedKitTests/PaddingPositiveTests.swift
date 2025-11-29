@@ -8,10 +8,11 @@ struct PaddingPositiveTests {
     func paddingMax_withPAD_succeeds() async throws {
         let vocab = Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","[MASK]","hello"])
         let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
-        cfg.padding = .max
-        cfg.maxLength = 6
+        let cfg = TokenizerConfig(
+            maxLength: 6,
+            padding: .max,
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("hello", config: cfg)
         #expect(out.ids.count == 6)
         #expect(out.ids[0] == (vocab["[CLS]"] ?? -1))
@@ -39,9 +40,10 @@ struct PaddingPositiveTests {
         let backend = RecBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","a","b","c"])
         let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tok,
@@ -51,7 +53,7 @@ struct PaddingPositiveTests {
             device: .cpu
         )
         let texts = ["a b c", "a"]
-        _ = try await model.embedBatch(texts, options: .init())
+        _ = try await model.embedBatch(texts, options: BatchOptions())
         let lengths = await backend.lengths
         #expect(!lengths.isEmpty)
         #expect(lengths.dropFirst().allSatisfy { $0 == lengths.first })

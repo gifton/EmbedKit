@@ -213,9 +213,10 @@ struct BackendFailureTests {
 
     private func makeModel(backend: any CoreMLProcessingBackend) -> AppleEmbeddingModel {
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -324,10 +325,9 @@ struct BackendFailureTests {
     @Test
     func backendUnavailable_throwsModelLoadFailed() async throws {
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
-        // Model with nil backend
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )        // Model with nil backend
         let model = AppleEmbeddingModel(
             backend: nil,
             tokenizer: tokenizer,
@@ -353,9 +353,10 @@ struct TokenizationFailureTests {
 
     private func makeModel(tokenizer: any Tokenizer) -> AppleEmbeddingModel {
         let backend = FailingBackend(failAfter: Int.max)  // Backend won't fail
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -627,9 +628,9 @@ struct DimensionMismatchTests {
     func dimensionMismatch_throws() async throws {
         let backend = WrongDimensionBackend(outputDim: 8)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -657,10 +658,10 @@ struct ConcurrentErrorTests {
         // This tests that one failure doesn't corrupt other concurrent requests
         let backend = PatternFailingBackend(failOnLongInput: 5)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -699,10 +700,10 @@ struct ConcurrentErrorTests {
     func metricsAccurate_afterErrors() async throws {
         let backend = FailingBackend(failAfter: 2)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -734,10 +735,10 @@ struct AdaptiveBatcherErrorTests {
     func batcherError_propagatesToCallers() async throws {
         let backend = FailingBackend(failAfter: 1)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -764,10 +765,10 @@ struct AdaptiveBatcherErrorTests {
     func batcherConcurrent_errorDoesNotBlockOthers() async throws {
         let backend = PatternFailingBackend(failOnLongInput: 5)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -838,10 +839,10 @@ struct ConfigurationValidationTests {
         // This test verifies the validation exists
         let backend = MismatchBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,

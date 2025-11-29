@@ -178,7 +178,8 @@ struct ThreadgroupOptimizerTests {
         )
 
         // Fused ops use one threadgroup per sequence
-        #expect(grid.height == 8)  // One per batch
+        // Grid uses X dimension for batch (kernel uses uint [[threadgroup_position_in_grid]])
+        #expect(grid.width == 8)  // One per batch
         #expect(threadgroup.width > 0)
     }
     #endif
@@ -482,7 +483,8 @@ struct GPUOptimizerIntegrationTests {
         )
 
         #expect(params.threadgroupSize.width > 0)
-        #expect(params.gridSize.height == 16)  // One per batch
+        // Grid uses X dimension for batch (kernel uses uint [[threadgroup_position_in_grid]])
+        #expect(params.gridSize.width == 16)  // One per batch
     }
 
     @Test("Optimizes operation with kernel selection")

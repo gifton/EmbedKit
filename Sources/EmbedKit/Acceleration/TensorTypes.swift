@@ -619,6 +619,7 @@ extension PoolingStrategy {
         case .mean: return 0
         case .max: return 1
         case .cls: return 2
+        case .attention: return 3
         }
     }
 }

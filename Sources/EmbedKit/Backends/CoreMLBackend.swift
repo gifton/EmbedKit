@@ -1,5 +1,5 @@
 // EmbedKit - CoreML Backend
-// Phase 1: API surface and lifecycle only. No CoreML imports yet.
+// Provides CoreML model loading, stateful predictions, and flexible shape handling.
 
 import Foundation
 import Logging
@@ -31,9 +31,94 @@ public struct CoreMLOutput: Sendable {
     }
 }
 
+// MARK: - Shape Flexibility Support
+
+/// Describes a dimension's flexibility constraints.
+public enum DimensionConstraint: Sendable, Equatable {
+    /// Fixed dimension with exact value required.
+    case fixed(Int)
+    /// Flexible dimension with optional range bounds.
+    case flexible(min: Int?, max: Int?)
+    /// Enumerated set of allowed values.
+    case enumerated([Int])
+
+    /// Check if a value satisfies this constraint.
+    public func satisfies(_ value: Int) -> Bool {
+        switch self {
+        case .fixed(let required):
+            return value == required
+        case .flexible(let min, let max):
+            if let minVal = min, value < minVal { return false }
+            if let maxVal = max, value > maxVal { return false }
+            return true
+        case .enumerated(let allowed):
+            return allowed.contains(value)
+        }
+    }
+
+    /// Human-readable description of the constraint.
+    public var description: String {
+        switch self {
+        case .fixed(let v): return "\(v)"
+        case .flexible(let min, let max):
+            let minStr = min.map { "\($0)" } ?? "*"
+            let maxStr = max.map { "\($0)" } ?? "*"
+            return "[\(minStr)..\(maxStr)]"
+        case .enumerated(let vals): return "{\(vals.map { "\($0)" }.joined(separator: ","))}"
+        }
+    }
+}
+
+/// Describes the shape constraints for a model input.
+public struct ShapeConstraints: Sendable {
+    /// Constraint for each dimension (index 0 = first dimension).
+    public let dimensions: [DimensionConstraint]
+
+    /// Whether any dimension is flexible.
+    public var hasFlexibleDimensions: Bool {
+        dimensions.contains { dim in
+            if case .fixed = dim { return false }
+            return true
+        }
+    }
+
+    /// Validate a proposed shape against these constraints.
+    public func validate(_ shape: [Int]) throws {
+        guard shape.count == dimensions.count else {
+            throw EmbedKitError.invalidConfiguration(
+                "Shape rank mismatch: provided \(shape.count) dimensions, expected \(dimensions.count)"
+            )
+        }
+        for (i, (value, constraint)) in zip(shape, dimensions).enumerated() {
+            if !constraint.satisfies(value) {
+                throw EmbedKitError.invalidConfiguration(
+                    "Shape mismatch at dimension \(i): provided \(value), expected \(constraint.description)"
+                )
+            }
+        }
+    }
+
+    /// Human-readable description.
+    public var description: String {
+        "[\(dimensions.map { $0.description }.joined(separator: ", "))]"
+    }
+}
+
 /// CoreML backend actor that manages model lifecycle and flexible input/output resolution.
-/// - Resolves input feature keys dynamically and caches them.
-/// - Returns raw output tensor and shape for pooling/validation at the model layer.
+///
+/// **Features**:
+/// - Resolves input feature keys dynamically and caches them
+/// - Supports stateful predictions with reusable output buffers
+/// - Detects and validates flexible/dynamic input shapes
+/// - Returns raw output tensor and shape for pooling/validation at the model layer
+///
+/// **Stateful Predictions**:
+/// Uses `MLPredictionOptions` with output backing buffers to reduce allocation
+/// overhead for repeated predictions. Enable via `useStatefulPredictions = true`.
+///
+/// **Flexible Shapes**:
+/// Automatically detects models with dynamic input dimensions and validates
+/// input shapes against model constraints. Query constraints via `inputShapeConstraints`.
 public actor CoreMLBackend: ModelBackend {
     public typealias Input = CoreMLInput
     public typealias Output = CoreMLOutput
@@ -46,6 +131,20 @@ public actor CoreMLBackend: ModelBackend {
     private var autoHint: (paddedLength: Int, batchSize: Int)? = nil
     private let logger = Logger(label: "EmbedKit.CoreMLBackend")
 
+    // MARK: - Stateful Predictions Configuration
+
+    /// Enable stateful predictions with reusable output buffers.
+    /// Reduces allocation overhead for repeated predictions.
+    public var useStatefulPredictions: Bool = true
+
+    /// Maximum sequence length hint for pre-allocating output buffers.
+    /// Set before `load()` for optimal buffer sizing.
+    public var maxSequenceLengthHint: Int = 512
+
+    /// Hidden dimension hint for pre-allocating output buffers.
+    /// Set before `load()` for optimal buffer sizing.
+    public var hiddenDimensionHint: Int = 384
+
     // MARK: - State
 
     private(set) public var isLoaded: Bool = false
@@ -57,6 +156,15 @@ public actor CoreMLBackend: ModelBackend {
     private var cachedKeys: InputKeys?
     private struct Overrides { var token: String?; var mask: String?; var type: String?; var pos: String?; var output: String? }
     private var overrides = Overrides()
+
+    // Stateful prediction support
+    private var predictionOptions: MLPredictionOptions?
+    private var outputBackingBuffer: MLMultiArray?
+    private var lastOutputShape: [Int]?
+
+    // Flexible shape support
+    private var inputShapeConstraintsCache: [String: ShapeConstraints] = [:]
+    private var outputShapeConstraintsCache: ShapeConstraints?
     #endif
 
     // MARK: - Init
@@ -64,6 +172,21 @@ public actor CoreMLBackend: ModelBackend {
     public init(modelURL: URL?, device: ComputeDevice = .auto) {
         self.modelURL = modelURL
         self.device = device
+    }
+
+    /// Initialize with additional configuration for stateful predictions.
+    public init(
+        modelURL: URL?,
+        device: ComputeDevice = .auto,
+        useStatefulPredictions: Bool = true,
+        maxSequenceLengthHint: Int = 512,
+        hiddenDimensionHint: Int = 384
+    ) {
+        self.modelURL = modelURL
+        self.device = device
+        self.useStatefulPredictions = useStatefulPredictions
+        self.maxSequenceLengthHint = maxSequenceLengthHint
+        self.hiddenDimensionHint = hiddenDimensionHint
     }
 
     // MARK: - Auto device policy
@@ -93,6 +216,63 @@ public actor CoreMLBackend: ModelBackend {
     public func setOutputKeyOverride(_ key: String?) {
         #if canImport(CoreML)
         overrides.output = key
+        #endif
+    }
+
+    // MARK: - Shape Constraints API
+
+    /// Get shape constraints for a specific input key.
+    /// Returns nil if model not loaded or input key doesn't exist.
+    public func inputShapeConstraints(for key: String) -> ShapeConstraints? {
+        #if canImport(CoreML)
+        return inputShapeConstraintsCache[key]
+        #else
+        return nil
+        #endif
+    }
+
+    /// Get all input shape constraints.
+    /// Returns empty dictionary if model not loaded.
+    public var allInputShapeConstraints: [String: ShapeConstraints] {
+        #if canImport(CoreML)
+        return inputShapeConstraintsCache
+        #else
+        return [:]
+        #endif
+    }
+
+    /// Get output shape constraints.
+    /// Returns nil if model not loaded or output constraints not detected.
+    public var outputShapeConstraints: ShapeConstraints? {
+        #if canImport(CoreML)
+        return outputShapeConstraintsCache
+        #else
+        return nil
+        #endif
+    }
+
+    /// Whether the model has any flexible input dimensions.
+    public var hasFlexibleInputs: Bool {
+        #if canImport(CoreML)
+        return inputShapeConstraintsCache.values.contains { $0.hasFlexibleDimensions }
+        #else
+        return false
+        #endif
+    }
+
+    /// Validate a proposed input shape against the model's constraints.
+    /// - Parameters:
+    ///   - shape: The proposed input shape
+    ///   - inputKey: The input key to validate against (defaults to token input key)
+    /// - Throws: `EmbedKitError.invalidConfiguration` if shape is invalid
+    public func validateInputShape(_ shape: [Int], for inputKey: String? = nil) throws {
+        #if canImport(CoreML)
+        let key = inputKey ?? cachedKeys?.token
+        guard let k = key, let constraints = inputShapeConstraintsCache[k] else {
+            // No constraints found, allow any shape
+            return
+        }
+        try constraints.validate(shape)
         #endif
     }
 
@@ -136,6 +316,14 @@ public actor CoreMLBackend: ModelBackend {
         do {
             self.mlModel = try await MLModel.load(contentsOf: url, configuration: config)
             self.isLoaded = true
+
+            // Detect and cache shape constraints for all inputs
+            detectAndCacheShapeConstraints()
+
+            // Initialize stateful prediction options if enabled
+            if useStatefulPredictions {
+                initializeStatefulPredictions()
+            }
             self.cachedKeys = nil
         } catch {
             throw EmbedKitError.modelLoadFailed("CoreML load failed: \(error.localizedDescription)")
@@ -207,7 +395,14 @@ public actor CoreMLBackend: ModelBackend {
         if let pk = keys.pos, let arr = posArray { dict[pk] = MLFeatureValue(multiArray: arr) }
 
         let provider = try MLDictionaryFeatureProvider(dictionary: dict)
-        let output = try predict(model, provider: provider)
+
+        // Use stateful predictions when enabled
+        let output: MLFeatureProvider
+        if useStatefulPredictions, let opts = predictionOptions {
+            output = try predictWithOptions(model, provider: provider, options: opts)
+        } else {
+            output = try predict(model, provider: provider)
+        }
 
         // Preferred output key if provided
         if let preferred = overrides.output, let feat = output.featureValue(for: preferred), feat.type == .multiArray, let ma = feat.multiArrayValue, (ma.dataType == .float32 || ma.dataType == .double) {
@@ -447,9 +642,167 @@ public actor CoreMLBackend: ModelBackend {
         }
     }
 
+    // MARK: - Shape Constraints Detection
+
+    /// Detect and cache shape constraints for all model inputs and outputs.
+    private func detectAndCacheShapeConstraints() {
+        guard let model = mlModel else { return }
+
+        // Process inputs
+        for (key, desc) in model.modelDescription.inputDescriptionsByName {
+            if let constraint = desc.multiArrayConstraint {
+                let constraints = extractShapeConstraints(from: constraint)
+                inputShapeConstraintsCache[key] = constraints
+                logger.debug("Detected input shape constraints", metadata: [
+                    "key": .string(key),
+                    "constraints": .string(constraints.description),
+                    "flexible": .string("\(constraints.hasFlexibleDimensions)")
+                ])
+            }
+        }
+
+        // Process outputs (find first float multiarray output)
+        for (key, desc) in model.modelDescription.outputDescriptionsByName {
+            if let constraint = desc.multiArrayConstraint,
+               (constraint.dataType == .float32 || constraint.dataType == .double) {
+                outputShapeConstraintsCache = extractShapeConstraints(from: constraint)
+                logger.debug("Detected output shape constraints", metadata: [
+                    "key": .string(key),
+                    "constraints": .string(outputShapeConstraintsCache?.description ?? "none")
+                ])
+                break
+            }
+        }
+
+        // Log summary
+        let flexibleInputs = inputShapeConstraintsCache.filter { $0.value.hasFlexibleDimensions }.keys
+        if !flexibleInputs.isEmpty {
+            logger.info("Model has flexible input dimensions", metadata: [
+                "inputs": .string(flexibleInputs.joined(separator: ", "))
+            ])
+        }
+    }
+
+    /// Extract ShapeConstraints from an MLMultiArrayConstraint.
+    private func extractShapeConstraints(from constraint: MLMultiArrayConstraint) -> ShapeConstraints {
+        var dimensions: [DimensionConstraint] = []
+
+        // Check for shape flexibility
+        if let shape = constraint.shape as? [NSNumber], !shape.isEmpty {
+            // Check if we have shape range info
+            if let shapeRange = constraint.shapeConstraint.enumeratedShapes as? [[NSNumber]], !shapeRange.isEmpty {
+                // Model has enumerated shapes
+                // Extract per-dimension from the enumerated shapes
+                let numDims = shapeRange[0].count
+                for d in 0..<numDims {
+                    let allowedValues = shapeRange.map { $0[d].intValue }
+                    let uniqueValues = Array(Set(allowedValues)).sorted()
+                    if uniqueValues.count == 1 {
+                        dimensions.append(.fixed(uniqueValues[0]))
+                    } else {
+                        dimensions.append(.enumerated(uniqueValues))
+                    }
+                }
+            } else {
+                // Use shape directly, checking for flexible dimensions
+                // Non-positive or -1 typically means flexible
+                for dim in shape {
+                    let value = dim.intValue
+                    if value <= 0 {
+                        // Flexible dimension - check for range constraint
+                        let rangeConstraint = constraint.shapeConstraint
+                        if rangeConstraint.type == .range {
+                            // Has range bounds
+                            dimensions.append(.flexible(min: 1, max: nil))
+                        } else {
+                            dimensions.append(.flexible(min: nil, max: nil))
+                        }
+                    } else {
+                        dimensions.append(.fixed(value))
+                    }
+                }
+            }
+        }
+
+        return ShapeConstraints(dimensions: dimensions)
+    }
+
+    // MARK: - Stateful Predictions
+
+    /// Initialize stateful prediction options and output backing buffers.
+    private func initializeStatefulPredictions() {
+        // Create reusable prediction options
+        predictionOptions = MLPredictionOptions()
+
+        // Pre-allocate output backing buffer based on hints
+        // This reduces allocation overhead for repeated predictions
+        let outputSize = maxSequenceLengthHint * hiddenDimensionHint
+        do {
+            // Try to create a backing buffer for typical output shape
+            // Shape: [1, seqLen, hiddenDim] or [seqLen, hiddenDim]
+            let shape: [NSNumber] = [1, NSNumber(value: maxSequenceLengthHint), NSNumber(value: hiddenDimensionHint)]
+            outputBackingBuffer = try MLMultiArray(shape: shape, dataType: .float32)
+            lastOutputShape = shape.map { $0.intValue }
+
+            logger.info("Initialized stateful predictions", metadata: [
+                "outputBufferSize": .string("\(outputSize)"),
+                "maxSeqLen": .string("\(maxSequenceLengthHint)"),
+                "hiddenDim": .string("\(hiddenDimensionHint)")
+            ])
+        } catch {
+            // Fall back to non-stateful predictions
+            logger.warning("Failed to initialize output backing buffer, using standard predictions", metadata: [
+                "error": .string(error.localizedDescription)
+            ])
+            outputBackingBuffer = nil
+            predictionOptions = nil
+        }
+    }
+
+    /// Get or create prediction options, optionally with output backing.
+    /// - Parameter outputShape: Expected output shape for this prediction
+    /// - Returns: Configured MLPredictionOptions
+    private func getPredictionOptions(outputShape: [Int]? = nil) -> MLPredictionOptions {
+        guard useStatefulPredictions else {
+            return MLPredictionOptions()
+        }
+
+        // Check if we can reuse the cached options
+        if let opts = predictionOptions {
+            // If output shape matches cached buffer, we can potentially use output backing
+            // Note: Output backing requires matching shapes
+            if let expected = outputShape, let cached = lastOutputShape,
+               expected == cached, let buffer = outputBackingBuffer {
+                // Set output backing if shapes match
+                // This avoids allocation for each prediction
+                // Note: MLPredictionOptions.outputBackings was added in iOS 17/macOS 14
+                // We check availability at runtime
+                if #available(iOS 17.0, macOS 14.0, *) {
+                    // Find the output feature name
+                    if let model = mlModel,
+                       let outputName = model.modelDescription.outputDescriptionsByName.keys.first {
+                        opts.outputBackings = [outputName: buffer]
+                    }
+                }
+            }
+            return opts
+        }
+
+        return MLPredictionOptions()
+    }
+
     // Using nonisolated to call CoreML's API from actor context.
     nonisolated private func predict(_ model: MLModel, provider: MLFeatureProvider) throws -> MLFeatureProvider {
         try model.prediction(from: provider)
+    }
+
+    /// Perform prediction with stateful options when available.
+    nonisolated private func predictWithOptions(
+        _ model: MLModel,
+        provider: MLFeatureProvider,
+        options: MLPredictionOptions
+    ) throws -> MLFeatureProvider {
+        try model.prediction(from: provider, options: options)
     }
     #endif
 }

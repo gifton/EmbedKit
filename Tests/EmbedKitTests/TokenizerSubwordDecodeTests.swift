@@ -14,8 +14,10 @@ struct TokenizerSubwordDecodeTests {
         let vocab = Vocabulary(tokens: tokens)
         let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
 
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
+        let cfg = TokenizerConfig(
+
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("Hello world embedding", config: cfg)
 
         // Expect tokens with specials and subword split
@@ -30,8 +32,7 @@ struct TokenizerSubwordDecodeTests {
     func lowercasing_affectsIDsButDecodeIsStable() async throws {
         let tokens = ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "[MASK]", "hello"]
         let vocab = Vocabulary(tokens: tokens)
-
-        var cfg = TokenizerConfig(); cfg.addSpecialTokens = true
+        let cfg = TokenizerConfig(addSpecialTokens: true)
 
         // Lowercasing ON: "HELLO" should map to "hello"
         let tLower = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)

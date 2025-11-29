@@ -53,7 +53,7 @@ public struct EmbeddingSearchResult: Sendable, Identifiable {
 
     /// Create from VectorIndex SearchResult
     internal init(
-        from searchResult: SearchResult,
+        from searchResult: VectorIndex.SearchResult,
         text: String? = nil,
         metadata: [String: String]? = nil,
         embedding: Embedding? = nil,

@@ -79,6 +79,9 @@ public struct RerankOptions: Sendable {
 ///
 /// Use this when initial search used approximate methods (HNSW, IVF)
 /// and you want more accurate final ranking.
+///
+/// Uses VectorCore's `TopKSelection` for O(n log k) heap-based selection
+/// instead of O(n log n) full sorting.
 public struct ExactCosineRerank: RerankingStrategy {
     public let name = "ExactCosine"
 
@@ -89,7 +92,7 @@ public struct ExactCosineRerank: RerankingStrategy {
         candidates: [EmbeddingSearchResult],
         k: Int
     ) async throws -> [EmbeddingSearchResult] {
-        guard !candidates.isEmpty else { return [] }
+        guard !candidates.isEmpty && k > 0 else { return [] }
 
         // Recompute similarity for candidates that have embeddings
         var reranked: [EmbeddingSearchResult] = []
@@ -112,9 +115,10 @@ public struct ExactCosineRerank: RerankingStrategy {
             }
         }
 
-        // Sort by similarity (descending) and take top k
-        reranked.sort { $0.similarity > $1.similarity }
-        return Array(reranked.prefix(k))
+        // Use TopKSelection for O(n log k) selection instead of O(n log n) sort
+        // Since we want highest similarity (not lowest distance), use negative similarity
+        let topK = TopKSelection.select(k: k, from: reranked) { -$0.similarity }
+        return topK
     }
 }
 

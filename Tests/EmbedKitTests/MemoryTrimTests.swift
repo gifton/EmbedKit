@@ -25,10 +25,11 @@ struct MemoryTrimTests {
     func trimMemory_resetsCache() async throws {
         let backend = TrackBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 16
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 16,
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "trim", version: "1.0"), dimensions: 4, device: .cpu)
 
         _ = try await model.embed("cache me") // populate cache

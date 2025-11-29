@@ -40,19 +40,27 @@ struct BatchTruncationParityTests {
     func parity_embedBatch_vs_single_startAndMiddle() async throws {
         let backend = PassThroughBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 6
-        cfg.paddingStrategy = .batch
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 6,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let texts = ["a b c d e", "a b", "a b c"]
-        var opts = BatchOptions()
-        opts.bucketSize = 4
-
+        let opts = BatchOptions(
+            bucketSize: 4
+        )
         // Test for .start
-        cfg.truncationStrategy = .start
-        var model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "parity-start", version: "1.0"), dimensions: 4, device: .cpu)
+        let cfgStart = EmbeddingConfiguration(
+            maxTokens: 6,
+            truncationStrategy: .start,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
+        var model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfgStart, id: ModelID(provider: "test", name: "parity-start", version: "1.0"), dimensions: 4, device: .cpu)
         let batchStart = try await model.embedBatch(texts, options: opts)
         var singleStart: [Embedding] = []
         for t in texts { singleStart.append(try await model.embed(t)) }
@@ -65,8 +73,15 @@ struct BatchTruncationParityTests {
         }
 
         // Test for .middle
-        cfg.truncationStrategy = .middle
-        model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "parity-middle", version: "1.0"), dimensions: 4, device: .cpu)
+        let cfgMiddle = EmbeddingConfiguration(
+            maxTokens: 6,
+            truncationStrategy: .middle,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
+        model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfgMiddle, id: ModelID(provider: "test", name: "parity-middle", version: "1.0"), dimensions: 4, device: .cpu)
         let batchMid = try await model.embedBatch(texts, options: opts)
         var singleMid: [Embedding] = []
         for t in texts { singleMid.append(try await model.embed(t)) }

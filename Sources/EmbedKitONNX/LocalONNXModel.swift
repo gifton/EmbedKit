@@ -97,11 +97,12 @@ public actor LocalONNXModel: EmbeddingModel {
         }
 
         // Tokenize
-        var config = TokenizerConfig()
-        config.maxLength = configuration.maxTokens
-        config.truncation = configuration.truncationStrategy
-        config.padding = configuration.paddingStrategy
-        config.addSpecialTokens = configuration.includeSpecialTokens
+        let config = TokenizerConfig(
+            maxLength: configuration.maxTokens,
+            truncation: configuration.truncationStrategy,
+            padding: configuration.paddingStrategy,
+            addSpecialTokens: configuration.includeSpecialTokens
+        )
 
         let tokenized = try await tokenizer.encode(text, config: config)
 
@@ -287,6 +288,9 @@ public actor LocalONNXModel: EmbeddingModel {
             return maxPool(values: values, seqLen: seqLen, hiddenDim: hiddenDim)
         case .cls:
             return clsPool(values: values, hiddenDim: hiddenDim)
+        case .attention:
+            // Attention pooling without weights falls back to mean pooling
+            return meanPool(values: values, seqLen: seqLen, hiddenDim: hiddenDim, mask: attentionMask)
         }
     }
 

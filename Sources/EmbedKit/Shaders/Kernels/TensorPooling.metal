@@ -253,6 +253,86 @@ kernel void tensor_pool_unified(
 }
 
 // ============================================================================
+// MARK: - Batch Attention-Weighted Pooling
+// ============================================================================
+
+/// Batch attention-weighted pooling - weighted average using attention scores
+///
+/// Computes a weighted average of token embeddings using provided attention weights.
+/// This is commonly used with self-attention mechanisms in transformer models.
+///
+/// **Algorithm**:
+/// For each batch b, dimension d:
+///   output[b, d] = Σ(input[b, t, d] * weights[b, t]) / Σ(weights[b, t])
+///
+/// Thread grid: (dimensions, batchSize, 1)
+///
+/// **Performance**: O(B * S * D) where B = batch size, S = sequence length, D = dimensions
+///
+/// @param input Token embeddings [batchSize * sequenceLength * dimensions]
+/// @param weights Attention weights [batchSize * sequenceLength] (typically from softmax)
+/// @param output Pooled embeddings [batchSize * dimensions]
+/// @param params Tensor pooling parameters
+///
+kernel void tensor_attention_pool(
+    device const float* input       [[buffer(0)]],
+    device const float* weights     [[buffer(1)]],
+    device float* output            [[buffer(2)]],
+    constant TensorPoolingParams& params [[buffer(3)]],
+    uint2 gid                       [[thread_position_in_grid]]
+) {
+    const int d = gid.x;  // dimension index
+    const int b = gid.y;  // batch index
+
+    if (d >= params.dimensions || b >= params.batchSize) return;
+
+    const int seqLen = params.sequenceLength;
+    const int dims = params.dimensions;
+
+    // Calculate base offsets
+    const int batchInputOffset = b * seqLen * dims;
+    const int batchWeightOffset = b * seqLen;
+    const int outputIdx = b * dims + d;
+
+    float weightedSum = 0.0f;
+    float weightSum = 0.0f;
+
+    // Accumulate with unrolling for better ILP
+    int t = 0;
+    for (; t <= seqLen - 4; t += 4) {
+        // Load weights
+        const float w0 = weights[batchWeightOffset + t];
+        const float w1 = weights[batchWeightOffset + t + 1];
+        const float w2 = weights[batchWeightOffset + t + 2];
+        const float w3 = weights[batchWeightOffset + t + 3];
+
+        // Load input values
+        const float v0 = input[batchInputOffset + t * dims + d];
+        const float v1 = input[batchInputOffset + (t + 1) * dims + d];
+        const float v2 = input[batchInputOffset + (t + 2) * dims + d];
+        const float v3 = input[batchInputOffset + (t + 3) * dims + d];
+
+        // Accumulate weighted sum using FMA
+        weightedSum = fma(v0, w0, weightedSum);
+        weightedSum = fma(v1, w1, weightedSum);
+        weightedSum = fma(v2, w2, weightedSum);
+        weightedSum = fma(v3, w3, weightedSum);
+        weightSum += w0 + w1 + w2 + w3;
+    }
+
+    // Handle remaining elements
+    for (; t < seqLen; t++) {
+        const float weight = weights[batchWeightOffset + t];
+        weightedSum = fma(input[batchInputOffset + t * dims + d], weight, weightedSum);
+        weightSum += weight;
+    }
+
+    // Normalize by weight sum with epsilon protection
+    const float invWeightSum = (weightSum > EPSILON_NORMAL) ? (1.0f / weightSum) : 0.0f;
+    output[outputIdx] = weightedSum * invWeightSum;
+}
+
+// ============================================================================
 // MARK: - Optimized Threadgroup Pooling (For Large Sequences)
 // ============================================================================
 

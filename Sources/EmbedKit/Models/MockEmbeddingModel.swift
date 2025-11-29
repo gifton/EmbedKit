@@ -4,16 +4,25 @@ import Foundation
 import Logging
 
 actor MockEmbeddingModel: EmbeddingModel {
-    nonisolated let id = ModelID(provider: "mock", name: "test", version: "1.0")
-    nonisolated let dimensions = 384
-    nonisolated let device: ComputeDevice = .cpu
+    nonisolated let id: ModelID
+    nonisolated let dimensions: Int
+    nonisolated let device: ComputeDevice
     private let configuration: EmbeddingConfiguration
     private let logger = Logger(label: "EmbedKit.MockEmbeddingModel")
 
     private var metricsData = MetricsData()
 
-    init(configuration: EmbeddingConfiguration) {
+    /// Creates a mock embedding model with default settings.
+    init(
+        dimensions: Int = 384,
+        configuration: EmbeddingConfiguration = .default,
+        device: ComputeDevice = .cpu,
+        id: ModelID? = nil
+    ) {
+        self.dimensions = dimensions
         self.configuration = configuration
+        self.device = device
+        self.id = id ?? ModelID(provider: "mock", name: "test", version: "1.0")
     }
 
     func embed(_ text: String) async throws -> Embedding {

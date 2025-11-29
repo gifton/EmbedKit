@@ -35,10 +35,11 @@ struct AppleEmbeddingModelTests {
     func appleModel_embedMeanPoolingAndNormalization() async throws {
         let backend = DeterministicBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.maxTokens = 16
-        cfg.includeSpecialTokens = false
-        cfg.normalizeOutput = true
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 16,
+            includeSpecialTokens: false,
+            normalizeOutput: true
+        )
 
         let model = AppleEmbeddingModel(
             backend: backend,

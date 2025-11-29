@@ -30,10 +30,11 @@ struct BatchOrderAndMaskTests {
         }
 
         let backend = AvgIDBackend()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let tokenizer = SimpleTokenizer()
         let model = AppleEmbeddingModel(
             backend: backend,
@@ -58,8 +59,7 @@ struct BatchOrderAndMaskTests {
         }
 
         // sortByLength = true
-        var opts = BatchOptions()
-        opts.sortByLength = true
+        let opts = BatchOptions(sortByLength: true)
         let batchTrue = try await model.embedBatch(texts, options: opts)
         #expect(batchTrue.count == texts.count)
         for i in 0..<texts.count {
@@ -70,8 +70,8 @@ struct BatchOrderAndMaskTests {
         }
 
         // sortByLength = false
-        opts.sortByLength = false
-        let batchFalse = try await model.embedBatch(texts, options: opts)
+        let optsFalse = BatchOptions(sortByLength: false)
+        let batchFalse = try await model.embedBatch(texts, options: optsFalse)
         #expect(batchFalse.count == texts.count)
         for i in 0..<texts.count {
             let v = batchFalse[i].vector
@@ -113,11 +113,12 @@ struct BatchOrderAndMaskTests {
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
 
         // Model A: no padding
-        var cfgA = EmbeddingConfiguration()
-        cfgA.includeSpecialTokens = false
-        cfgA.poolingStrategy = .mean
-        cfgA.normalizeOutput = false
-        cfgA.paddingStrategy = .none
+        let cfgA = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let modelA = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -128,8 +129,12 @@ struct BatchOrderAndMaskTests {
         )
 
         // Model B: batch padding
-        var cfgB = cfgA
-        cfgB.paddingStrategy = .batch
+        let cfgB = EmbeddingConfiguration(
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let modelB = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -146,7 +151,7 @@ struct BatchOrderAndMaskTests {
         for t in texts { expected.append(try await modelA.embed(t).vector) }
 
         // Batched with padding: should match for each item when mean masking is applied
-        let got = try await modelB.embedBatch(texts, options: .init())
+        let got = try await modelB.embedBatch(texts, options: BatchOptions())
         #expect(got.count == texts.count)
         for i in 0..<texts.count {
             #expect(got[i].vector.count == expected[i].count)

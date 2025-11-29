@@ -12,9 +12,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles CJK characters")
     func cjkCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("你好世界", config: config)
 
         #expect(result.ids.count > 0)
@@ -24,9 +24,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles Arabic script")
     func arabicScript() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("مرحبا بالعالم", config: config)
 
         #expect(result.ids.count > 0)
@@ -35,9 +35,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles Hebrew script")
     func hebrewScript() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("שלום עולם", config: config)
 
         #expect(result.ids.count > 0)
@@ -46,10 +46,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles emoji sequences")
     func emojiSequences() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Various emoji types
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Various emoji types
         let text = "Hello 👋🏽 World 🌍 Test 👨‍👩‍👧‍👦"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -60,10 +59,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles combining diacriticals")
     func combiningDiacriticals() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Text with combining characters
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Text with combining characters
         let text = "café résumé naïve"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -73,10 +71,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles zero-width characters")
     func zeroWidthCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Text with zero-width joiner/non-joiner
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Text with zero-width joiner/non-joiner
         let text = "test\u{200B}word\u{200C}another\u{200D}final"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -86,9 +83,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles mixed scripts")
     func mixedScripts() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "Hello 你好 مرحبا שלום Привет"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -98,10 +95,9 @@ struct TokenizerUnicodeDeepTests {
     @Test("Handles surrogate pair characters")
     func surrogatePairCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Characters outside BMP (require surrogate pairs in UTF-16)
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Characters outside BMP (require surrogate pairs in UTF-16)
         let text = "𝕳𝖊𝖑𝖑𝖔 𝖂𝖔𝖗𝖑𝖉"  // Mathematical bold fraktur
         let result = try await tokenizer.encode(text, config: config)
 
@@ -117,9 +113,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles multiple consecutive spaces")
     func multipleSpaces() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "hello    world"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -129,9 +125,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles tabs")
     func tabCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "hello\tworld"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -141,9 +137,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles newlines")
     func newlineCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "hello\nworld"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -153,9 +149,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles carriage return and line feed")
     func crlfCharacters() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "hello\r\nworld"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -165,9 +161,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles leading whitespace")
     func leadingWhitespace() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "   hello world"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -177,9 +173,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles trailing whitespace")
     func trailingWhitespace() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "hello world   "
         let result = try await tokenizer.encode(text, config: config)
 
@@ -189,10 +185,9 @@ struct TokenizerWhitespaceDeepTests {
     @Test("Handles Unicode whitespace characters")
     func unicodeWhitespace() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Various Unicode whitespace: em space, en space, thin space
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Various Unicode whitespace: em space, en space, thin space
         let text = "hello\u{2003}world\u{2002}test\u{2009}final"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -208,9 +203,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles standard punctuation separation")
     func standardPunctuation() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "Hello, world! How are you?"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -223,9 +218,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles contractions")
     func contractions() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "I'm can't won't shouldn't"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -235,9 +230,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles possessives")
     func possessives() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "John's Mary's the dog's"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -247,9 +242,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles quotation marks")
     func quotationMarks() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = #""Hello" 'world' «test» „quote""#
         let result = try await tokenizer.encode(text, config: config)
 
@@ -259,9 +254,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles brackets and parentheses")
     func bracketsParentheses() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "(hello) [world] {test}"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -276,9 +271,9 @@ struct TokenizerPunctuationDeepTests {
     @Test("Handles mathematical symbols")
     func mathematicalSymbols() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "x + y = z × w ÷ 2"
         let result = try await tokenizer.encode(text, config: config)
 
@@ -299,10 +294,9 @@ struct WordPieceDeepTests {
             "un", "##happ", "##y", "##iness", "happy", "the"
         ])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Test a word that can be tokenized with available subwords
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Test a word that can be tokenized with available subwords
         let result = try await tokenizer.encode("un", config: config)
 
         // Should find the "un" token
@@ -314,9 +308,9 @@ struct WordPieceDeepTests {
     func wordPieceUnknownToken() async throws {
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "hello"])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("xyzabc", config: config)
 
         // Unknown word should map to [UNK]
@@ -327,10 +321,9 @@ struct WordPieceDeepTests {
     func wordPieceVeryLongWord() async throws {
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "test"])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
-        // Word longer than 200 characters
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )        // Word longer than 200 characters
         let longWord = String(repeating: "a", count: 250)
         let result = try await tokenizer.encode(longWord, config: config)
 
@@ -345,9 +338,9 @@ struct WordPieceDeepTests {
             "hello", "world", "test", "##ing"
         ])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let encoded = try await tokenizer.encode("hello world", config: config)
         let decoded = try await tokenizer.decode(encoded.ids)
 
@@ -360,9 +353,9 @@ struct WordPieceDeepTests {
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "hello"])
         let lowercaseTokenizer = WordPieceTokenizer(vocabulary: vocab, lowercase: true)
         let caseTokenizer = WordPieceTokenizer(vocabulary: vocab, lowercase: false)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let lowResult = try await lowercaseTokenizer.encode("HELLO", config: config)
         let caseResult = try await caseTokenizer.encode("HELLO", config: config)
 
@@ -380,9 +373,9 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Empty string input")
     func emptyString() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("", config: config)
 
         #expect(result.ids.isEmpty)
@@ -392,9 +385,9 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Single character input")
     func singleCharacter() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("a", config: config)
 
         #expect(result.tokens.count == 1)
@@ -404,9 +397,9 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Only whitespace input")
     func onlyWhitespace() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("   \t\n  ", config: config)
 
         #expect(result.tokens.isEmpty)
@@ -415,9 +408,9 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Only punctuation input")
     func onlyPunctuation() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode(".,!?;:", config: config)
 
         // Each punctuation should be a separate token
@@ -427,11 +420,11 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Very long input string")
     func veryLongInput() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.maxLength = 100
-        config.truncation = .end
-
+        let config = TokenizerConfig(
+            maxLength: 100,
+            truncation: .end,
+            addSpecialTokens: false
+        )
         let longText = (0..<1000).map { "word\($0)" }.joined(separator: " ")
         let result = try await tokenizer.encode(longText, config: config)
 
@@ -441,9 +434,9 @@ struct TokenizerEdgeCaseDeepTests {
     @Test("Repeated same word")
     func repeatedSameWord() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = String(repeating: "test ", count: 50)
         let result = try await tokenizer.encode(text, config: config)
 
@@ -461,7 +454,7 @@ struct TokenizerAttentionMaskDeepTests {
     @Test("Attention mask length matches token count")
     func attentionMaskLengthMatches() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
+        let config = TokenizerConfig()
 
         let result = try await tokenizer.encode("hello world test", config: config)
 
@@ -472,9 +465,9 @@ struct TokenizerAttentionMaskDeepTests {
     @Test("Non-padded tokens have mask value 1")
     func nonPaddedMaskValue() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("hello world", config: config)
 
         // All should be 1 (no padding)
@@ -485,11 +478,11 @@ struct TokenizerAttentionMaskDeepTests {
     func wordPiecePaddingMask() async throws {
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "hello"])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.padding = .max
-        config.maxLength = 10
-
+        let config = TokenizerConfig(
+            maxLength: 10,
+            padding: .max,
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("hello", config: config)
 
         // First token should be 1, padding tokens should be 0
@@ -506,11 +499,11 @@ struct TokenizerTruncationDeepTests {
     @Test("End truncation preserves start")
     func endTruncationPreservesStart() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.maxLength = 3
-        config.truncation = .end
-
+        let config = TokenizerConfig(
+            maxLength: 3,
+            truncation: .end,
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("one two three four five", config: config)
 
         #expect(result.tokens[0] == "one")
@@ -521,11 +514,11 @@ struct TokenizerTruncationDeepTests {
     @Test("Start truncation preserves end")
     func startTruncationPreservesEnd() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.maxLength = 3
-        config.truncation = .start
-
+        let config = TokenizerConfig(
+            maxLength: 3,
+            truncation: .start,
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("one two three four five", config: config)
 
         #expect(result.tokens[0] == "three")
@@ -536,11 +529,11 @@ struct TokenizerTruncationDeepTests {
     @Test("Middle truncation preserves start and end")
     func middleTruncationPreservesStartEnd() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.maxLength = 4
-        config.truncation = .middle
-
+        let config = TokenizerConfig(
+            maxLength: 4,
+            truncation: .middle,
+            addSpecialTokens: false
+        )
         let result = try await tokenizer.encode("one two three four five six", config: config)
 
         // Should have first 2 and last 2
@@ -552,11 +545,11 @@ struct TokenizerTruncationDeepTests {
     @Test("No truncation throws on too long")
     func noTruncationThrows() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-        config.maxLength = 3
-        config.truncation = .none
-
+        let config = TokenizerConfig(
+            maxLength: 3,
+            truncation: .none,
+            addSpecialTokens: false
+        )
         do {
             _ = try await tokenizer.encode("one two three four five", config: config)
             #expect(Bool(false), "Should have thrown")
@@ -575,9 +568,9 @@ struct TokenizerConsistencyDeepTests {
     @Test("Same input produces same output")
     func deterministicOutput() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let text = "Hello world test input"
 
         let result1 = try await tokenizer.encode(text, config: config)
@@ -590,9 +583,9 @@ struct TokenizerConsistencyDeepTests {
     @Test("Tokenize then decode is reversible (SimpleTokenizer)")
     func encodeDecodeRoundtrip() async throws {
         let tokenizer = SimpleTokenizer()
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let original = "hello world"
         let encoded = try await tokenizer.encode(original, config: config)
 
@@ -608,9 +601,9 @@ struct TokenizerConsistencyDeepTests {
             "hello", "world", "test"
         ])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var config = TokenizerConfig()
-        config.addSpecialTokens = false
-
+        let config = TokenizerConfig(
+            addSpecialTokens: false
+        )
         let original = "hello world"
         let encoded = try await tokenizer.encode(original, config: config)
         let decoded = try await tokenizer.decode(encoded.ids)

@@ -359,12 +359,14 @@ public struct ThreadgroupOptimizer: Sendable {
 
         // Fused operations: one threadgroup per sequence
         // Threads cooperatively pool then normalize
+        // Note: Kernel uses `uint b [[threadgroup_position_in_grid]]` (scalar)
+        // which only receives X component, so grid must be (batchSize, 1, 1)
         let threadWidth = min(dimensions, maxThreads)
         let alignedWidth = min(((threadWidth + simdWidth - 1) / simdWidth) * simdWidth, 256)
 
         return (
             threadgroup: (alignedWidth, 1, 1),
-            grid: (1, batchSize, 1)
+            grid: (batchSize, 1, 1)
         )
     }
 
@@ -391,9 +393,26 @@ public struct ThreadgroupOptimizer: Sendable {
 // MARK: - Adaptive Kernel Selector
 
 /// Intelligently selects between fused and separate kernels based on workload.
+///
+/// Supports persistent storage of performance history to improve kernel selection
+/// across app launches.
+///
+/// Example:
+/// ```swift
+/// let selector = AdaptiveKernelSelector(capabilities: caps, adaptiveLearning: true)
+///
+/// // Load previous performance data
+/// await selector.loadPerformanceHistory()
+///
+/// // Use selector...
+/// let choice = await selector.selectKernel(for: .poolAndNormalize, batchSize: 16)
+///
+/// // Save performance data before app exits
+/// await selector.savePerformanceHistory()
+/// ```
 public actor AdaptiveKernelSelector {
     /// Kernel selection decision
-    public enum KernelChoice: Sendable {
+    public enum KernelChoice: String, Sendable, Codable {
         case fused           // Use fused kernel
         case separate        // Use separate kernels
         case cpu             // Fall back to CPU
@@ -401,7 +420,7 @@ public actor AdaptiveKernelSelector {
     }
 
     /// Operation types for selection
-    public enum EmbeddingOperation: Sendable {
+    public enum EmbeddingOperation: String, Sendable, Codable, CaseIterable {
         case poolOnly
         case normalizeOnly
         case poolAndNormalize
@@ -413,17 +432,142 @@ public actor AdaptiveKernelSelector {
     private var performanceHistory: [EmbeddingOperation: [PerformanceRecord]] = [:]
     private let historyLimit = 50
     private let adaptiveLearningEnabled: Bool
+    private let persistenceURL: URL?
 
-    private struct PerformanceRecord {
+    private struct PerformanceRecord: Codable {
         let choice: KernelChoice
         let workloadSize: Int
         let executionTime: TimeInterval
         let throughput: Double  // items per second
+        let timestamp: Date
+
+        init(choice: KernelChoice, workloadSize: Int, executionTime: TimeInterval, throughput: Double) {
+            self.choice = choice
+            self.workloadSize = workloadSize
+            self.executionTime = executionTime
+            self.throughput = throughput
+            self.timestamp = Date()
+        }
+    }
+
+    /// Persistent storage format
+    private struct PerformanceDatabase: Codable {
+        let version: Int
+        let deviceFamily: String
+        let records: [String: [PerformanceRecord]]  // String key for Codable
+
+        static let currentVersion = 1
     }
 
     public init(capabilities: GPUDeviceCapabilities, adaptiveLearning: Bool = true) {
         self.capabilities = capabilities
         self.adaptiveLearningEnabled = adaptiveLearning
+        self.persistenceURL = Self.defaultPersistenceURL()
+    }
+
+    /// Initialize with custom persistence URL (useful for testing)
+    public init(capabilities: GPUDeviceCapabilities, adaptiveLearning: Bool, persistenceURL: URL?) {
+        self.capabilities = capabilities
+        self.adaptiveLearningEnabled = adaptiveLearning
+        self.persistenceURL = persistenceURL
+    }
+
+    // MARK: - Persistence
+
+    /// Default persistence URL in caches directory
+    private static func defaultPersistenceURL() -> URL? {
+        guard let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return cachesDir.appendingPathComponent("EmbedKit").appendingPathComponent("gpu_performance.json")
+    }
+
+    /// Save performance history to disk
+    ///
+    /// Call this before app termination to persist learned performance data.
+    public func savePerformanceHistory() async {
+        guard let url = persistenceURL else { return }
+
+        // Convert history to serializable format
+        var records: [String: [PerformanceRecord]] = [:]
+        for (operation, history) in performanceHistory {
+            records[operation.rawValue] = history
+        }
+
+        let database = PerformanceDatabase(
+            version: PerformanceDatabase.currentVersion,
+            deviceFamily: capabilities.family.rawValue,
+            records: records
+        )
+
+        do {
+            let directory = url.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(database)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Silently fail - persistence is best-effort
+        }
+    }
+
+    /// Load performance history from disk
+    ///
+    /// Call this during initialization to restore learned performance data.
+    public func loadPerformanceHistory() async {
+        guard let url = persistenceURL,
+              FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let database = try decoder.decode(PerformanceDatabase.self, from: data)
+
+            // Only load if same device family and compatible version
+            guard database.version == PerformanceDatabase.currentVersion,
+                  database.deviceFamily == capabilities.family.rawValue else {
+                // Incompatible data - clear and start fresh
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+
+            // Convert back to runtime format
+            for (operationStr, records) in database.records {
+                if let operation = EmbeddingOperation(rawValue: operationStr) {
+                    // Filter out records older than 7 days
+                    let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+                    let recentRecords = records.filter { $0.timestamp > cutoff }
+                    if !recentRecords.isEmpty {
+                        performanceHistory[operation] = recentRecords
+                    }
+                }
+            }
+        } catch {
+            // Silently fail - start with empty history
+        }
+    }
+
+    /// Clear all performance history (both in-memory and persisted)
+    public func clearPerformanceHistory() async {
+        performanceHistory.removeAll()
+        if let url = persistenceURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Check if performance history has been loaded
+    public var hasPerformanceHistory: Bool {
+        !performanceHistory.isEmpty
+    }
+
+    /// Get the total number of recorded performance samples
+    public var totalSamples: Int {
+        performanceHistory.values.reduce(0) { $0 + $1.count }
     }
 
     /// Select the best kernel for the given operation and workload

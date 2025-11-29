@@ -34,6 +34,98 @@ public protocol Tokenizer: Sendable {
     func decode(_ ids: [Int]) async throws -> String
     var vocabularySize: Int { get }
     var specialTokens: SpecialTokens { get }
+
+    /// Encode multiple texts in parallel.
+    ///
+    /// Default implementation uses Swift concurrency for parallel processing.
+    /// Override for custom batch optimization.
+    ///
+    /// - Parameters:
+    ///   - texts: Array of texts to tokenize
+    ///   - config: Tokenization configuration
+    ///   - maxConcurrency: Maximum parallel tokenization tasks (default: ProcessInfo.activeProcessorCount)
+    /// - Returns: Array of tokenized texts in the same order as input
+    func encodeBatch(
+        _ texts: [String],
+        config: TokenizerConfig,
+        maxConcurrency: Int?
+    ) async throws -> [TokenizedText]
+}
+
+// MARK: - Tokenizer Default Batch Implementation
+
+public extension Tokenizer {
+    /// Default parallel batch tokenization implementation.
+    ///
+    /// Uses structured concurrency with controlled parallelism for efficient
+    /// tokenization of large text batches.
+    func encodeBatch(
+        _ texts: [String],
+        config: TokenizerConfig,
+        maxConcurrency: Int? = nil
+    ) async throws -> [TokenizedText] {
+        guard !texts.isEmpty else { return [] }
+
+        // Single text - no parallelism needed
+        if texts.count == 1 {
+            return [try await encode(texts[0], config: config)]
+        }
+
+        // Determine concurrency level
+        let concurrency = maxConcurrency ?? min(ProcessInfo.processInfo.activeProcessorCount, texts.count)
+
+        // For small batches, process directly without chunking overhead
+        if texts.count <= concurrency {
+            return try await withThrowingTaskGroup(of: (Int, TokenizedText).self) { group in
+                for (index, text) in texts.enumerated() {
+                    group.addTask {
+                        let result = try await self.encode(text, config: config)
+                        return (index, result)
+                    }
+                }
+
+                var results = [TokenizedText?](repeating: nil, count: texts.count)
+                for try await (index, tokenized) in group {
+                    results[index] = tokenized
+                }
+                return results.compactMap { $0 }
+            }
+        }
+
+        // For larger batches, chunk to control memory and task overhead
+        let chunkSize = max(1, (texts.count + concurrency - 1) / concurrency)
+        var allResults = [TokenizedText?](repeating: nil, count: texts.count)
+
+        try await withThrowingTaskGroup(of: [(Int, TokenizedText)].self) { group in
+            var startIndex = 0
+
+            while startIndex < texts.count {
+                let endIndex = min(startIndex + chunkSize, texts.count)
+                let chunkStart = startIndex
+
+                group.addTask {
+                    var chunkResults: [(Int, TokenizedText)] = []
+                    chunkResults.reserveCapacity(endIndex - chunkStart)
+
+                    for i in chunkStart..<endIndex {
+                        let result = try await self.encode(texts[i], config: config)
+                        chunkResults.append((i, result))
+                    }
+                    return chunkResults
+                }
+
+                startIndex = endIndex
+            }
+
+            for try await chunkResults in group {
+                for (index, tokenized) in chunkResults {
+                    allResults[index] = tokenized
+                }
+            }
+        }
+
+        return allResults.compactMap { $0 }
+    }
 }
 
 // MARK: - Model Backend Protocol

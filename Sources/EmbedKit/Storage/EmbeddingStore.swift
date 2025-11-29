@@ -296,6 +296,10 @@ public actor EmbeddingStore: EmbeddingStorable {
     }
 
     /// Batch search with multiple queries.
+    ///
+    /// Uses VectorIndex's parallel batch search for concurrent query execution.
+    /// All queries are processed simultaneously using TaskGroup, providing
+    /// significant speedup over sequential search for multiple queries.
     public func batchSearch(
         texts: [String],
         k: Int,
@@ -304,18 +308,29 @@ public actor EmbeddingStore: EmbeddingStorable {
         guard let model = model else {
             throw EmbeddingStoreError.noModelConfigured
         }
+        guard k > 0 else { return texts.map { _ in [] } }
 
         let queryEmbeddings = try await model.embedBatch(texts, options: BatchOptions())
 
-        var results: [[EmbeddingSearchResult]] = []
-        results.reserveCapacity(texts.count)
+        // Use VectorIndex's parallel batch search (TaskGroup-based concurrency)
+        let indexResults = try await index.batchSearch(
+            queries: queryEmbeddings.map { $0.vector },
+            k: k,
+            filter: filter
+        )
 
-        for embedding in queryEmbeddings {
-            let searchResults = try await search(embedding, k: k, filter: filter)
-            results.append(searchResults)
+        // Convert VectorIndex results to EmbeddingSearchResults with stored metadata
+        return indexResults.map { queryResults in
+            queryResults.map { result in
+                EmbeddingSearchResult(
+                    from: result,
+                    text: textStore[result.id],
+                    metadata: nil,
+                    embedding: embeddingStore[result.id],
+                    metric: config.metric
+                )
+            }
         }
-
-        return results
     }
 
     // MARK: - Management Operations
@@ -435,14 +450,28 @@ public actor EmbeddingStore: EmbeddingStorable {
     }
 
     /// Compute batch distances with acceleration (for custom operations).
+    ///
+    /// Uses GPU acceleration when available, otherwise falls back to
+    /// Accelerate/vDSP optimized CPU computation.
     public func computeDistances(
         from query: Embedding,
         to candidates: [Embedding]
     ) async throws -> [Float] {
         guard let accelerator = accelerator else {
-            // CPU fallback - compute cosine distances
-            return candidates.map { candidate in
-                1.0 - query.similarity(to: candidate)
+            // CPU fallback using Accelerate BLAS
+            let candidateVectors = candidates.map { $0.vector }
+            switch config.metric {
+            case .cosine:
+                return AccelerateBLAS.batchCosineDistance(query: query.vector, candidates: candidateVectors)
+            case .euclidean:
+                return AccelerateBLAS.batchEuclideanDistance(query: query.vector, candidates: candidateVectors)
+            case .dotProduct:
+                // For dot product, higher is better, so we negate to get "distance"
+                return candidateVectors.map { -AccelerateBLAS.dotProduct(query.vector, $0) }
+            case .manhattan:
+                return AccelerateBLAS.batchManhattanDistance(query: query.vector, candidates: candidateVectors)
+            case .chebyshev:
+                return AccelerateBLAS.batchChebyshevDistance(query: query.vector, candidates: candidateVectors)
             }
         }
 
@@ -501,6 +530,19 @@ public enum EmbeddingStoreError: Error, LocalizedError {
             return "Index not found at specified path"
         case .persistenceError(let msg):
             return "Persistence error: \(msg)"
+        }
+    }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .noModelConfigured:
+            return "Initialize the EmbeddingStore with an embedding model, or use store(embedding:) with pre-computed embeddings instead of store(text:)."
+        case .dimensionMismatch:
+            return "Ensure all embeddings stored in this index have the same dimensions. Create a new store with the correct dimension if needed."
+        case .indexNotFound:
+            return "Verify the file path is correct and the index was previously saved. Check file permissions and ensure the directory exists."
+        case .persistenceError:
+            return "Check available disk space and file permissions. Ensure the target directory exists and is writable."
         }
     }
 }

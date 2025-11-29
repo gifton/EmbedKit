@@ -27,28 +27,31 @@ struct MicroBatchConstraintsTests {
         let backend = CountingBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","a","b"]) // PAD for batch padding
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "mb-combo", version: "1.0"), dimensions: 4, device: .cpu)
 
         // Ten 2-token texts; bucket key = 16 with bucketSize 16
         let texts = Array(repeating: "a b", count: 10)
-        var options = BatchOptions()
-        options.bucketSize = 16
-        options.maxBatchTokens = 32 // token budget allows only 2 per batch (since 2*16 = 32)
-        options.maxBatchSize = 3    // size cap would allow 3, but min(2,3) = 2
+        let options = BatchOptions(
+            maxBatchSize: 3,    // size cap would allow 3, but min(2,3) = 2
+            bucketSize: 16,
+            maxBatchTokens: 32  // token budget allows only 2 per batch (since 2*16 = 32)
+        )
         _ = try await model.embedBatch(texts, options: options)
         let sizes1 = await backend.batchSizes
         #expect(!sizes1.isEmpty)
         #expect(sizes1.allSatisfy { $0 == 2 })
 
         // Now flip: allow token budget high but restrict maxBatchSize to 2
-        var options2 = BatchOptions()
-        options2.bucketSize = 16
-        options2.maxBatchTokens = 10_000 // large
-        options2.maxBatchSize = 2
+        let options2 = BatchOptions(
+            maxBatchSize: 2,
+            bucketSize: 16,
+            maxBatchTokens: 10_000  // large
+        )
         _ = try await model.embedBatch(texts, options: options2)
         let sizes2 = await backend.batchSizes
         let newSizes = Array(sizes2.dropFirst(sizes1.count))

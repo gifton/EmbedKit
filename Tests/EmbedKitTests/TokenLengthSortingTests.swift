@@ -39,12 +39,13 @@ struct TokenLengthSortingTests {
     func sortByTokenLength_preservesOutputOrder() async throws {
         let backend = AvgIDBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "sort-len", version: "1.0"), dimensions: 4, device: .cpu)
         let texts = ["a b ccc", "a", "a b"] // token lengths: 3,1,2
         // Baseline: single embeds in original order
@@ -52,9 +53,10 @@ struct TokenLengthSortingTests {
         for t in texts { expected.append(try await model.embed(t).vector) }
 
         // Batched with sortByLength=true must map back to original order
-        var opts = BatchOptions()
-        opts.sortByLength = true
-        opts.bucketSize = 4
+        let opts = BatchOptions(
+            sortByLength: true,
+            bucketSize: 4
+        )
         let got = try await model.embedBatch(texts, options: opts)
         #expect(got.count == texts.count)
         for i in 0..<texts.count {

@@ -1,0 +1,98 @@
+name: SwiftLint
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.swift'
+      - '.swiftlint.yml'
+      - '.github/workflows/swiftlint.yml'
+  pull_request:
+    paths:
+      - '**.swift'
+      - '.swiftlint.yml'
+      - '.github/workflows/swiftlint.yml'
+
+jobs:
+  swiftlint:
+    name: Run SwiftLint
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Install SwiftLint
+      run: brew install swiftlint
+
+    - name: Run SwiftLint
+      run: |
+        echo "Running SwiftLint..."
+        swiftlint --version
+
+        # Run SwiftLint with GitHub Actions annotations
+        swiftlint --reporter github-actions-logging
+
+    - name: Generate SwiftLint Summary
+      if: always()
+      run: |
+        echo "## SwiftLint Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Count violations
+        WARNINGS=$(swiftlint --quiet 2>/dev/null | grep -c "warning:" || true)
+        ERRORS=$(swiftlint --quiet 2>/dev/null | grep -c "error:" || true)
+
+        echo "### Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Warnings:** $WARNINGS" >> $GITHUB_STEP_SUMMARY
+        echo "- **Errors:** $ERRORS" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$ERRORS" -gt 0 ]; then
+          echo "### ❌ Errors Found" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          swiftlint --quiet 2>/dev/null | grep "error:" | head -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [ "$WARNINGS" -gt 0 ]; then
+          echo "### ⚠️ Warnings Found" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          swiftlint --quiet 2>/dev/null | grep "warning:" | head -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+          echo "### ✅ No issues found!" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Save detailed report
+        echo "### Detailed Report" > swiftlint-report.md
+        echo "" >> swiftlint-report.md
+        echo "Generated at: $(date)" >> swiftlint-report.md
+        echo "" >> swiftlint-report.md
+        swiftlint --reporter markdown >> swiftlint-report.md || true
+
+    - name: Upload SwiftLint Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: swiftlint-report
+        path: swiftlint-report.md
+        retention-days: 7
+
+    - name: Check for Errors
+      run: |
+        ERRORS=$(swiftlint --quiet 2>/dev/null | grep -c "error:" || true)
+        if [ "$ERRORS" -gt 0 ]; then
+          echo "❌ SwiftLint found $ERRORS error(s)"
+          echo "See the workflow summary above for details."
+          exit 1
+        else
+          WARNINGS=$(swiftlint --quiet 2>/dev/null | grep -c "warning:" || true)
+          echo "✅ SwiftLint passed with $WARNINGS warning(s)"
+        fi

@@ -18,10 +18,11 @@ struct CoreMLOverridesTests {
         guard let vocabURL = vocabPaths.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return }
         let vocab = try Vocabulary.load(from: vocabURL)
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = true
-        cfg.maxTokens = 64
-        let backend = CoreMLBackend(modelURL: modelPath, device: cfg.preferredDevice)
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            includeSpecialTokens: true
+        )
+        let backend = CoreMLBackend(modelURL: modelPath, device: cfg.inferenceDevice)
         await backend.setInputKeyOverrides(token: "input_ids", mask: "attention_mask", type: nil, pos: nil)
         await backend.setOutputKeyOverride(nil)
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "overrides", version: "1.0"), dimensions: 384, device: .auto)
@@ -41,10 +42,11 @@ struct CoreMLOverridesTests {
         guard let vocabURL = vocabPaths.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return }
         let vocab = try Vocabulary.load(from: vocabURL)
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = true
-        cfg.maxTokens = 64
-        let backend = CoreMLBackend(modelURL: modelPath, device: cfg.preferredDevice)
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            includeSpecialTokens: true
+        )
+        let backend = CoreMLBackend(modelURL: modelPath, device: cfg.inferenceDevice)
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "overridesModel", version: "1.0"), dimensions: 384, device: .auto)
         await model.setCoreMLInputKeyOverrides(token: "input_ids", mask: "attention_mask")
         await model.setCoreMLOutputKeyOverride(nil)

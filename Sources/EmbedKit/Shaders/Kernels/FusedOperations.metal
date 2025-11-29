@@ -60,7 +60,7 @@ kernel void fused_mean_pool_normalize(
     const int batchOutputOffset = b * dims;
 
     // Shared memory: [0-dims-1] for pooled vector, [dims] for count, [dims+1] for invNorm
-    threadgroup float shared[258];  // Support up to 256 dims + 2 extras
+    threadgroup float shared[1024 + 33];  // Support up to 1024 dims + norm reduction workspace
     threadgroup int sharedCount[1];
 
     // ========================================================================
@@ -167,7 +167,7 @@ kernel void fused_max_pool_normalize(
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
-    threadgroup float shared[258];
+    threadgroup float shared[1024 + 33];  // Support up to 1024 dims + norm reduction workspace
 
     // ========================================================================
     // Phase 1: Max pooling
@@ -265,7 +265,9 @@ kernel void fused_pool_normalize_unified(
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
-    threadgroup float shared[258];
+    // Shared memory: dims for pooled values + 33 for norm reduction workspace
+    // Support up to 768-dim (BERT large) or 1024-dim (large models)
+    threadgroup float shared[1024 + 33];
     threadgroup int sharedCount[1];
 
     // ========================================================================
@@ -327,6 +329,121 @@ kernel void fused_pool_normalize_unified(
         float partial = 0.0f;
         for (int d = tid; d < dims; d += tgSize) {
             partial = fma(shared[d], shared[d], partial);
+        }
+
+        partial = simd_sum(partial);
+
+        if (simd_lane == 0) {
+            shared[dims + (tid / simd_size)] = partial;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        if (tid < simd_size) {
+            const int numSimdGroups = (tgSize + simd_size - 1) / simd_size;
+            float val = tid < numSimdGroups ? shared[dims + tid] : 0.0f;
+            val = simd_sum(val);
+            if (tid == 0) {
+                const float norm = sqrt(max(val, 1e-12f));
+                shared[dims + 32] = norm > 1e-12f ? (1.0f / norm) : 0.0f;
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        const float invNorm = shared[dims + 32];
+        for (int d = tid; d < dims; d += tgSize) {
+            output[batchOutputOffset + d] = shared[d] * invNorm;
+        }
+    } else {
+        for (int d = tid; d < dims; d += tgSize) {
+            output[batchOutputOffset + d] = shared[d];
+        }
+    }
+}
+
+// ============================================================================
+// MARK: - Fused Attention Pool + L2 Normalize
+// ============================================================================
+
+/// Fused attention-weighted pooling and L2 normalization
+///
+/// Combines attention pooling and normalization in a single kernel:
+/// 1. Attention pool: [batchSize, seqLen, dims] → [batchSize, dims] with weights
+/// 2. L2 normalize the pooled vectors
+///
+/// Each threadgroup processes ONE complete sequence.
+///
+/// Thread grid: (1, batchSize, 1) with threadgroup size (min(dims, 256), 1, 1)
+///
+/// @param input Token embeddings [batchSize * sequenceLength * dimensions]
+/// @param weights Attention weights [batchSize * sequenceLength]
+/// @param output Normalized pooled embeddings [batchSize * dimensions]
+/// @param params Fused pooling parameters (normalize flag controls L2 norm)
+///
+kernel void fused_attention_pool_normalize(
+    device const float* input       [[buffer(0)]],
+    device const float* weights     [[buffer(1)]],
+    device float* output            [[buffer(2)]],
+    constant FusedPoolNormParams& params [[buffer(3)]],
+    uint b                          [[threadgroup_position_in_grid]],
+    uint tid                        [[thread_index_in_threadgroup]],
+    uint simd_lane                  [[thread_index_in_simdgroup]],
+    uint simd_size                  [[threads_per_simdgroup]]
+) {
+    const uint tgSize = 256;
+
+    if (b >= params.batchSize) return;
+
+    const int seqLen = params.sequenceLength;
+    const int dims = params.dimensions;
+    const bool shouldNormalize = params.normalize != 0;
+
+    const int batchInputOffset = b * seqLen * dims;
+    const int batchWeightOffset = b * seqLen;
+    const int batchOutputOffset = b * dims;
+
+    // Shared memory for pooled vector and normalization (up to 1024 dims + 33 workspace)
+    threadgroup float shared[1024 + 33];
+    threadgroup float sharedWeightSum[1];
+
+    // ========================================================================
+    // Phase 1: Compute weight sum (only thread 0)
+    // ========================================================================
+
+    if (tid == 0) {
+        float wSum = 0.0f;
+        for (int t = 0; t < seqLen; t++) {
+            wSum += weights[batchWeightOffset + t];
+        }
+        sharedWeightSum[0] = wSum;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    const float invWeightSum = sharedWeightSum[0] > EPSILON_NORMAL
+        ? (1.0f / sharedWeightSum[0]) : 0.0f;
+
+    // ========================================================================
+    // Phase 2: Attention-weighted pooling
+    // ========================================================================
+
+    for (int d = tid; d < dims; d += tgSize) {
+        float weightedSum = 0.0f;
+        for (int t = 0; t < seqLen; t++) {
+            const float weight = weights[batchWeightOffset + t];
+            weightedSum = fma(input[batchInputOffset + t * dims + d], weight, weightedSum);
+        }
+        shared[d] = weightedSum * invWeightSum;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    // ========================================================================
+    // Phase 3: L2 normalization (if enabled)
+    // ========================================================================
+
+    if (shouldNormalize) {
+        float partial = 0.0f;
+        for (int d = tid; d < dims; d += tgSize) {
+            const float val = shared[d];
+            partial = fma(val, val, partial);
         }
 
         partial = simd_sum(partial);

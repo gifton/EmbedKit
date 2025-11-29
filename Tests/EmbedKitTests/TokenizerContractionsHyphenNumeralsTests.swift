@@ -8,8 +8,9 @@ func contractions_splitIntoUNKsWhenNotInVocab() async throws {
     let tokens = ["[PAD]","[CLS]","[SEP]","[UNK]","stop"]
     let vocab = Vocabulary(tokens: tokens)
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
+    let cfg = TokenizerConfig(
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("Don't stop", config: cfg)
     // Expect: [CLS], UNK (don), UNK ('), UNK (t), stop, [SEP]
     #expect(out.ids.count == 6)
@@ -24,8 +25,9 @@ func hyphenation_splitsAndRecognizesKnownWords() async throws {
     let tokens = ["[PAD]","[CLS]","[SEP]","[UNK]","hello","world"]
     let vocab = Vocabulary(tokens: tokens)
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
+    let cfg = TokenizerConfig(
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("Hello-world", config: cfg)
     // Expect: [CLS], hello, UNK(-), world, [SEP]
     #expect(out.ids.count == 5)
@@ -39,8 +41,9 @@ func numerals_splitAroundPunctuation() async throws {
     let tokens = ["[PAD]","[CLS]","[SEP]","[UNK]","ver"]
     let vocab = Vocabulary(tokens: tokens)
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
+    let cfg = TokenizerConfig(
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("ver 2.0", config: cfg)
     // Expect: [CLS], ver, UNK(2), UNK(.), UNK(0), [SEP]
     #expect(out.ids.count == 6)

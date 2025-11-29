@@ -36,13 +36,13 @@ public actor ModelManager {
         if useReal {
             // Scaffold: wire tokenizer + backend without implementing embed yet
             let tokenizer = SimpleTokenizer()
-            let backend = CoreMLBackend(modelURL: nil, device: configuration.preferredDevice)
+            let backend = CoreMLBackend(modelURL: nil, device: configuration.inferenceDevice)
             let model = AppleEmbeddingModel(
                 backend: backend,
                 tokenizer: tokenizer,
                 configuration: configuration,
                 dimensions: dimensions,
-                device: configuration.preferredDevice
+                device: configuration.inferenceDevice
             )
             loadedModels[model.id] = model
             logger.info("Loaded AppleEmbeddingModel (scaffold): \(model.id)")
@@ -64,14 +64,14 @@ public actor ModelManager {
         dimensions: Int = 384,
         preload: Bool = false
     ) async throws -> any EmbeddingModel {
-        let backend = CoreMLBackend(modelURL: modelURL, device: configuration.preferredDevice)
+        let backend = CoreMLBackend(modelURL: modelURL, device: configuration.inferenceDevice)
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
             configuration: configuration,
             id: id,
             dimensions: dimensions,
-            device: configuration.preferredDevice,
+            device: configuration.inferenceDevice,
             profiler: profiler
         )
         loadedModels[model.id] = model
@@ -293,5 +293,121 @@ public actor ModelManager {
     /// For tests: simulate memory pressure event.
     public func simulateMemoryPressure(_ level: MemoryPressureLevel) async {
         await handleMemoryPressure(level)
+    }
+
+    // MARK: - EmbeddingGenerator Factory
+
+    /// Creates an EmbeddingGenerator for a loaded model.
+    ///
+    /// The generator conforms to `VectorProducer` for seamless integration
+    /// with VectorIndex and other VSK components.
+    ///
+    /// - Parameters:
+    ///   - modelID: ID of a previously loaded model
+    ///   - config: Generator configuration (default: `.default`)
+    /// - Returns: An `EmbeddingGenerator` wrapping the model
+    /// - Throws: `EmbedKitError.modelNotFound` if model is not loaded
+    ///
+    /// ## Example
+    /// ```swift
+    /// let model = try await manager.loadAppleModel(modelURL: url, vocabularyURL: vocabURL)
+    /// let generator = try await manager.createGenerator(for: model.id)
+    ///
+    /// // Use as VectorProducer
+    /// let vectors = try await generator.produce(["Hello", "World"])
+    /// ```
+    public func createGenerator(
+        for modelID: ModelID,
+        config: GeneratorConfiguration = .default
+    ) async throws -> EmbeddingGenerator {
+        guard let model = loadedModels[modelID] else {
+            throw EmbedKitError.modelNotFound(modelID)
+        }
+
+        logger.info("Creating generator for model: \(modelID)")
+        return EmbeddingGenerator(
+            model: model,
+            configuration: config.embedding,
+            batchOptions: config.batch
+        )
+    }
+
+    /// Creates an EmbeddingGenerator with a newly loaded Apple model.
+    ///
+    /// Convenience method that loads a model and creates a generator in one call.
+    ///
+    /// - Parameters:
+    ///   - modelURL: URL to the CoreML model
+    ///   - vocabularyURL: URL to the vocabulary file
+    ///   - config: Generator configuration (default: `.default`)
+    ///   - preload: Whether to warmup the model (default: false)
+    /// - Returns: An `EmbeddingGenerator` ready for use
+    ///
+    /// ## Example
+    /// ```swift
+    /// let generator = try await manager.createGenerator(
+    ///     modelURL: Bundle.main.url(forResource: "model", withExtension: "mlpackage")!,
+    ///     vocabularyURL: Bundle.main.url(forResource: "vocab", withExtension: "txt")!,
+    ///     config: .forSemanticSearch()
+    /// )
+    ///
+    /// // Generate embeddings with progress
+    /// for try await (vector, progress) in generator.generateWithProgress(texts) {
+    ///     print("Progress: \(progress.percentage)%")
+    /// }
+    /// ```
+    public func createGenerator(
+        modelURL: URL,
+        vocabularyURL: URL,
+        config: GeneratorConfiguration = .default,
+        preload: Bool = false
+    ) async throws -> EmbeddingGenerator {
+        let model = try await loadAppleModel(
+            modelURL: modelURL,
+            vocabularyURL: vocabularyURL,
+            configuration: config.embedding,
+            preload: preload
+        )
+
+        logger.info("Created generator with new model: \(model.id)")
+        return EmbeddingGenerator(
+            model: model,
+            configuration: config.embedding,
+            batchOptions: config.batch
+        )
+    }
+
+    /// Creates an EmbeddingGenerator using the NLContextualEmbedding system model.
+    ///
+    /// Uses Apple's built-in contextual embedding model (no external files needed).
+    ///
+    /// - Parameters:
+    ///   - language: Language code (default: "en")
+    ///   - config: Generator configuration (default: `.default`)
+    ///   - preload: Whether to warmup the model (default: false)
+    /// - Returns: An `EmbeddingGenerator` using the system model
+    ///
+    /// ## Example
+    /// ```swift
+    /// let generator = try await manager.createSystemGenerator()
+    /// let vectors = try await generator.produce(sentences)
+    /// ```
+    public func createSystemGenerator(
+        language: String = "en",
+        config: GeneratorConfiguration = .default,
+        preload: Bool = false
+    ) async throws -> EmbeddingGenerator {
+        let model = try await loadNLContextualEmbedding(
+            language: language,
+            configuration: config.embedding,
+            preload: preload
+        )
+
+        logger.info("Created system generator: \(model.id)")
+        return EmbeddingGenerator(
+            model: model,
+            configuration: config.embedding,
+            batchOptions: config.batch
+        )
     }
 }

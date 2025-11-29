@@ -4,6 +4,28 @@
 import Foundation
 import Dispatch
 
+// MARK: - Request Priority
+
+/// Priority level for embedding requests.
+///
+/// Higher priority requests are processed before lower priority ones,
+/// regardless of submission order. This allows latency-sensitive requests
+/// (e.g., user-facing search) to be processed ahead of background work.
+public enum RequestPriority: Int, Comparable, Sendable, CaseIterable {
+    /// Background work that can tolerate high latency.
+    case low = 0
+    /// Standard priority for most requests.
+    case normal = 1
+    /// Elevated priority for time-sensitive operations.
+    case high = 2
+    /// Highest priority, processed immediately if possible.
+    case urgent = 3
+
+    public static func < (lhs: RequestPriority, rhs: RequestPriority) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 // MARK: - Configuration
 
 /// Configuration for adaptive batching behavior.
@@ -35,6 +57,17 @@ public struct AdaptiveBatcherConfig: Sendable {
     /// Options passed to the underlying model's embedBatch call.
     public var batchOptions: BatchOptions = BatchOptions()
 
+    /// Enable priority-based request ordering within batches.
+    /// When enabled, higher priority requests are processed first.
+    public var enablePriorityScheduling: Bool = true
+
+    /// Maximum latency multiplier for low-priority requests.
+    /// Low-priority requests may wait up to `maxLatency * lowPriorityLatencyMultiplier`.
+    public var lowPriorityLatencyMultiplier: Double = 3.0
+
+    /// Whether urgent requests should trigger immediate processing.
+    public var urgentTriggersFlush: Bool = true
+
     public init() {}
 }
 
@@ -44,16 +77,32 @@ public struct AdaptiveBatcherConfig: Sendable {
 fileprivate final class PendingRequest: @unchecked Sendable {
     let text: String
     let submittedAt: CFAbsoluteTime
+    let priority: RequestPriority
     private let continuation: UnsafeContinuation<Embedding, Error>
 
-    init(text: String, continuation: UnsafeContinuation<Embedding, Error>) {
+    init(text: String, priority: RequestPriority = .normal, continuation: UnsafeContinuation<Embedding, Error>) {
         self.text = text
         self.submittedAt = CFAbsoluteTimeGetCurrent()
+        self.priority = priority
         self.continuation = continuation
     }
 
     var age: TimeInterval {
         CFAbsoluteTimeGetCurrent() - submittedAt
+    }
+
+    /// Effective max latency based on priority (lower priority = more patient).
+    func effectiveMaxLatency(baseLatency: TimeInterval, lowPriorityMultiplier: Double) -> TimeInterval {
+        switch priority {
+        case .urgent:
+            return baseLatency * 0.25  // Urgent gets 25% of normal latency
+        case .high:
+            return baseLatency * 0.5   // High gets 50% of normal latency
+        case .normal:
+            return baseLatency
+        case .low:
+            return baseLatency * lowPriorityMultiplier
+        }
     }
 
     func complete(with embedding: Embedding) {
@@ -106,10 +155,15 @@ public actor AdaptiveBatcher {
         public let averageBatchLatency: TimeInterval
         public let currentQueueDepth: Int
         public let currentMemoryPressure: Float
+        /// Breakdown of requests by priority level.
+        public let requestsByPriority: [RequestPriority: Int]
+        /// Current queue depth by priority level.
+        public let queueDepthByPriority: [RequestPriority: Int]
     }
 
     private var totalRequests: Int = 0
     private var totalBatches: Int = 0
+    private var requestsByPriority: [RequestPriority: Int] = [:]
 
     // MARK: - Initialization
 
@@ -134,11 +188,26 @@ public actor AdaptiveBatcher {
     /// - Returns: The computed embedding.
     /// - Throws: Any error from the underlying model.
     public func embed(_ text: String) async throws -> Embedding {
+        try await embed(text, priority: .normal)
+    }
+
+    /// Embed a single text with specified priority.
+    ///
+    /// Higher priority requests are processed before lower priority ones.
+    /// Urgent requests may trigger immediate batch processing.
+    ///
+    /// - Parameters:
+    ///   - text: The text to embed.
+    ///   - priority: The priority level for this request.
+    /// - Returns: The computed embedding.
+    /// - Throws: Any error from the underlying model.
+    public func embed(_ text: String, priority: RequestPriority) async throws -> Embedding {
         try await withUnsafeThrowingContinuation { continuation in
-            let request = PendingRequest(text: text, continuation: continuation)
-            pendingRequests.append(request)
+            let request = PendingRequest(text: text, priority: priority, continuation: continuation)
+            insertByPriority(request)
             totalRequests += 1
-            scheduleFlushIfNeeded()
+            requestsByPriority[priority, default: 0] += 1
+            scheduleFlushIfNeeded(urgentAdded: priority == .urgent)
         }
     }
 
@@ -174,13 +243,22 @@ public actor AdaptiveBatcher {
     public var metrics: BatcherMetrics {
         let avgBatchSize = totalBatches > 0 ? Double(totalRequests) / Double(totalBatches) : 0
         let avgLatency = recentBatchTimes.isEmpty ? 0 : recentBatchTimes.reduce(0, +) / Double(recentBatchTimes.count)
+
+        // Compute current queue depth by priority
+        var queueByPriority: [RequestPriority: Int] = [:]
+        for request in pendingRequests {
+            queueByPriority[request.priority, default: 0] += 1
+        }
+
         return BatcherMetrics(
             totalRequests: totalRequests,
             totalBatches: totalBatches,
             averageBatchSize: avgBatchSize,
             averageBatchLatency: avgLatency,
             currentQueueDepth: pendingRequests.count,
-            currentMemoryPressure: currentMemoryPressure
+            currentMemoryPressure: currentMemoryPressure,
+            requestsByPriority: requestsByPriority,
+            queueDepthByPriority: queueByPriority
         )
     }
 
@@ -189,25 +267,31 @@ public actor AdaptiveBatcher {
         totalRequests = 0
         totalBatches = 0
         recentBatchTimes.removeAll()
+        requestsByPriority.removeAll()
     }
 
     // MARK: - Private Implementation
 
-    private func scheduleFlushIfNeeded() {
+    private func scheduleFlushIfNeeded(urgentAdded: Bool = false) {
         guard config.autoFlush else { return }
 
         // Cancel existing flush task if we're scheduling a new one
         flushTask?.cancel()
 
-        // Check if we should flush immediately
-        if shouldProcessBatch() {
+        // Urgent requests trigger immediate processing if configured
+        let shouldFlushImmediately = shouldProcessBatch() ||
+            (urgentAdded && config.urgentTriggersFlush && pendingRequests.count >= config.minBatchSize)
+
+        if shouldFlushImmediately {
             flushTask = Task {
                 try? await self.processPendingBatch()
             }
         } else {
             // Schedule a flush after maxLatency
+            // Use the shortest effective latency from pending requests
+            let shortestLatency = computeShortestEffectiveLatency()
             flushTask = Task {
-                try? await Task.sleep(nanoseconds: UInt64(config.maxLatency * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(shortestLatency * 1_000_000_000))
                 if !Task.isCancelled {
                     try? await self.processPendingBatch()
                 }
@@ -215,22 +299,74 @@ public actor AdaptiveBatcher {
         }
     }
 
+    /// Computes the shortest effective latency across all pending requests.
+    private func computeShortestEffectiveLatency() -> TimeInterval {
+        guard !pendingRequests.isEmpty else { return config.maxLatency }
+
+        var shortest = config.maxLatency
+        for request in pendingRequests {
+            let effective = request.effectiveMaxLatency(
+                baseLatency: config.maxLatency,
+                lowPriorityMultiplier: config.lowPriorityLatencyMultiplier
+            )
+            let remaining = max(0, effective - request.age)
+            shortest = min(shortest, remaining)
+        }
+        return shortest
+    }
+
+    /// Inserts a request in priority order (higher priority = earlier in array).
+    private func insertByPriority(_ request: PendingRequest) {
+        guard config.enablePriorityScheduling else {
+            pendingRequests.append(request)
+            return
+        }
+
+        // Find insertion point: insert after last request with same or higher priority
+        var insertIndex = pendingRequests.count
+        for i in (0..<pendingRequests.count).reversed() {
+            if pendingRequests[i].priority >= request.priority {
+                insertIndex = i + 1
+                break
+            }
+            if i == 0 {
+                insertIndex = 0
+            }
+        }
+        pendingRequests.insert(request, at: insertIndex)
+    }
+
     private func shouldProcessBatch() -> Bool {
         guard !pendingRequests.isEmpty else { return false }
 
         let queueSize = pendingRequests.count
-        let oldestAge = pendingRequests.first?.age ?? 0
         let optimalSize = optimalBatchSize()
+
+        // Check if any request has exceeded its effective max latency
+        let anyExpired = pendingRequests.contains { request in
+            let effectiveLatency = request.effectiveMaxLatency(
+                baseLatency: config.maxLatency,
+                lowPriorityMultiplier: config.lowPriorityLatencyMultiplier
+            )
+            return request.age >= effectiveLatency
+        }
+
+        // Check for high-priority requests that are aging
+        let hasAgingHighPriority = pendingRequests.contains { request in
+            (request.priority >= .high) && (request.age >= config.maxLatency * 0.5)
+        }
 
         // Flush conditions:
         // 1. Queue reached optimal size
-        // 2. Oldest request exceeded max latency
+        // 2. Any request exceeded its effective max latency
         // 3. Memory pressure is high (flush smaller batches more frequently)
         // 4. Queue reached max batch size
+        // 5. High-priority requests are aging
         return queueSize >= optimalSize ||
-               oldestAge >= config.maxLatency ||
+               anyExpired ||
                (currentMemoryPressure > 0.8 && queueSize >= config.minBatchSize) ||
-               queueSize >= config.maxBatchSize
+               queueSize >= config.maxBatchSize ||
+               (hasAgingHighPriority && queueSize >= config.minBatchSize)
     }
 
     private func optimalBatchSize() -> Int {
@@ -318,10 +454,21 @@ extension AdaptiveBatcher {
     /// - Returns: The computed embeddings in the same order as input.
     /// - Throws: Any error from the underlying model.
     public func embedConcurrently(_ texts: [String]) async throws -> [Embedding] {
+        try await embedConcurrently(texts, priority: .normal)
+    }
+
+    /// Embed multiple texts concurrently through the batcher queue with specified priority.
+    ///
+    /// - Parameters:
+    ///   - texts: The texts to embed.
+    ///   - priority: The priority level for all requests.
+    /// - Returns: The computed embeddings in the same order as input.
+    /// - Throws: Any error from the underlying model.
+    public func embedConcurrently(_ texts: [String], priority: RequestPriority) async throws -> [Embedding] {
         try await withThrowingTaskGroup(of: (Int, Embedding).self) { group in
             for (i, text) in texts.enumerated() {
                 group.addTask {
-                    let embedding = try await self.embed(text)
+                    let embedding = try await self.embed(text, priority: priority)
                     return (i, embedding)
                 }
             }
@@ -333,5 +480,15 @@ extension AdaptiveBatcher {
 
             return results.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
+    }
+
+    /// Get the highest priority in the current queue.
+    public var highestPendingPriority: RequestPriority? {
+        pendingRequests.first?.priority
+    }
+
+    /// Check if there are any urgent requests pending.
+    public var hasUrgentPending: Bool {
+        pendingRequests.contains { $0.priority == .urgent }
     }
 }

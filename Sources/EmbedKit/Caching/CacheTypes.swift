@@ -257,6 +257,23 @@ public enum CacheError: Error, LocalizedError, Sendable {
             return "I/O error: \(msg)"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .databaseError:
+            return "Check that the cache database file is not corrupted or locked by another process. Try clearing the cache or recreating the database."
+        case .serializationError:
+            return "The cached data format may be incompatible. Clear the cache and retry. If persisting custom types, ensure they conform to Codable."
+        case .capacityExceeded:
+            return "Increase the cache capacity limit in configuration, or call trimToSize() to remove old entries. Consider using a cleanup policy."
+        case .entryNotFound:
+            return "The requested cache entry does not exist or has expired. Re-compute the embedding and cache it again."
+        case .invalidConfiguration:
+            return "Review cache configuration parameters. Ensure directory paths are valid and capacity limits are reasonable."
+        case .ioError:
+            return "Check disk space and file permissions. Ensure the cache directory exists and is writable."
+        }
+    }
 }
 
 // MARK: - Text Hashing

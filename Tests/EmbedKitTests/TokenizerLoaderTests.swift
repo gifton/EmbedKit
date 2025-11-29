@@ -25,8 +25,9 @@ struct TokenizerLoaderTests {
         let mergesURL = try writeTempFile(contents: merges, name: "bpe_merges.txt")
 
         let tok = try BPETokenizer.load(vocabURL: vocabURL, mergesURL: mergesURL)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
+        let cfg = TokenizerConfig(
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("hello", config: cfg)
         // Expect [CLS], he, llo, [SEP]
         #expect(out.tokens.first == "[CLS]")
@@ -43,8 +44,9 @@ struct TokenizerLoaderTests {
         ].joined(separator: "\n")
         let url = try writeTempFile(contents: spLines, name: "sp_vocab.txt")
         let tok = try SentencePieceTokenizer.load(spVocabURL: url)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
+        let cfg = TokenizerConfig(
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("hello world", config: cfg)
         #expect(out.tokens == ["[CLS]", "▁hello", "▁world", "[SEP]"])
     }

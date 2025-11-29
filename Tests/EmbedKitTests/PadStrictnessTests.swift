@@ -8,10 +8,11 @@ func paddingMax_requiresPadToken() async {
     // Tokenizer without PAD token
     let vocab = Vocabulary(tokens: ["[CLS]","[SEP]","[UNK]","hello"]) // no [PAD]
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
-    cfg.padding = .max
-    cfg.maxLength = 8
+    let cfg = TokenizerConfig(
+        maxLength: 8,
+        padding: .max,
+        addSpecialTokens: true
+    )
     do {
         _ = try await tok.encode("hello", config: cfg)
         #expect(Bool(false), "Expected invalidConfiguration when PAD missing for padding .max")
@@ -32,10 +33,10 @@ func batchPadding_requiresPadToken() async {
     let backend = NoOpBackend()
     let vocab = Vocabulary(tokens: ["[CLS]","[SEP]","[UNK]","hello"]) // no [PAD]
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = EmbeddingConfiguration()
-    cfg.includeSpecialTokens = true
-    cfg.paddingStrategy = .batch
-
+    let cfg = EmbeddingConfiguration(
+        paddingStrategy: .batch,
+        includeSpecialTokens: true
+    )
     let model = AppleEmbeddingModel(
         backend: backend,
         tokenizer: tok,
@@ -45,7 +46,7 @@ func batchPadding_requiresPadToken() async {
         device: .cpu
     )
     do {
-        _ = try await model.embedBatch(["hello", "hello world"], options: .init())
+        _ = try await model.embedBatch(["hello", "hello world"], options: BatchOptions())
         #expect(Bool(false), "Expected invalidConfiguration when PAD missing for batch padding")
     } catch {
         guard let ek = error as? EmbedKitError else { return #expect(Bool(false), "Unexpected error: \(error)") }

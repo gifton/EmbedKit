@@ -67,6 +67,7 @@ EXPECTED_KERNELS=(
     "tensor_cls_pool"
     "tensor_pool_unified"
     "tensor_mean_pool_cooperative"
+    "tensor_attention_pool"
 
     # Metal 4 Tensor Normalization kernels (Phase 3)
     "tensor_l2_normalize_with_norms"
@@ -79,6 +80,7 @@ EXPECTED_KERNELS=(
     "fused_mean_pool_normalize"
     "fused_max_pool_normalize"
     "fused_pool_normalize_unified"
+    "fused_attention_pool_normalize"
     "tensor_similarity_matrix_normalized"
     "tensor_similarity_matrix_full"
     "fused_embed_compare_pipeline"

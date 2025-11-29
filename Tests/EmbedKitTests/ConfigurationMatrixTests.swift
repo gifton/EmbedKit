@@ -42,9 +42,10 @@ struct PoolingStrategyConfigTests {
     func meanPoolingConfig() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
 
         let model = AppleEmbeddingModel(
             backend: backend,
@@ -63,9 +64,10 @@ struct PoolingStrategyConfigTests {
     func maxPoolingConfig() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.poolingStrategy = .max
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            poolingStrategy: .max,
+            normalizeOutput: false
+        )
 
         let model = AppleEmbeddingModel(
             backend: backend,
@@ -83,9 +85,10 @@ struct PoolingStrategyConfigTests {
     func clsPoolingConfig() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.poolingStrategy = .cls
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            poolingStrategy: .cls,
+            normalizeOutput: false
+        )
 
         let model = AppleEmbeddingModel(
             backend: backend,
@@ -105,9 +108,10 @@ struct PoolingStrategyConfigTests {
         let tokenizer = SimpleTokenizer()
 
         for strategy in PoolingStrategy.allCases {
-            var cfg = EmbeddingConfiguration()
-            cfg.poolingStrategy = strategy
-            cfg.normalizeOutput = true
+            let cfg = EmbeddingConfiguration(
+                poolingStrategy: strategy,
+                normalizeOutput: true
+            )
 
             let model = AppleEmbeddingModel(
                 backend: backend,
@@ -134,10 +138,11 @@ struct TruncationStrategyConfigTests {
     func endTruncation() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.truncationStrategy = .end
-        cfg.maxTokens = 5
-        cfg.includeSpecialTokens = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 5,
+            truncationStrategy: .end,
+            includeSpecialTokens: false
+        )
 
         let model = AppleEmbeddingModel(
             backend: backend,
@@ -156,11 +161,11 @@ struct TruncationStrategyConfigTests {
     func startTruncation() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.truncationStrategy = .start
-        cfg.maxTokens = 5
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 5,
+            truncationStrategy: .start,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -177,11 +182,11 @@ struct TruncationStrategyConfigTests {
     func middleTruncation() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.truncationStrategy = .middle
-        cfg.maxTokens = 6
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 6,
+            truncationStrategy: .middle,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -198,11 +203,11 @@ struct TruncationStrategyConfigTests {
     func noTruncationShortInput() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.truncationStrategy = .none
-        cfg.maxTokens = 512
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 512,
+            truncationStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -225,10 +230,10 @@ struct PaddingStrategyConfigTests {
     func noPadding() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.paddingStrategy = .none
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -247,11 +252,11 @@ struct PaddingStrategyConfigTests {
     func maxPadding() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.paddingStrategy = .max
-        cfg.maxTokens = 10
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 10,
+            paddingStrategy: .max,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -272,10 +277,10 @@ struct PaddingStrategyConfigTests {
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "a", "b", "c", "d", "e", "f"])
         let backend = ConfigTestBackend()
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
-        var cfg = EmbeddingConfiguration()
-        cfg.paddingStrategy = .batch
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -301,10 +306,10 @@ struct BatchOptionsConfigTests {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
 
-        var opts = BatchOptions()
-        opts.dynamicBatching = true
-        opts.maxBatchSize = 16
-
+        let opts = BatchOptions(
+            maxBatchSize: 16,
+            dynamicBatching: true
+        )
         let texts = (0..<20).map { "Text \($0)" }
         let embeddings = try await model.embedBatch(texts, options: opts)
 
@@ -316,10 +321,10 @@ struct BatchOptionsConfigTests {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
 
-        var opts = BatchOptions()
-        opts.dynamicBatching = false
-        opts.maxBatchSize = 32
-
+        let opts = BatchOptions(
+            maxBatchSize: 32,
+            dynamicBatching: false
+        )
         let texts = (0..<10).map { "Text \($0)" }
         let embeddings = try await model.embedBatch(texts, options: opts)
 
@@ -331,9 +336,10 @@ struct BatchOptionsConfigTests {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
 
-        var opts = BatchOptions()
-        opts.sortByLength = true
+        let opts = BatchOptions(
 
+            sortByLength: true
+        )
         let texts = ["short", "a very long text with many words", "medium text"]
         let embeddings = try await model.embedBatch(texts, options: opts)
 
@@ -345,9 +351,10 @@ struct BatchOptionsConfigTests {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
 
-        var opts = BatchOptions()
-        opts.sortByLength = false
+        let opts = BatchOptions(
 
+            sortByLength: false
+        )
         let texts = ["short", "a very long text with many words", "medium text"]
         let embeddings = try await model.embedBatch(texts, options: opts)
 
@@ -361,9 +368,9 @@ struct BatchOptionsConfigTests {
         let texts = (0..<50).map { "Text \($0)" }
 
         for batchSize in [1, 4, 8, 16, 32, 64] {
-            var opts = BatchOptions()
-            opts.maxBatchSize = batchSize
-
+            let opts = BatchOptions(
+                maxBatchSize: batchSize
+            )
             let embeddings = try await model.embedBatch(texts, options: opts)
             #expect(embeddings.count == 50)
         }
@@ -374,9 +381,10 @@ struct BatchOptionsConfigTests {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
 
-        var opts = BatchOptions()
-        opts.maxBatchTokens = 100  // Limit tokens per batch
+        let opts = BatchOptions(
 
+            maxBatchTokens: 100  // Limit tokens per batch
+        )
         let texts = (0..<10).map { "Word \($0)" }
         let embeddings = try await model.embedBatch(texts, options: opts)
 
@@ -389,10 +397,10 @@ struct BatchOptionsConfigTests {
         let model = try await manager.loadMockModel()
         let texts = (0..<20).map { "Text \($0)" }
 
-        for concurrency in [nil, 1, 2, 4, 8] {
-            var opts = BatchOptions()
-            opts.tokenizationConcurrency = concurrency
-
+        for concurrency in [1, 2, 4, 8] {
+            let opts = BatchOptions(
+                tokenizationConcurrency: concurrency
+            )
             let embeddings = try await model.embedBatch(texts, options: opts)
             #expect(embeddings.count == 20)
         }
@@ -408,9 +416,9 @@ struct ComputeDeviceConfigTests {
     func cpuDevice() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.preferredDevice = .cpu
-
+        let cfg = EmbeddingConfiguration(
+            inferenceDevice: .cpu
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -427,9 +435,9 @@ struct ComputeDeviceConfigTests {
     func autoDevice() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.preferredDevice = .auto
-
+        let cfg = EmbeddingConfiguration(
+            inferenceDevice: .auto
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -448,9 +456,9 @@ struct ComputeDeviceConfigTests {
         let tokenizer = SimpleTokenizer()
 
         for threshold in [0, 1000, 8192, Int.max] {
-            var cfg = EmbeddingConfiguration()
-            cfg.minElementsForGPU = threshold
-
+            let cfg = EmbeddingConfiguration(
+                minElementsForGPU: threshold
+            )
             let model = AppleEmbeddingModel(
                 backend: backend,
                 tokenizer: tokenizer,
@@ -474,9 +482,9 @@ struct SpecialTokensConfigTests {
     func includeSpecialTokensEnabled() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = true
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: true
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -493,9 +501,9 @@ struct SpecialTokensConfigTests {
     func includeSpecialTokensDisabled() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -518,9 +526,9 @@ struct OutputNormalizationConfigTests {
     func normalizeOutputEnabled() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.normalizeOutput = true
-
+        let cfg = EmbeddingConfiguration(
+            normalizeOutput: true
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -538,9 +546,9 @@ struct OutputNormalizationConfigTests {
     func normalizeOutputDisabled() async throws {
         let backend = ConfigTestBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.normalizeOutput = false
-
+        let cfg = EmbeddingConfiguration(
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -567,12 +575,12 @@ struct CombinedConfigTests {
 
         for pooling in PoolingStrategy.allCases {
             for truncation in TruncationStrategy.allCases {
-                var cfg = EmbeddingConfiguration()
-                cfg.poolingStrategy = pooling
-                cfg.truncationStrategy = truncation
-                cfg.maxTokens = 10
-                cfg.includeSpecialTokens = false
-
+                let cfg = EmbeddingConfiguration(
+                    maxTokens: 10,
+                    truncationStrategy: truncation,
+                    includeSpecialTokens: false,
+                    poolingStrategy: pooling
+                )
                 let model = AppleEmbeddingModel(
                     backend: backend,
                     tokenizer: tokenizer,
@@ -600,13 +608,13 @@ struct CombinedConfigTests {
 
         for padding in PaddingStrategy.allCases {
             for dynamic in [true, false] {
-                var cfg = EmbeddingConfiguration()
-                cfg.paddingStrategy = padding
-                cfg.includeSpecialTokens = false
-
-                var opts = BatchOptions()
-                opts.dynamicBatching = dynamic
-
+                let cfg = EmbeddingConfiguration(
+                    paddingStrategy: padding,
+                    includeSpecialTokens: false
+                )
+                let opts = BatchOptions(
+                    dynamicBatching: dynamic
+                )
                 let model = AppleEmbeddingModel(
                     backend: backend,
                     tokenizer: tokenizer,
@@ -627,11 +635,11 @@ struct CombinedConfigTests {
         let tokenizer = SimpleTokenizer()
 
         // Very small max tokens
-        var cfg1 = EmbeddingConfiguration()
-        cfg1.maxTokens = 2
-        cfg1.truncationStrategy = .end
-        cfg1.includeSpecialTokens = false
-
+        let cfg1 = EmbeddingConfiguration(
+            maxTokens: 2,
+            truncationStrategy: .end,
+            includeSpecialTokens: false
+        )
         let model1 = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -644,10 +652,10 @@ struct CombinedConfigTests {
         #expect(emb1.dimensions == 4)
 
         // Very large max tokens
-        var cfg2 = EmbeddingConfiguration()
-        cfg2.maxTokens = 10000
-        cfg2.truncationStrategy = .none
-
+        let cfg2 = EmbeddingConfiguration(
+            maxTokens: 10000,
+            truncationStrategy: .none
+        )
         let model2 = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,

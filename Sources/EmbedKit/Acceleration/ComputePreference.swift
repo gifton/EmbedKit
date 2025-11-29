@@ -5,10 +5,24 @@ import Foundation
 
 // MARK: - Compute Preference
 
-/// Preference for compute path selection in embedding operations.
+/// Preference for GPU acceleration of search and distance operations.
 ///
-/// Controls whether GPU acceleration is used for search and batch operations.
-public enum ComputePreference: String, Sendable, CaseIterable {
+/// Controls whether GPU acceleration is used for vector search, distance computation,
+/// and batch operations in `AccelerationManager` and `EmbeddingStore`.
+///
+/// This is different from `ComputeDevice` (used for model inference target):
+/// - `ComputeDevice`: Controls CoreML compute units for **model inference**
+/// - `ComputePreference`: Controls GPU/CPU path for **search and distance operations**
+///
+/// ## Usage
+/// ```swift
+/// // For search acceleration
+/// let config = IndexConfiguration(dimension: 384, computePreference: .auto)
+///
+/// // For AccelerationManager
+/// let manager = await AccelerationManager(preference: .cpuOnly)
+/// ```
+public enum ComputePreference: String, Codable, Sendable, CaseIterable {
     /// Automatically select the best compute path based on operation characteristics.
     /// Uses GPU when beneficial (large batches, high dimensions), CPU otherwise.
     /// This is the recommended default.
@@ -138,7 +152,8 @@ public struct AccelerationStatistics: Sendable {
 public enum AccelerationError: Error, LocalizedError {
     case gpuNotAvailable
     case gpuOperationFailed(String)
-    case dimensionMismatch(expected: Int, actual: Int)
+    /// Dimension mismatch error. Parameter naming matches `EmbedKitError.dimensionMismatch`.
+    case dimensionMismatch(expected: Int, got: Int)
     case invalidInput(String)
 
     public var errorDescription: String? {
@@ -147,10 +162,23 @@ public enum AccelerationError: Error, LocalizedError {
             return "GPU acceleration is not available on this device"
         case .gpuOperationFailed(let reason):
             return "GPU operation failed: \(reason)"
-        case .dimensionMismatch(let expected, let actual):
-            return "Vector dimension mismatch: expected \(expected), got \(actual)"
+        case .dimensionMismatch(let expected, let got):
+            return "Vector dimension mismatch: expected \(expected), got \(got)"
         case .invalidInput(let reason):
             return "Invalid input: \(reason)"
+        }
+    }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .gpuNotAvailable:
+            return "Use `.cpuOnly` compute preference for CPU-based processing. GPU acceleration requires a Metal-compatible device (most Macs since 2012, all iOS devices since iPhone 5s)."
+        case .gpuOperationFailed:
+            return "Try reducing batch size or input dimensions. If the error persists, fall back to CPU processing with `.cpuOnly` preference."
+        case .dimensionMismatch:
+            return "Ensure all vectors in the operation have the same dimensions. Check that embeddings come from the same model."
+        case .invalidInput:
+            return "Verify input data is not empty, contains valid values (no NaN/Inf), and meets the operation's requirements."
         }
     }
 }

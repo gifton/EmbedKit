@@ -187,6 +187,19 @@ public enum QuantizationError: Error, LocalizedError, Sendable {
             return "Unsupported quantization format: \(format)"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .emptyVector:
+            return "Ensure the embedding vector contains at least one element before quantizing."
+        case .invalidData:
+            return "The quantized data may be corrupted or in an incompatible format. Re-quantize from the original embedding."
+        case .dimensionMismatch:
+            return "Ensure the quantization parameters match the vector being dequantized. Parameters and data may be from different embeddings."
+        case .unsupportedFormat:
+            return "Use a supported quantization format: .int8 (4x compression) or .float16 (2x compression)."
+        }
+    }
 }
 
 // MARK: - Quantizer

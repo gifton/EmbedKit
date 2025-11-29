@@ -54,11 +54,12 @@ struct PaddingInvariantsTests {
     func embedBatch_idsMaskMismatch_throws() async {
         let backend = NoOpBackend()
         let tokenizer = MismatchTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .batch
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "inv-batch", version: "1.0"), dimensions: 4, device: .cpu)
         do {
-            _ = try await model.embedBatch(["x", "y"], options: .init())
+            _ = try await model.embedBatch(["x", "y"], options: BatchOptions())
             #expect(Bool(false), "Expected invalidConfiguration on ids/mask mismatch in batch")
         } catch {
             guard let ek = error as? EmbedKitError else { return #expect(Bool(false), "Unexpected error: \(error)") }
