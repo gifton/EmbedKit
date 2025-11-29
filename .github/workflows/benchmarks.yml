@@ -1,0 +1,145 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: 'Run full benchmark suite (slower)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+  XCODE_VERSION: '16.1'  # Swift 6.0 - pinned for reproducibility
+
+jobs:
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: System Info
+        run: |
+          echo "## Benchmark Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- Swift: $(swift --version | head -1)" >> $GITHUB_STEP_SUMMARY
+          echo "- Xcode: $(xcodebuild -version | head -1)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS: $(sw_vers -productVersion)" >> $GITHUB_STEP_SUMMARY
+          echo "- CPU: $(sysctl -n machdep.cpu.brand_string)" >> $GITHUB_STEP_SUMMARY
+          echo "- Cores: $(sysctl -n hw.ncpu)" >> $GITHUB_STEP_SUMMARY
+          echo "- Memory: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GB" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cache SPM (Release)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-release-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-release-
+
+      - name: Build (Release)
+        run: |
+          echo "Building in release mode..."
+          swift build -c release -v 2>&1 | tee build-release.log
+          echo "## Build (Release)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Release build succeeded" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run Performance Tests (Release)
+        run: |
+          echo "## Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Run performance-tagged tests in release mode
+          if [ "${{ inputs.run_full_suite }}" == "true" ]; then
+            echo "Running full performance suite..."
+            swift test -c release --filter "Performance" 2>&1 | tee perf-tests.log
+          else
+            echo "Running smoke performance tests..."
+            swift test -c release --filter "Batch6PerformanceBenchmarks" 2>&1 | tee perf-tests.log
+          fi
+
+          # Extract summary
+          if grep -q "Test run with" perf-tests.log; then
+            SUMMARY=$(grep "Test run with" perf-tests.log | tail -1)
+            echo "✅ $SUMMARY" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run Stress Tests (Release)
+        if: inputs.run_full_suite == 'true'
+        run: |
+          echo "Running stress tests..."
+          swift test -c release --filter "StressTests" 2>&1 | tee stress-tests.log || true
+
+          echo "## Stress Test Results" >> $GITHUB_STEP_SUMMARY
+          if grep -q "Test run with" stress-tests.log; then
+            SUMMARY=$(grep "Test run with" stress-tests.log | tail -1)
+            echo "✅ $SUMMARY" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Benchmark Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            perf-tests.log
+            stress-tests.log
+            build-release.log
+          retention-days: 30
+
+  release-smoke:
+    name: Release Smoke Test
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Cache SPM (Release)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-release-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-release-
+
+      - name: Build (Release)
+        run: swift build -c release
+
+      - name: Run Core Tests (Release, smoke)
+        run: |
+          echo "Running release smoke tests..."
+          swift test -c release --parallel --filter "EmbeddingGeneratorTests" 2>&1 | tee release-smoke.log
+
+          echo "## Release Smoke Test" >> $GITHUB_STEP_SUMMARY
+          if grep -q "Test run with" release-smoke.log; then
+            SUMMARY=$(grep "Test run with" release-smoke.log | tail -1)
+            echo "✅ $SUMMARY" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Smoke Test Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-${{ github.sha }}
+          path: release-smoke.log
+          retention-days: 14

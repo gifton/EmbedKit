@@ -22,11 +22,12 @@ struct OnDeviceCoreMLV2Tests {
         do {
             let vocab = try Vocabulary.load(from: vocabURL)
             let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-            var cfg = EmbeddingConfiguration()
-            cfg.includeSpecialTokens = true
-            cfg.paddingStrategy = .none
-            cfg.maxTokens = 128
-            let model = AppleEmbeddingModel(backend: CoreMLBackend(modelURL: modelPath, device: cfg.preferredDevice), tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "local-coreml", version: "1.0"), dimensions: 384, device: .auto)
+            let cfg = EmbeddingConfiguration(
+                maxTokens: 128,
+                paddingStrategy: .none,
+                includeSpecialTokens: true
+            )
+            let model = AppleEmbeddingModel(backend: CoreMLBackend(modelURL: modelPath, device: cfg.inferenceDevice), tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "local-coreml", version: "1.0"), dimensions: 384, device: .auto)
             _ = try await model.embed("Hello from on-device test")
         } catch {
             // Skip if CoreML load or inference fails in this environment.

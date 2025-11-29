@@ -38,23 +38,27 @@ struct TokenizationConcurrencyTests {
     func embedBatch_withConcurrency_isFaster() async throws {
         let backend = NoOpBackend()
         let tokenizer = SlowTokenizer(delayMs: 6)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 32
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 32,
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "tok-conc", version: "1.0"), dimensions: 4, device: .cpu)
 
         let texts = Array(repeating: "a b c d e f", count: 8)
 
-        var opts = BatchOptions()
-        opts.tokenizationConcurrency = nil
+        let optsSeq = BatchOptions(
+            tokenizationConcurrency: 1
+        )
         let t0 = CFAbsoluteTimeGetCurrent()
-        _ = try await model.embedBatch(texts, options: opts)
+        _ = try await model.embedBatch(texts, options: optsSeq)
         let seq = CFAbsoluteTimeGetCurrent() - t0
 
-        opts.tokenizationConcurrency = 4
+        let optsConc = BatchOptions(
+            tokenizationConcurrency: 4
+        )
         let t1 = CFAbsoluteTimeGetCurrent()
-        _ = try await model.embedBatch(texts, options: opts)
+        _ = try await model.embedBatch(texts, options: optsConc)
         let conc = CFAbsoluteTimeGetCurrent() - t1
 
         #expect(conc < seq * 0.75)

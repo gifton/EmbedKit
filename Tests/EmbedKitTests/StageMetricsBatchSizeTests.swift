@@ -25,17 +25,19 @@ struct StageMetricsBatchSizeTests {
         let backend = CountingBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","a","b"]) // PAD for batch padding
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "sm-batch", version: "1.0"), dimensions: 4, device: .cpu)
 
         // 10 items, bucketSize 16, each length ~2 -> key 16
         let texts = Array(repeating: "a b", count: 10)
-        var opts = BatchOptions()
-        opts.bucketSize = 16
-        opts.maxBatchTokens = 32 // -> 2 per micro-batch
+        let opts = BatchOptions(
+            bucketSize: 16,
+            maxBatchTokens: 32 // -> 2 per micro-batch
+        )
         _ = try await model.embedBatch(texts, options: opts)
 
         let sm = await model.stageMetricsSnapshot

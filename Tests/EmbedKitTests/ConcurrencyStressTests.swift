@@ -130,9 +130,9 @@ struct HighVolumeConcurrencyTests {
     func hundredConcurrentRequests() async throws {
         let backend = ConcurrencyTrackingBackend(delayMs: 2)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -165,9 +165,9 @@ struct HighVolumeConcurrencyTests {
     func concurrentSameInputConsistency() async throws {
         let backend = ConcurrencyTrackingBackend(delayMs: 1)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -208,9 +208,9 @@ struct HighVolumeConcurrencyTests {
     func mixedBatchSizesConcurrent() async throws {
         let backend = ConcurrencyTrackingBackend(delayMs: 3)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -482,7 +482,6 @@ struct AdaptiveBatcherStressTests {
         let model = try await manager.loadMockModel()
 
         var config = AdaptiveBatcherConfig()
-        config.maxLatency = 0.05 // 50ms
         config.minBatchSize = 1
         config.maxBatchSize = 32
 
@@ -598,7 +597,6 @@ struct StreamingProcessorStressTests {
         let model = try await manager.loadMockModel()
 
         var config = StreamingConfig()
-        config.concurrency = 4
         config.chunkingStrategy = .sentences(count: 2)
 
         let processor = StreamingProcessor(model: model, config: config)
@@ -625,7 +623,7 @@ struct StreamingProcessorStressTests {
 // MARK: - Task Cancellation Tests
 
 @Suite("Concurrency Stress - Cancellation")
-struct CancellationStressTests {
+struct TaskCancellationStressTests {
 
     @Test("Task cancellation is handled gracefully")
     func taskCancellationGraceful() async throws {

@@ -41,19 +41,21 @@ struct StageMetricsAveragesTests {
         let backend = NoOpBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","a","b","c","d","e","f"])
         let tokenizer = SlowTokenizer(vocab: vocab, delayMicros: 5_000) // ~5ms per encode
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 32
-        cfg.paddingStrategy = .none
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 32,
+            paddingStrategy: .none,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "sm", version: "1.0"), dimensions: 4, device: .cpu)
 
         // Use unique texts to avoid cache hits (cache would skip the tokenizer delay)
         let texts = ["a b c", "a b d", "a b e", "a b f", "c d e", "d e f"]
         // Force sequential tokenization to get predictable timing
-        var opts = BatchOptions()
-        opts.tokenizationConcurrency = 1
+        let opts = BatchOptions(
+            tokenizationConcurrency: 1
+        )
         _ = try await model.embedBatch(texts, options: opts)
         let sm = await model.stageMetricsSnapshot
         // Expect ~5ms per item average for tokenization; allow a generous lower bound

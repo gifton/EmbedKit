@@ -38,7 +38,7 @@ public actor AppleEmbeddingModel: EmbeddingModel {
         self.tokenizer = tokenizer
         self.configuration = configuration
         self.dimensions = dimensions
-        self.device = device ?? configuration.preferredDevice
+        self.device = device ?? configuration.inferenceDevice
         self.id = id ?? ModelID(provider: "apple", name: "text-embedding", version: "1.0.0", variant: "base")
         self.profiler = profiler
     }
@@ -157,20 +157,22 @@ public actor AppleEmbeddingModel: EmbeddingModel {
         struct Info { let idx: Int; let ids: [Int]; let mask: [Int]; let originalLen: Int }
         var infos: [Info] = []
         infos.reserveCapacity(texts.count)
-        if let conc = options.tokenizationConcurrency, conc > 1 {
+        let conc = options.tokenizationConcurrency
+        if conc > 1 {
             var pos = 0
             while pos < indices.count {
-                let end = min(indices.count, pos + conc)
+                let end = Swift.min(indices.count, pos + conc)
                 let chunk = Array(indices[pos..<end])
                 try await withThrowingTaskGroup(of: Info.self) { group in
                     for idx in chunk {
                         group.addTask {
                             if self.configuration.paddingStrategy == .batch {
-                                var pre = TokenizerConfig()
-                                pre.maxLength = 0
-                                pre.truncation = .end
-                                pre.padding = .none
-                                pre.addSpecialTokens = self.configuration.includeSpecialTokens
+                                let pre = TokenizerConfig(
+                                    maxLength: Int.max,  // No truncation in pre-tokenization
+                                    truncation: .end,
+                                    padding: .none,
+                                    addSpecialTokens: self.configuration.includeSpecialTokens
+                                )
                                 let tk = try await self.cachedEncode(prefix: "pre", text: texts[idx], config: pre)
                                 return Info(idx: idx, ids: tk.ids, mask: tk.attentionMask, originalLen: tk.ids.count)
                             } else {
@@ -187,11 +189,12 @@ public actor AppleEmbeddingModel: EmbeddingModel {
         } else {
             for idx in indices {
                 if configuration.paddingStrategy == .batch {
-                    var pre = TokenizerConfig()
-                    pre.maxLength = 0
-                    pre.truncation = .end
-                    pre.padding = .none
-                    pre.addSpecialTokens = configuration.includeSpecialTokens
+                    let pre = TokenizerConfig(
+                        maxLength: Int.max,  // No truncation in pre-tokenization
+                        truncation: .end,
+                        padding: .none,
+                        addSpecialTokens: configuration.includeSpecialTokens
+                    )
                     let tk = try await self.cachedEncode(prefix: "pre", text: texts[idx], config: pre)
                     infos.append(Info(idx: idx, ids: tk.ids, mask: tk.attentionMask, originalLen: tk.ids.count))
                 } else {
@@ -600,18 +603,20 @@ public actor AppleEmbeddingModel: EmbeddingModel {
     /// Build CoreML input from text using the configured tokenizer and compute original length
     /// before truncation/padding for accurate truncation metadata.
     func buildInput(for text: String) async throws -> AppleInputInfo {
-        var tk = TokenizerConfig()
-        tk.maxLength = configuration.maxTokens
-        tk.truncation = configuration.truncationStrategy
-        tk.padding = configuration.paddingStrategy
-        tk.addSpecialTokens = configuration.includeSpecialTokens
+        let tk = TokenizerConfig(
+            maxLength: configuration.maxTokens,
+            truncation: configuration.truncationStrategy,
+            padding: configuration.paddingStrategy,
+            addSpecialTokens: configuration.includeSpecialTokens
+        )
 
         // Compute original length without truncation/padding
-        var pre = TokenizerConfig()
-        pre.maxLength = 0 // no truncation
-        pre.truncation = .end
-        pre.padding = .none
-        pre.addSpecialTokens = configuration.includeSpecialTokens
+        let pre = TokenizerConfig(
+            maxLength: Int.max,  // No truncation
+            truncation: .end,
+            padding: .none,
+            addSpecialTokens: configuration.includeSpecialTokens
+        )
 
         let preTokenized = try await cachedEncode(prefix: "pre", text: text, config: pre)
         let originalLen = preTokenized.ids.count

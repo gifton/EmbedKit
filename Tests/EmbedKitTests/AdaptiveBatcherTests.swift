@@ -47,9 +47,10 @@ struct AdaptiveBatcherTests {
     func singleEmbed_returnsResult() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -67,9 +68,10 @@ struct AdaptiveBatcherTests {
     func embedBatch_directCall_works() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -92,9 +94,10 @@ struct AdaptiveBatcherTests {
     func concurrentEmbeds_areBatched() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -103,7 +106,6 @@ struct AdaptiveBatcherTests {
         )
 
         var config = AdaptiveBatcherConfig()
-        config.maxLatency = 0.5 // Long timeout to ensure batching
         config.minBatchSize = 1
         let batcher = AdaptiveBatcher(model: model, config: config)
 
@@ -121,9 +123,10 @@ struct AdaptiveBatcherTests {
     func flush_processesQueuedRequests() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -132,7 +135,6 @@ struct AdaptiveBatcherTests {
         )
 
         var config = AdaptiveBatcherConfig()
-        config.autoFlush = false // Disable auto-flush
         config.maxLatency = 10.0 // Very long timeout
         let batcher = AdaptiveBatcher(model: model, config: config)
 
@@ -160,9 +162,10 @@ struct AdaptiveBatcherTests {
     func memoryPressure_affectsBatchSize() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -190,8 +193,9 @@ struct AdaptiveBatcherTests {
     func memoryPressure_clampedTo0_1() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -216,9 +220,10 @@ struct AdaptiveBatcherTests {
     func metrics_trackRequestsAndBatches() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -241,9 +246,10 @@ struct AdaptiveBatcherTests {
     func resetMetrics_clearsCounters() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -267,8 +273,9 @@ struct AdaptiveBatcherTests {
     func setConfig_updatesConfiguration() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -277,7 +284,6 @@ struct AdaptiveBatcherTests {
         )
 
         var config = AdaptiveBatcherConfig()
-        config.maxLatency = 0.1
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         var newConfig = AdaptiveBatcherConfig()
@@ -297,8 +303,9 @@ struct AdaptiveBatcherTests {
     func emptyFlush_doesNothing() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -319,9 +326,10 @@ struct AdaptiveBatcherTests {
     func embedConcurrently_preservesOrder() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -345,9 +353,10 @@ struct AdaptiveBatcherTests {
     func maxBatchSize_respected() async throws {
         let backend = CountingBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -356,8 +365,8 @@ struct AdaptiveBatcherTests {
         )
 
         var config = AdaptiveBatcherConfig()
-        config.maxBatchSize = 2 // Very small max
         config.maxLatency = 0.01
+        config.maxBatchSize = 2  // Limit batch size to 2
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         // Process more than maxBatchSize

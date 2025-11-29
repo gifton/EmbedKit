@@ -1,5 +1,5 @@
 {
-  "originHash" : "78aaa219185c7bafefd081899e4341bfdbf1e4c6756b469046084637b3e5b4b3",
+  "originHash" : "08e560bbb74e75ec8d31540c1b2441b9afb707734ce1a7389eeeb3761494d7a1",
   "pins" : [
     {
       "identity" : "onnxruntime-swift-package-manager",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorCore.git",
       "state" : {
-        "revision" : "e9eae35477a6855155ba8389fa7f24f5b25cd5f0",
-        "version" : "0.1.5"
+        "revision" : "506d3d2adc893fe1d24513b329568a6b834f20bc",
+        "version" : "0.1.6"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorIndex.git",
       "state" : {
-        "revision" : "2e0dd8f375311363b8390ca9d4ff3b0c9c4a4632",
-        "version" : "0.1.2"
+        "revision" : "7e1369be7dea9266e012c0e78e539fa239938bb5",
+        "version" : "0.1.3"
       }
     }
   ],

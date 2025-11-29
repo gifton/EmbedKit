@@ -39,9 +39,10 @@ struct StreamingProcessorTests {
     private func makeModel(dim: Int = 4) -> AppleEmbeddingModel {
         let backend = MockBackend(dimensions: dim)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -56,7 +57,7 @@ struct StreamingProcessorTests {
     func previewChunks_characterStrategy() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 50)
+        config.chunkingStrategy = .characters(size: 50) // Split every ~50 chars
         config.overlap = 10
         config.minChunkSize = 10
         let processor = StreamingProcessor(model: model, config: config)
@@ -72,12 +73,12 @@ struct StreamingProcessorTests {
     func previewChunks_tokenStrategy() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .tokens(count: 10) // ~40 chars
+        config.chunkingStrategy = .tokens(count: 15) // Split every ~15 tokens (~60 chars)
         config.overlap = 5
         config.minChunkSize = 10
         let processor = StreamingProcessor(model: model, config: config)
 
-        let text = String(repeating: "word ", count: 50) // 250 chars
+        let text = String(repeating: "word ", count: 50) // 250 chars (~50 tokens)
         let chunks = processor.previewChunks(text)
 
         #expect(chunks.count >= 3, "Should create multiple chunks for long text")
@@ -87,7 +88,7 @@ struct StreamingProcessorTests {
     func previewChunks_sentenceStrategy() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .sentences(count: 2)
+        config.chunkingStrategy = .sentences(count: 2) // Group 2 sentences per chunk
         config.overlap = 20
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -102,7 +103,7 @@ struct StreamingProcessorTests {
     func previewChunks_paragraphStrategy() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .paragraphs(count: 2)
+        config.chunkingStrategy = .paragraphs(count: 2) // Group 2 paragraphs per chunk
         config.overlap = 0
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -134,7 +135,6 @@ struct StreamingProcessorTests {
     func chunk_metadata_isAccurate() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 30)
         config.overlap = 5
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -167,7 +167,6 @@ struct StreamingProcessorTests {
     func embedStream_yieldsAllChunks() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 30)
         config.overlap = 5
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -191,7 +190,6 @@ struct StreamingProcessorTests {
     func embedStreamConcurrent_processesAllChunks() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.overlap = 5
         config.minChunkSize = 5
         config.concurrency = 3
@@ -215,7 +213,6 @@ struct StreamingProcessorTests {
     func embedDocument_returnsAllChunks() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 25)
         config.overlap = 5
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -234,7 +231,6 @@ struct StreamingProcessorTests {
     func embedDocumentAggregated_returnsSingleEmbedding() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 25)
         config.overlap = 5
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
@@ -256,7 +252,6 @@ struct StreamingProcessorTests {
     func aggregation_mean() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -271,7 +266,6 @@ struct StreamingProcessorTests {
     func aggregation_weightedByLength() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -286,7 +280,6 @@ struct StreamingProcessorTests {
     func aggregation_first() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -306,7 +299,6 @@ struct StreamingProcessorTests {
     func aggregation_last() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -326,7 +318,6 @@ struct StreamingProcessorTests {
     func aggregation_concatenate() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -341,7 +332,6 @@ struct StreamingProcessorTests {
     func aggregation_custom() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 20)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -415,7 +405,6 @@ struct StreamingProcessorTests {
     func shortText_singleChunk() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 1000)
         config.minChunkSize = 5
         let processor = StreamingProcessor(model: model, config: config)
 
@@ -430,7 +419,7 @@ struct StreamingProcessorTests {
     func veryLongText_manyChunks() async throws {
         let model = makeModel()
         var config = StreamingConfig()
-        config.chunkingStrategy = .characters(size: 100)
+        config.chunkingStrategy = .characters(size: 100) // Split every ~100 chars to get ~25 chunks
         config.overlap = 10
         config.minChunkSize = 20
         let processor = StreamingProcessor(model: model, config: config)

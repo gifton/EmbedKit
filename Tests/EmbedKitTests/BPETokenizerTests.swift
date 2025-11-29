@@ -24,8 +24,7 @@ struct BPETokenizerTests {
     func basicMerges_withSpecials() async throws {
         let (vocab, merges) = makeVocabAndMerges()
         let tok = BPETokenizer(vocabulary: vocab, merges: merges, unkToken: "[UNK]", lowercase: true)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
+        let cfg = TokenizerConfig(addSpecialTokens: true)
         let out = try await tok.encode("Hello world", config: cfg)
         // Expect: [CLS], he, llo, w, o, r, l, d, [SEP]
         let expected = ["[CLS]", "he", "llo", "w", "o", "r", "l", "d", "[SEP]"]
@@ -39,10 +38,11 @@ struct BPETokenizerTests {
     func truncation_end() async throws {
         let (vocab, merges) = makeVocabAndMerges()
         let tok = BPETokenizer(vocabulary: vocab, merges: merges)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
-        cfg.maxLength = 5
-        cfg.truncation = .end
+        let cfg = TokenizerConfig(
+            maxLength: 5,
+            truncation: .end,
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("hello world", config: cfg)
         #expect(out.tokens.count == 5)
         #expect(out.attentionMask.count == 5)
@@ -52,10 +52,11 @@ struct BPETokenizerTests {
     func padding_max() async throws {
         let (vocab, merges) = makeVocabAndMerges()
         let tok = BPETokenizer(vocabulary: vocab, merges: merges)
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
-        cfg.maxLength = 10
-        cfg.padding = .max
+        let cfg = TokenizerConfig(
+            maxLength: 10,
+            padding: .max,
+            addSpecialTokens: true
+        )
         let out = try await tok.encode("hello", config: cfg)
         #expect(out.tokens.count == 10)
         // Padding zeros after actual tokens in mask

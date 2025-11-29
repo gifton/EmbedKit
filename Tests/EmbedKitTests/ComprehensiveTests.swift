@@ -55,10 +55,11 @@ struct CorrectnessTests {
     ) -> AppleEmbeddingModel {
         let backend = PredictableBackend(dimensions: dim)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.normalizeOutput = normalize
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false,
+            normalizeOutput: normalize
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -188,10 +189,11 @@ struct RobustnessTests {
     private func makeModel() -> AppleEmbeddingModel {
         let backend = PredictableBackend(dimensions: 4)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 512
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 512,
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -231,11 +233,12 @@ struct RobustnessTests {
     func extremelyLongInput_truncated() async throws {
         let backend = PredictableBackend(dimensions: 4)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64  // Low limit for testing
-        cfg.truncationStrategy = .end
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,  // Low limit for testing
+            truncationStrategy: .end,
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -365,9 +368,10 @@ struct EdgeCaseTests {
     private func makeModel() -> AppleEmbeddingModel {
         let backend = PredictableBackend(dimensions: 4)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -489,9 +493,10 @@ struct MetricsTrackingTests {
     private func makeModel() -> AppleEmbeddingModel {
         let backend = PredictableBackend(dimensions: 4)
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.paddingStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            paddingStrategy: .none,
+            includeSpecialTokens: false
+        )
         return AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,

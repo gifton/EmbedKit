@@ -8,9 +8,9 @@ struct StageMetricsResetTests {
     func resetClearsStageAveragesAndCacheStats() async throws {
         let backend = NoOpBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,

@@ -66,11 +66,12 @@ struct BatchTruncationStrategyTests {
         // Expect: inputTooLong when preLen > targetLen and truncationStrategy == .none
         let backend = AscendingBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 4 // cap below input length to force truncation condition
-        cfg.paddingStrategy = .batch
-        cfg.truncationStrategy = .none
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 4, // cap below input length to force truncation condition
+            truncationStrategy: .none,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -79,8 +80,9 @@ struct BatchTruncationStrategyTests {
             dimensions: 4,
             device: .cpu
         )
-        var opts = BatchOptions()
-        opts.bucketSize = 4 // targetLen will be min(maxTokens, ceil(len/4)*4) = 4
+        let opts = BatchOptions(
+            bucketSize: 4 // targetLen will be min(maxTokens, ceil(len/4)*4) = 4
+        )
         do {
             _ = try await model.embedBatch(["a b c d e"], options: opts) // len 5 > target 4
             #expect(Bool(false), "Expected inputTooLong when truncationStrategy == .none")
@@ -102,16 +104,18 @@ struct BatchTruncationStrategyTests {
         // Verify .start truncation keeps suffix(targetLen)
         let backend = IDBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 4 // force truncation to 4
-        cfg.paddingStrategy = .batch
-        cfg.truncationStrategy = .start
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 4, // force truncation to 4
+            truncationStrategy: .start,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "batch-trunc-start", version: "1.0"), dimensions: 4, device: .cpu)
-        var opts = BatchOptions()
-        opts.bucketSize = 4 // targetLen = 4
+        let opts = BatchOptions(
+            bucketSize: 4 // targetLen = 4
+        )
         let out = try await model.embedBatch(["a b c d e f"], options: opts)
         #expect(out.count == 1)
         let v = out[0].vector
@@ -125,16 +129,18 @@ struct BatchTruncationStrategyTests {
         // Verify .middle truncation keeps head/tail = (2, 2) for targetLen 4
         let backend = IDBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 4
-        cfg.paddingStrategy = .batch
-        cfg.truncationStrategy = .middle
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 4,
+            truncationStrategy: .middle,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "batch-trunc-middle", version: "1.0"), dimensions: 4, device: .cpu)
-        var opts = BatchOptions()
-        opts.bucketSize = 4 // targetLen = 4
+        let opts = BatchOptions(
+            bucketSize: 4 // targetLen = 4
+        )
         let out = try await model.embedBatch(["a b c d e f"], options: opts)
         #expect(out.count == 1)
         let v = out[0].vector

@@ -16,9 +16,9 @@ func wordPieceTokenizer_basicEncodingWithSpecialTokens() async throws {
     }
     let vocab = makeVocab()
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
-
+    let cfg = TokenizerConfig(
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("Hello world embedding", config: cfg)
     #expect(out.tokens == ["[CLS]", "hello", "world", "embed", "##ding", "[SEP]"])
     #expect(out.ids == [1, 5, 6, 7, 8, 2])
@@ -30,10 +30,11 @@ func wordPieceTokenizer_truncationEnd() async throws {
     func makeVocab() -> Vocabulary { Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","[MASK]","hello","world","embed","##ding"]) }
     let vocab = makeVocab()
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
-    cfg.maxLength = 5
-    cfg.truncation = .end
+    let cfg = TokenizerConfig(
+        maxLength: 5,
+        truncation: .end,
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("Hello world embedding", config: cfg)
     #expect(out.tokens == ["[CLS]", "hello", "world", "embed", "##ding"]) 
     #expect(out.ids == [1, 5, 6, 7, 8])
@@ -45,10 +46,11 @@ func wordPieceTokenizer_paddingMax() async throws {
     func makeVocab() -> Vocabulary { Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","[MASK]","hello","world","embed","##ding"]) }
     let vocab = makeVocab()
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
-    cfg.maxLength = 8
-    cfg.padding = .max
+    let cfg = TokenizerConfig(
+        maxLength: 8,
+        padding: .max,
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("Hello world embedding", config: cfg)
     #expect(out.tokens == ["[CLS]", "hello", "world", "embed", "##ding", "[SEP]", "[PAD]", "[PAD]"])
     #expect(out.ids == [1, 5, 6, 7, 8, 2, 0, 0])
@@ -59,8 +61,9 @@ func wordPieceTokenizer_paddingMax() async throws {
 func wordPieceTokenizer_unknownFallsBack() async throws {
     let vocab = Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","[MASK]"])
     let tok = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = TokenizerConfig()
-    cfg.addSpecialTokens = true
+    let cfg = TokenizerConfig(
+        addSpecialTokens: true
+    )
     let out = try await tok.encode("xyz", config: cfg)
     #expect(out.tokens == ["[CLS]", "[UNK]", "[SEP]"])
     #expect(out.ids == [1, 3, 2])

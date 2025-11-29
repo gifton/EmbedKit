@@ -33,12 +33,11 @@ struct PoolingStrategyTests {
 func pooling_clsAndMax() async throws {
         let backend = StepBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.normalizeOutput = false
-
-        // CLS pooling (first token vector)
-        cfg.poolingStrategy = .cls
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false,
+            poolingStrategy: .cls,
+            normalizeOutput: false
+        )
         var model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
@@ -51,11 +50,15 @@ func pooling_clsAndMax() async throws {
         #expect(emb.vector == [1,2,3,4])
 
         // Max pooling (largest token vector = last)
-        cfg.poolingStrategy = .max
+        let maxCfg = EmbeddingConfiguration(
+            includeSpecialTokens: false,
+            poolingStrategy: .max,
+            normalizeOutput: false
+        )
         model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
-            configuration: cfg,
+            configuration: maxCfg,
             id: ModelID(provider: "test", name: "step", version: "1.0"),
             dimensions: 4,
             device: .cpu

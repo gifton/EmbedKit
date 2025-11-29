@@ -11,10 +11,10 @@ struct TokenizerParityTests {
         let tokens = ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "[MASK]", "hello", "world", "embed", "##ding"]
         let tokenizer = WordPieceTokenizer(vocabulary: Vocabulary(tokens: tokens), unkToken: "[UNK]", lowercase: true)
 
-        var cfg = TokenizerConfig()
-        cfg.addSpecialTokens = true
-        cfg.maxLength = 0 // no truncation
-
+        let cfg = TokenizerConfig(
+            maxLength: 512, // use default max length
+            addSpecialTokens: true
+        )
         let result = try await tokenizer.encode("hello world", config: cfg)
         #expect(result.ids.count > 0, "Should produce tokens")
     }

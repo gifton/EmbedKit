@@ -97,11 +97,12 @@ public actor LocalONNXModel: EmbeddingModel {
         }
 
         // Tokenize
-        var config = TokenizerConfig()
-        config.maxLength = configuration.maxTokens
-        config.truncation = configuration.truncationStrategy
-        config.padding = configuration.paddingStrategy
-        config.addSpecialTokens = configuration.includeSpecialTokens
+        let config = TokenizerConfig(
+            maxLength: configuration.maxTokens,
+            truncation: configuration.truncationStrategy,
+            padding: configuration.paddingStrategy,
+            addSpecialTokens: configuration.includeSpecialTokens
+        )
 
         let tokenized = try await tokenizer.encode(text, config: config)
 

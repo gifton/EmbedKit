@@ -148,10 +148,10 @@ struct BatchTokenizationTests {
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
 
         // Config that throws on long input
-        var config = TokenizerConfig()
-        config.maxLength = 5
-        config.truncation = .none // Should throw on long input
-
+        let config = TokenizerConfig(
+            maxLength: 5,
+            truncation: .none // Should throw on long input
+        )
         let texts = ["short", "this is a much longer text that exceeds the maximum length"]
 
         await #expect(throws: EmbedKitError.self) {
@@ -166,11 +166,14 @@ struct BatchTokenizationTests {
         let vocab = MockVocabulary.standard
         let tokenizer = WordPieceTokenizer(vocabulary: vocab)
 
-        var config = TokenizerConfig()
-        config.maxLength = 10
-        config.truncation = .end
-        config.addSpecialTokens = true
+        let config = TokenizerConfig(
 
+            maxLength: 10,
+
+            truncation: .end,
+
+            addSpecialTokens: true
+        )
         let texts = ["hello", "world"]
         let results = try await tokenizer.encodeBatch(texts, config: config)
 

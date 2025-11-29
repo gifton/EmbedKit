@@ -141,7 +141,7 @@ public final class CommandBufferPool: @unchecked Sendable {
             }
         }
         buffer.commit()
-        _ = await buffer.completed
+        await buffer.completed()
     }
 
     /// Wait for all in-flight command buffers to complete.
@@ -560,8 +560,10 @@ public actor MetalAccelerator {
                 enc.setBuffer(maskBuf, offset: 0, index: 2)
                 enc.setBuffer(paramsBuf, offset: 0, index: 3)
 
-                let threadgroupWidth = min(256, dimensions)
-                let threadgroups = MTLSize(width: 1, height: batchSize, depth: 1)
+                // Note: Fused kernels hardcode tgSize=256, must match
+                // Use width=batchSize since kernel uses uint [[threadgroup_position_in_grid]]
+                let threadgroupWidth = min(256, pso.maxTotalThreadsPerThreadgroup)
+                let threadgroups = MTLSize(width: batchSize, height: 1, depth: 1)
                 let threadsPerGroup = MTLSize(width: threadgroupWidth, height: 1, depth: 1)
                 enc.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
                 enc.endEncoding()
@@ -678,7 +680,7 @@ public actor MetalAccelerator {
         enc.endEncoding()
 
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         let outPtr = outBuf.contents().bindMemory(to: Float.self, capacity: flat.count)
         let out = Array(UnsafeBufferPointer(start: outPtr, count: flat.count))
@@ -779,7 +781,7 @@ public actor MetalAccelerator {
 
         // Wait for completion (Metal 4 native async)
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: dimensions)
@@ -879,7 +881,7 @@ public actor MetalAccelerator {
 
         // Wait for completion (Metal 4 native async)
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: dimensions)
@@ -1028,7 +1030,7 @@ public actor MetalAccelerator {
 
         // Wait for completion (Metal 4 native async)
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results into 2D array
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: n * n)
@@ -1147,7 +1149,7 @@ public actor MetalAccelerator {
         enc.endEncoding()
 
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: outputCount)
         return Array(UnsafeBufferPointer(start: outPtr, count: outputCount))
@@ -1189,7 +1191,7 @@ public actor MetalAccelerator {
             let result = try operation(dev, queue, encoder)
             encoder.endEncoding()
             cmd.commit()
-            _ = await cmd.completed
+            await cmd.completed()
             return result
         } catch {
             encoder.endEncoding()
@@ -1312,7 +1314,7 @@ public actor MetalAccelerator {
 
         // Single commit and await for entire pipeline (Metal 4 native async)
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read final normalized results
         let outPtr = normalizedBuf.contents().bindMemory(to: Float.self, capacity: dimensions)
@@ -1618,8 +1620,12 @@ public actor MetalAccelerator {
             threadsPerGroup = dispatchParams.threadgroupSize
         } else {
             // Fallback to static calculation
-            let threadgroupWidth = min(256, dimensions)
-            threadgroups = MTLSize(width: 1, height: batchSize, depth: 1)
+            // Note: fused_pool_normalize_unified kernel hardcodes tgSize=256
+            // We must match this exactly regardless of dimensions
+            // Use width=batchSize since kernel uses uint [[threadgroup_position_in_grid]]
+            // which only receives the X component
+            let threadgroupWidth = min(256, pso.maxTotalThreadsPerThreadgroup)
+            threadgroups = MTLSize(width: batchSize, height: 1, depth: 1)
             threadsPerGroup = MTLSize(width: threadgroupWidth, height: 1, depth: 1)
         }
 
@@ -1627,7 +1633,7 @@ public actor MetalAccelerator {
         enc.endEncoding()
 
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: batchSize * dimensions)
@@ -1751,15 +1757,17 @@ public actor MetalAccelerator {
         enc.setBuffer(outputBuf, offset: 0, index: 2)
         enc.setBuffer(paramsBuf, offset: 0, index: 3)
 
-        let threadgroupWidth = min(256, dimensions)
-        let threadgroups = MTLSize(width: 1, height: batchSize, depth: 1)
+        // Note: Fused attention kernel hardcodes tgSize=256, must match
+        // Use width=batchSize since kernel uses uint [[threadgroup_position_in_grid]]
+        let threadgroupWidth = min(256, pso.maxTotalThreadsPerThreadgroup)
+        let threadgroups = MTLSize(width: batchSize, height: 1, depth: 1)
         let threadsPerGroup = MTLSize(width: threadgroupWidth, height: 1, depth: 1)
 
         enc.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
         enc.endEncoding()
 
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: batchSize * dimensions)
@@ -1905,7 +1913,7 @@ public actor MetalAccelerator {
         enc.endEncoding()
 
         cmd.commit()
-        _ = await cmd.completed
+        await cmd.completed()
 
         // Read results
         let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: queryBatchSize * keyBatchSize)

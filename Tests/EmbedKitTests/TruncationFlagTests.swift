@@ -26,11 +26,11 @@ func truncationFlag_embed_maxPadding() async throws {
     let backend = NoOpBackend()
     let vocab = Vocabulary(tokens: ["[PAD]","a","b","c","d","e"]) // PAD for batch padding
     let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = EmbeddingConfiguration()
-    cfg.includeSpecialTokens = false
-    cfg.maxTokens = 4
-    cfg.paddingStrategy = .max
-
+    let cfg = EmbeddingConfiguration(
+        maxTokens: 4,
+        paddingStrategy: .max,
+        includeSpecialTokens: false
+    )
     let model = AppleEmbeddingModel(
         backend: backend,
         tokenizer: tokenizer,
@@ -50,11 +50,11 @@ func truncationFlag_embedBatch_batchPadding() async throws {
     let backend = NoOpBackend()
     let vocab = Vocabulary(tokens: ["[PAD]","a","b","c","d","e"]) // PAD for batch padding
     let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = EmbeddingConfiguration()
-    cfg.includeSpecialTokens = false
-    cfg.maxTokens = 4
-    cfg.paddingStrategy = .batch
-
+    let cfg = EmbeddingConfiguration(
+        maxTokens: 4,
+        paddingStrategy: .batch,
+        includeSpecialTokens: false
+    )
     let model = AppleEmbeddingModel(
         backend: backend,
         tokenizer: tokenizer,
@@ -66,7 +66,7 @@ func truncationFlag_embedBatch_batchPadding() async throws {
 
     // First truncated, others not
     let texts = ["a b c d e", "a b", "a b c"]
-    let embs = try await model.embedBatch(texts, options: .init())
+    let embs = try await model.embedBatch(texts, options: BatchOptions())
     #expect(embs.count == 3)
     #expect(embs[0].metadata.truncated == true)
     #expect(embs[1].metadata.truncated == false)

@@ -30,12 +30,13 @@ struct BatchPerformanceTests {
         let backend = OverheadBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","a","b","c"]) // PAD for batch padding
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "perf", version: "1.0"), dimensions: 4, device: .cpu)
 
         let texts = Array(repeating: "a b c", count: 8)
@@ -47,7 +48,7 @@ struct BatchPerformanceTests {
 
         // Batched (one overhead)
         let t1 = CFAbsoluteTimeGetCurrent()
-        _ = try await model.embedBatch(texts, options: .init())
+        _ = try await model.embedBatch(texts, options: BatchOptions())
         let batTime = CFAbsoluteTimeGetCurrent() - t1
 
         // With per-call overhead ~2ms, sequential should pay it 8x vs 1x in batch

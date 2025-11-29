@@ -28,17 +28,19 @@ struct AdvancedBatchingConstraintsTests {
         // Use WordPieceTokenizer with PAD token for batch padding
         let vocab = Vocabulary(tokens: ["[PAD]", "[CLS]", "[SEP]", "[UNK]", "a", "b", "c"])
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "adv-min", version: "1.0"), dimensions: 4, device: .cpu)
 
         let texts = Array(repeating: "a b c", count: 9)
-        var opts = BatchOptions()
-        opts.bucketSize = 4
-        opts.minBatchSize = 3
-        opts.maxBatchSize = 3
+        let opts = BatchOptions(
+            maxBatchSize: 3,
+            bucketSize: 4,
+            minBatchSize: 3
+        )
         _ = try await model.embedBatch(texts, options: opts)
         let sizes = await backend.batchSizes
         #expect(!sizes.isEmpty)
@@ -50,20 +52,22 @@ struct AdvancedBatchingConstraintsTests {
         let backend = CountingBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","[CLS]","[SEP]","[UNK]","a","b"]) 
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "adv-ratio", version: "1.0"), dimensions: 4, device: .cpu)
 
         let short = Array(repeating: "a b", count: 5)
         let long = Array(repeating: Array(repeating: "a", count: 13).joined(separator: " "), count: 5)
         let texts = long + short
 
-        var opts = BatchOptions()
-        opts.bucketSize = 16
-        opts.sortByLength = true
-        opts.maxPaddingRatio = 0.25
+        let opts = BatchOptions(
+            sortByLength: true,
+            bucketSize: 16,
+            maxPaddingRatio: 0.25
+        )
         _ = try await model.embedBatch(texts, options: opts)
         let sizes = await backend.batchSizes
         #expect(!sizes.isEmpty)

@@ -1,6 +1,7 @@
 // EmbedKit - Error Types
 
 import Foundation
+import VectorCore
 
 /// Common errors exposed by EmbedKit
 public enum EmbedKitError: LocalizedError, Sendable {
@@ -150,4 +151,108 @@ public enum EmbedKitError: LocalizedError, Sendable {
             return "The GPU command encoder could not be created from the command buffer."
         }
     }
+}
+
+// MARK: - VSKError Conformance
+
+extension EmbedKitError: VSKError {
+    /// Error code in EmbedKit range (2000-2999)
+    public var errorCode: Int {
+        VSKErrorCodeRange.embedKit.lowerBound + errorCodeOffset
+    }
+
+    /// Error code offset within EmbedKit range
+    private var errorCodeOffset: Int {
+        switch self {
+        // Model errors: 0-99
+        case .modelNotFound: return 0
+        case .modelLoadFailed: return 1
+
+        // Tokenization errors: 100-199
+        case .tokenizationFailed: return 100
+        case .inputTooLong: return 101
+
+        // Inference errors: 200-299
+        case .inferenceFailed: return 200
+        case .processingTimeout: return 201
+        case .batchSizeExceeded: return 202
+
+        // Dimension/data errors: 300-399
+        case .dimensionMismatch: return 300
+
+        // Device errors: 400-499
+        case .deviceNotAvailable: return 400
+
+        // Configuration errors: 500-599
+        case .invalidConfiguration: return 500
+
+        // Metal errors: 600-699
+        case .metalDeviceUnavailable: return 600
+        case .metalBufferFailed: return 601
+        case .metalPipelineNotFound: return 602
+        case .metalEncoderFailed: return 603
+        }
+    }
+
+    /// Error domain identifier
+    public var domain: String { "EmbedKit" }
+
+    /// Whether this error can potentially be recovered from
+    public var isRecoverable: Bool {
+        switch self {
+        // Not recoverable - requires configuration/setup changes
+        case .modelNotFound, .modelLoadFailed, .invalidConfiguration,
+             .metalDeviceUnavailable, .metalPipelineNotFound:
+            return false
+
+        // Recoverable - can retry with different parameters
+        case .tokenizationFailed, .inferenceFailed, .dimensionMismatch,
+             .deviceNotAvailable, .inputTooLong, .batchSizeExceeded,
+             .processingTimeout, .metalBufferFailed, .metalEncoderFailed:
+            return true
+        }
+    }
+
+    /// Error context with additional debugging information
+    public var context: ErrorContext {
+        var info: [String: String] = [:]
+
+        // Add error-specific context
+        switch self {
+        case .modelNotFound(let id):
+            info["modelID"] = id.description
+        case .modelLoadFailed(let reason):
+            info["reason"] = reason
+        case .tokenizationFailed(let reason):
+            info["reason"] = reason
+        case .inferenceFailed(let reason):
+            info["reason"] = reason
+        case .dimensionMismatch(let expected, let got):
+            info["expected"] = "\(expected)"
+            info["got"] = "\(got)"
+        case .deviceNotAvailable(let device):
+            info["device"] = device.rawValue
+        case .inputTooLong(let length, let max):
+            info["length"] = "\(length)"
+            info["maxLength"] = "\(max)"
+        case .batchSizeExceeded(let size, let max):
+            info["batchSize"] = "\(size)"
+            info["maxBatchSize"] = "\(max)"
+        case .metalPipelineNotFound(let kernel):
+            info["kernel"] = kernel
+        case .processingTimeout, .invalidConfiguration,
+             .metalDeviceUnavailable, .metalBufferFailed, .metalEncoderFailed:
+            break
+        }
+
+        // Add message from errorDescription
+        if let desc = errorDescription {
+            info["message"] = desc
+        }
+
+        return ErrorContext(additionalInfo: info)
+    }
+
+    /// Underlying error (none for EmbedKitError)
+    public var underlyingError: (any Error)? { nil }
 }

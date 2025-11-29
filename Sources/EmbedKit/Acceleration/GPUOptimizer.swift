@@ -359,12 +359,14 @@ public struct ThreadgroupOptimizer: Sendable {
 
         // Fused operations: one threadgroup per sequence
         // Threads cooperatively pool then normalize
+        // Note: Kernel uses `uint b [[threadgroup_position_in_grid]]` (scalar)
+        // which only receives X component, so grid must be (batchSize, 1, 1)
         let threadWidth = min(dimensions, maxThreads)
         let alignedWidth = min(((threadWidth + simdWidth - 1) / simdWidth) * simdWidth, 256)
 
         return (
             threadgroup: (alignedWidth, 1, 1),
-            grid: (1, batchSize, 1)
+            grid: (batchSize, 1, 1)
         )
     }
 

@@ -40,15 +40,17 @@ struct MeanPoolingFallbackTests {
         // TODO: Validate pooled vector equals unmasked mean (ones)
         let backend = OnesBackend()
         let tokenizer = makeWPTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 8
-        cfg.paddingStrategy = .batch
-        cfg.poolingStrategy = .mean
-        cfg.normalizeOutput = false
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 8,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false,
+            poolingStrategy: .mean,
+            normalizeOutput: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "mean-fallback", version: "1.0"), dimensions: 4, device: .cpu)
-        var opts = BatchOptions()
-        opts.bucketSize = 4
+        let opts = BatchOptions(
+            bucketSize: 4
+        )
         let out = try await model.embedBatch(["", "a"], options: opts)
         #expect(out.count == 2)
         // For empty input padded to bucket with all-zero mask, fallback should compute unmasked mean.

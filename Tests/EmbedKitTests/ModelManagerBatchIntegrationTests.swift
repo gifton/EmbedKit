@@ -27,10 +27,11 @@ struct ModelManagerBatchIntegrationTests {
         let backend = CountingBackend()
         let vocab = Vocabulary(tokens: ["[PAD]","a","b","c"]) // PAD for batch padding
         let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
-        cfg.maxTokens = 64
-        cfg.paddingStrategy = .batch
+        let cfg = EmbeddingConfiguration(
+            maxTokens: 64,
+            paddingStrategy: .batch,
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "mm", version: "1.0"), dimensions: 4, device: .cpu)
 
         let manager = ModelManager()
@@ -38,8 +39,9 @@ struct ModelManagerBatchIntegrationTests {
         let id = model.id
 
         let texts = ["a b c", "a", "a b"]
-        var opts = BatchOptions()
-        opts.bucketSize = 4
+        let opts = BatchOptions(
+            bucketSize: 4
+        )
         let result = try await manager.embedBatch(texts, using: id, options: opts)
         #expect(result.embeddings.count == texts.count)
         #expect(result.tokenCounts.count == texts.count)

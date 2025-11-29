@@ -20,20 +20,20 @@ public actor LocalCoreMLModel: EmbeddingModel {
         device: ComputeDevice? = nil,
         profiler: Profiler? = nil
     ) {
-        let backend = CoreMLBackend(modelURL: modelURL, device: configuration.preferredDevice)
+        let backend = CoreMLBackend(modelURL: modelURL, device: configuration.inferenceDevice)
         let model = AppleEmbeddingModel(
             backend: backend,
             tokenizer: tokenizer,
             configuration: configuration,
             id: id,
             dimensions: dimensions,
-            device: device ?? configuration.preferredDevice,
+            device: device ?? configuration.inferenceDevice,
             profiler: profiler
         )
         self.inner = model
         self.id = model.id
         self.dimensions = dimensions
-        self.device = device ?? configuration.preferredDevice
+        self.device = device ?? configuration.inferenceDevice
     }
 
     public func embed(_ text: String) async throws -> Embedding { try await inner.embed(text) }

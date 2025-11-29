@@ -32,13 +32,13 @@ func batchPadding_producesEqualLengths() async throws {
     let backend = RecordingBackend()
     let vocab = Vocabulary(tokens: ["[PAD]","a","b","c","d","e","f"]) // PAD for batch padding
     let tokenizer = WordPieceTokenizer(vocabulary: vocab, unkToken: "[UNK]", lowercase: true)
-    var cfg = EmbeddingConfiguration()
-    cfg.includeSpecialTokens = false
-    cfg.paddingStrategy = .batch
-    cfg.maxTokens = 16
-    cfg.poolingStrategy = .mean
-    cfg.normalizeOutput = false
-
+    let cfg = EmbeddingConfiguration(
+        maxTokens: 16,
+        paddingStrategy: .batch,
+        includeSpecialTokens: false,
+        poolingStrategy: .mean,
+        normalizeOutput: false
+    )
     let model = AppleEmbeddingModel(
         backend: backend,
         tokenizer: tokenizer,
@@ -49,7 +49,7 @@ func batchPadding_producesEqualLengths() async throws {
     )
 
     let texts = ["a", "a b c d e f", "a b"]
-    _ = try await model.embedBatch(texts, options: .init())
+    _ = try await model.embedBatch(texts, options: BatchOptions())
 
     let lengths = await backend.lastLengths
     #expect(!lengths.isEmpty)

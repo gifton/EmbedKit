@@ -60,7 +60,7 @@ kernel void fused_mean_pool_normalize(
     const int batchOutputOffset = b * dims;
 
     // Shared memory: [0-dims-1] for pooled vector, [dims] for count, [dims+1] for invNorm
-    threadgroup float shared[258];  // Support up to 256 dims + 2 extras
+    threadgroup float shared[1024 + 33];  // Support up to 1024 dims + norm reduction workspace
     threadgroup int sharedCount[1];
 
     // ========================================================================
@@ -167,7 +167,7 @@ kernel void fused_max_pool_normalize(
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
-    threadgroup float shared[258];
+    threadgroup float shared[1024 + 33];  // Support up to 1024 dims + norm reduction workspace
 
     // ========================================================================
     // Phase 1: Max pooling
@@ -265,7 +265,9 @@ kernel void fused_pool_normalize_unified(
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
-    threadgroup float shared[258];
+    // Shared memory: dims for pooled values + 33 for norm reduction workspace
+    // Support up to 768-dim (BERT large) or 1024-dim (large models)
+    threadgroup float shared[1024 + 33];
     threadgroup int sharedCount[1];
 
     // ========================================================================
@@ -399,8 +401,8 @@ kernel void fused_attention_pool_normalize(
     const int batchWeightOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
-    // Shared memory for pooled vector and normalization
-    threadgroup float shared[258];
+    // Shared memory for pooled vector and normalization (up to 1024 dims + 33 workspace)
+    threadgroup float shared[1024 + 33];
     threadgroup float sharedWeightSum[1];
 
     // ========================================================================

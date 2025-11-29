@@ -157,7 +157,7 @@ public actor AccelerationManager {
             guard candidate.count == dimension else {
                 throw AccelerationError.dimensionMismatch(
                     expected: dimension,
-                    actual: candidate.count
+                    got: candidate.count
                 )
             }
         }
@@ -183,7 +183,7 @@ public actor AccelerationManager {
         metric: SupportedDistanceMetric
     ) async throws -> Float {
         guard a.count == b.count else {
-            throw AccelerationError.dimensionMismatch(expected: a.count, actual: b.count)
+            throw AccelerationError.dimensionMismatch(expected: a.count, got: b.count)
         }
 
         // Single distance always uses CPU (GPU overhead not worth it)

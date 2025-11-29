@@ -37,8 +37,9 @@ struct MemoryPressureHandlingTests {
     func simulate_warning_resetsCache() async throws {
         let backend = TrackBackend()
         let tokenizer = SimpleTokenizer()
-        var cfg = EmbeddingConfiguration()
-        cfg.includeSpecialTokens = false
+        let cfg = EmbeddingConfiguration(
+            includeSpecialTokens: false
+        )
         let model = AppleEmbeddingModel(backend: backend, tokenizer: tokenizer, configuration: cfg, id: ModelID(provider: "test", name: "mp2", version: "1.0"), dimensions: 4, device: .cpu)
         let manager = ModelManager()
         await manager.register(model)
