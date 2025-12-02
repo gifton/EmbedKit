@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance profiling tools
 - Example applications
 
-## [0.2.1-alpha] - 2024-12
+## [0.2.2] - 2024-12
 
 ### Added
 
@@ -164,11 +164,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `isRecoverable`, `domain`, `context` properties on all errors
 - Recovery suggestions for all error cases
 
+#### SwiftUI Support Enhancements
+- `ModelProvider` enum - Configure which model to use in ViewModels (`.system()` or `.mock`)
+- `EmbeddingViewModel(modelProvider:)` - Configurable model provider (defaults to system)
+- `SimilarityViewModel(modelProvider:)` - Configurable model provider (defaults to system)
+- `EmbeddingViewModel.preview` - SwiftUI preview helper with mock model
+- `SimilarityViewModel.preview` - SwiftUI preview helper with mock model
+
+#### Convenience API Enhancements
+- `ModelManager.getOrCreateSystemModel()` - Cached system model for convenience APIs
+- `ModelManager.clearCachedSystemModel()` - Clear cached model to free memory
+
 ### Changed
+- **BREAKING**: `ModelManager.loadAppleModel()` now returns Apple's NLContextualEmbedding model instead of mock
+- Convenience APIs (`quickEmbed`, `semanticSearch`, `clusterDocuments`, `similarityMatrix`, `embedSequence`) now use real NLContextualEmbedding embeddings by default
+- SwiftUI ViewModels (`EmbeddingViewModel`, `SimilarityViewModel`) now default to system model
+- `ClusteringViewModel` now uses real semantic embeddings via `ModelManager.clusterDocuments()`
 - Upgraded minimum Metal version support to Metal 4
 - Improved GPU memory management with residency sets
 - Enhanced batch processing with adaptive sizing
 - Optimized tensor operations with fused kernels
+
+### Deprecated
+- `ModelManager.loadAppleModel(real:)` - Use `loadAppleModel()` for real models or `loadMockModel()` for testing
 
 ### Fixed
 - Removed unnecessary nil-coalescing on non-optional `tokenizationConcurrency`

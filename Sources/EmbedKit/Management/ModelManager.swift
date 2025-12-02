@@ -7,17 +7,48 @@ public actor ModelManager {
     private let logger = Logger(label: "EmbedKit.ModelManager")
     private var profiler: Profiler? = nil
     private var loadedModels: [ModelID: any EmbeddingModel] = [:]
+
+    /// Cached system model for convenience API methods.
+    /// Lazily loaded on first use to avoid startup cost.
+    private var cachedSystemModel: (any EmbeddingModel)?
+
 #if canImport(Darwin)
     private var memSource: DispatchSourceMemoryPressure?
 #endif
     public init() {}
 
-    // Week 1: Provide a stable API that returns a mock model
+    /// Loads Apple's system embedding model (NLContextualEmbedding).
+    ///
+    /// This is the recommended way to get a production-ready embedding model
+    /// that requires no external model files. The model uses Apple's built-in
+    /// NLContextualEmbedding for semantically meaningful embeddings.
+    ///
+    /// - Parameters:
+    ///   - language: Language code (default: "en")
+    ///   - configuration: Embedding configuration
+    ///   - preload: Whether to warmup the model before returning
+    /// - Returns: A real embedding model using Apple's NLContextualEmbedding
+    /// - Throws: `EmbedKitError` if the system model is unavailable
+    ///
+    /// ## Example
+    /// ```swift
+    /// let manager = ModelManager()
+    /// let model = try await manager.loadAppleModel()
+    /// let embedding = try await model.embed("Hello, world!")
+    /// ```
+    ///
+    /// - Note: For custom CoreML models, use `loadAppleModel(modelURL:tokenizer:)` instead.
     public func loadAppleModel(
-        configuration: EmbeddingConfiguration = EmbeddingConfiguration()
+        language: String = "en",
+        configuration: EmbeddingConfiguration = EmbeddingConfiguration(),
+        preload: Bool = false
     ) async throws -> any EmbeddingModel {
-        logger.debug("loadAppleModel() -> mock (Week 1)")
-        return try await loadMockModel(configuration: configuration)
+        logger.debug("loadAppleModel() -> NLContextualEmbedding")
+        return try await loadNLContextualEmbedding(
+            language: language,
+            configuration: configuration,
+            preload: preload
+        )
     }
 
     public func loadMockModel(
@@ -29,30 +60,54 @@ public actor ModelManager {
         return model
     }
 
-    // Week 2: Toggle real vs mock Apple model (scaffold for real)
+    // MARK: - Cached System Model (for Convenience APIs)
+
+    /// Returns a cached system model for internal convenience API use.
+    ///
+    /// Creates the model on first call, reuses on subsequent calls. This enables
+    /// convenience methods like `quickEmbed()` and `semanticSearch()` to share
+    /// a single model instance for efficiency.
+    ///
+    /// - Parameter language: Language code (default: "en")
+    /// - Returns: A cached or newly created system embedding model
+    /// - Throws: `EmbedKitError` if the system model is unavailable
+    func getOrCreateSystemModel(language: String = "en") async throws -> any EmbeddingModel {
+        if let cached = cachedSystemModel {
+            return cached
+        }
+        logger.debug("Creating cached system model for convenience APIs")
+        let model = try await loadNLContextualEmbedding(language: language)
+        cachedSystemModel = model
+        return model
+    }
+
+    /// Clears the cached system model used by convenience APIs.
+    ///
+    /// Call this if you need to free memory or reset state. The model will be
+    /// recreated on the next convenience API call.
+    public func clearCachedSystemModel() async {
+        if cachedSystemModel != nil {
+            logger.debug("Clearing cached system model")
+            cachedSystemModel = nil
+        }
+    }
+
+    /// Loads either a real or mock Apple model.
+    ///
+    /// - Note: This method is deprecated. Use `loadAppleModel()` for the system model
+    ///   or `loadMockModel()` for testing purposes.
+    @available(*, deprecated, message: "Use loadAppleModel() for real models or loadMockModel() for testing")
     public func loadAppleModel(real useReal: Bool,
                                configuration: EmbeddingConfiguration = EmbeddingConfiguration(),
                                dimensions: Int = 384) async throws -> any EmbeddingModel {
         if useReal {
-            // Scaffold: wire tokenizer + backend without implementing embed yet
-            let tokenizer = SimpleTokenizer()
-            let backend = CoreMLBackend(modelURL: nil, device: configuration.inferenceDevice)
-            let model = AppleEmbeddingModel(
-                backend: backend,
-                tokenizer: tokenizer,
-                configuration: configuration,
-                dimensions: dimensions,
-                device: configuration.inferenceDevice
-            )
-            loadedModels[model.id] = model
-            logger.info("Loaded AppleEmbeddingModel (scaffold): \(model.id)")
-            return model
-        } else {
             return try await loadAppleModel(configuration: configuration)
+        } else {
+            return try await loadMockModel(configuration: configuration)
         }
     }
 
-    // MARK: - Week 2: Real Apple model convenience loaders
+    // MARK: - CoreML Model Loaders
 
     /// Load AppleEmbeddingModel with explicit CoreML model URL and a provided tokenizer.
     /// No hidden fallbacks: throws if backend cannot load at runtime.
@@ -154,7 +209,7 @@ public actor ModelManager {
         return BatchResult(embeddings: embs, totalTime: total, perItemTimes: perItemTimes, tokenCounts: tokenCounts)
     }
 
-    // MARK: - Spec Scaffolding (future weeks)
+    // MARK: - Model Specification Types
 
     public struct ModelSpecification: Sendable {
         public let id: ModelID
@@ -178,6 +233,7 @@ public actor ModelManager {
 
     public func unloadAll() async {
         loadedModels.removeAll()
+        cachedSystemModel = nil
         logger.info("Unloaded all models")
     }
 

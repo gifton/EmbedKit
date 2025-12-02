@@ -7,36 +7,41 @@ import Foundation
 
 public extension ModelManager {
 
-    /// Simple one-line embedding for quick prototyping.
+    /// Simple one-line embedding using Apple's system embedding model.
     ///
-    /// Loads a mock model (or Apple model when available) and generates an embedding.
+    /// Uses NLContextualEmbedding to generate semantically meaningful embeddings.
+    /// The model is cached after first use for efficiency across multiple calls.
     ///
     /// - Parameter text: The text to embed.
     /// - Returns: The raw embedding vector.
-    /// - Throws: Any error from model loading or embedding generation.
+    /// - Throws: `EmbedKitError` if the system model is unavailable or embedding fails.
     ///
     /// Example:
     /// ```swift
     /// let manager = ModelManager()
     /// let vector = try await manager.quickEmbed("Hello, world!")
+    /// print("Embedding dimensions: \(vector.count)")
     /// ```
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func quickEmbed(_ text: String) async throws -> [Float] {
-        let model = try await loadMockModel()
+        let model = try await getOrCreateSystemModel()
         let embedding = try await model.embed(text)
         return embedding.vector
     }
 
     /// Semantic search: finds the most similar documents to a query.
     ///
-    /// Generates embeddings for the query and all documents, then returns
-    /// the top-K documents ranked by cosine similarity.
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings
+    /// for the query and all documents, then returns the top-K documents ranked by
+    /// cosine similarity.
     ///
     /// - Parameters:
     ///   - query: The search query.
     ///   - documents: Array of documents to search through.
     ///   - topK: Maximum number of results to return (default: 10).
     /// - Returns: Array of (index, score) tuples sorted by descending similarity.
-    /// - Throws: Any error from model loading or embedding generation.
+    /// - Throws: `EmbedKitError` if the system model is unavailable or embedding fails.
     ///
     /// Example:
     /// ```swift
@@ -48,6 +53,8 @@ public extension ModelManager {
     /// )
     /// // results: [(index: 0, score: 0.85), (index: 2, score: 0.72)]
     /// ```
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func semanticSearch(
         query: String,
         in documents: [String],
@@ -55,7 +62,7 @@ public extension ModelManager {
     ) async throws -> [(index: Int, score: Float)] {
         guard !documents.isEmpty else { return [] }
 
-        let model = try await loadMockModel()
+        let model = try await getOrCreateSystemModel()
 
         // Generate query embedding
         let queryEmbedding = try await model.embed(query)
@@ -76,10 +83,15 @@ public extension ModelManager {
 
     /// Find the single most similar document to a query.
     ///
+    /// Convenience wrapper around `semanticSearch` that returns only the best match.
+    ///
     /// - Parameters:
     ///   - query: The search query.
     ///   - documents: Array of documents to search through.
     /// - Returns: Tuple of (index, document, score) for the best match, or nil if no documents.
+    /// - Throws: `EmbedKitError` if the system model is unavailable or embedding fails.
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func findMostSimilar(
         query: String,
         in documents: [String]
@@ -91,13 +103,15 @@ public extension ModelManager {
 
     /// Cluster documents into groups based on embedding similarity.
     ///
-    /// Uses a simple k-means clustering algorithm on document embeddings.
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings,
+    /// then applies k-means clustering to group similar documents together.
     ///
     /// - Parameters:
     ///   - documents: Array of documents to cluster.
     ///   - numberOfClusters: Target number of clusters (k).
     ///   - maxIterations: Maximum k-means iterations (default: 100).
     /// - Returns: Array of arrays, where each inner array contains document indices for a cluster.
+    /// - Throws: `EmbedKitError` if the system model is unavailable or embedding fails.
     ///
     /// Example:
     /// ```swift
@@ -108,6 +122,8 @@ public extension ModelManager {
     /// )
     /// // clusters: [[0, 1], [2, 3]] - tech docs vs fruit docs
     /// ```
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func clusterDocuments(
         _ documents: [String],
         numberOfClusters k: Int,
@@ -120,7 +136,7 @@ public extension ModelManager {
             return documents.indices.map { [$0] }
         }
 
-        let model = try await loadMockModel()
+        let model = try await getOrCreateSystemModel()
         let embeddings = try await model.embedBatch(documents, options: BatchOptions())
 
         return kMeansClustering(embeddings.map { $0.vector }, k: k, maxIterations: maxIterations)
@@ -128,14 +144,20 @@ public extension ModelManager {
 
     /// Compute pairwise similarity matrix for a set of documents.
     ///
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings,
+    /// then computes cosine similarity between all pairs.
+    ///
     /// Returns an NxN matrix where element [i][j] is the similarity between documents i and j.
     ///
     /// - Parameter documents: Array of documents.
-    /// - Returns: 2D similarity matrix (row-major).
+    /// - Returns: 2D similarity matrix (row-major). Diagonal elements are 1.0 (self-similarity).
+    /// - Throws: `EmbedKitError` if the system model is unavailable or embedding fails.
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func similarityMatrix(_ documents: [String]) async throws -> [[Float]] {
         guard !documents.isEmpty else { return [] }
 
-        let model = try await loadMockModel()
+        let model = try await getOrCreateSystemModel()
         let embeddings = try await model.embedBatch(documents, options: BatchOptions())
 
         var matrix: [[Float]] = []
@@ -156,6 +178,7 @@ public extension ModelManager {
 
     /// Embed texts from an async sequence, yielding embeddings as they're computed.
     ///
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings.
     /// Useful for processing streaming data or large datasets without loading all into memory.
     ///
     /// - Parameter texts: An async sequence of texts to embed.
@@ -170,13 +193,15 @@ public extension ModelManager {
     ///     print("Embedded: \(embedding.dimensions) dimensions")
     /// }
     /// ```
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func embedSequence<S: AsyncSequence>(
         _ texts: S
     ) -> AsyncThrowingStream<Embedding, Error> where S.Element == String {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let model = try await loadMockModel()
+                    let model = try await getOrCreateSystemModel()
                     for try await text in texts {
                         let embedding = try await model.embed(text)
                         continuation.yield(embedding)
@@ -191,15 +216,19 @@ public extension ModelManager {
 
     /// Embed texts from a regular sequence using an async stream.
     ///
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings.
+    ///
     /// - Parameter texts: A sequence of texts to embed.
     /// - Returns: An async throwing stream of embeddings.
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
     func embedSequence<S: Sequence>(
         _ texts: S
     ) -> AsyncThrowingStream<Embedding, Error> where S.Element == String {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let model = try await loadMockModel()
+                    let model = try await getOrCreateSystemModel()
                     for text in texts {
                         let embedding = try await model.embed(text)
                         continuation.yield(embedding)
