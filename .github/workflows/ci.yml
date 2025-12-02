@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
 
 env:
-  DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-  XCODE_VERSION: '16.3'  # Swift 6.2 - required for swift-tools-version 6.2
+  XCODE_VERSION: '26'  # Swift 6.2 - required for swift-tools-version 6.2
+  # Note: DEVELOPER_DIR is set automatically by setup-xcode action
 
 jobs:
   build:
     name: Build (Debug)
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:
@@ -68,7 +68,7 @@ jobs:
 
   test-tokenizer:
     name: Test (Tokenizer)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 15
 
@@ -113,7 +113,7 @@ jobs:
 
   test-batch:
     name: Test (Batch Processing)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 20
 
@@ -158,7 +158,7 @@ jobs:
 
   test-metal:
     name: Test (Metal/GPU)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 25
 
@@ -203,7 +203,7 @@ jobs:
 
   test-embedding:
     name: Test (Embedding Core)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 20
 
@@ -248,7 +248,7 @@ jobs:
 
   test-config:
     name: Test (Configuration)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 15
 
@@ -293,7 +293,7 @@ jobs:
 
   test-coreml:
     name: Test (CoreML)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 15
 
@@ -341,7 +341,7 @@ jobs:
 
   test-streaming:
     name: Test (Streaming & Cache)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 15
 
@@ -386,7 +386,7 @@ jobs:
 
   test-error-recovery:
     name: Test (Error & Metrics)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 15
 
@@ -431,7 +431,7 @@ jobs:
 
   test-integration:
     name: Test (Integration)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 25
 
@@ -478,7 +478,7 @@ jobs:
   # These run with a longer timeout and failure doesn't block the overall CI
   test-stress:
     name: Test (Stress - Non-blocking)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 30
     continue-on-error: true  # Don't block CI if these hang
@@ -531,7 +531,7 @@ jobs:
 
   test-benchmarks:
     name: Test (Benchmarks - Non-blocking)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 20
     continue-on-error: true  # Benchmarks are informational
@@ -581,7 +581,7 @@ jobs:
 
   build-release:
     name: Build (Release)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     timeout-minutes: 25
 
@@ -625,7 +625,7 @@ jobs:
 
   lint:
     name: SwiftLint
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 10
 
     steps:
