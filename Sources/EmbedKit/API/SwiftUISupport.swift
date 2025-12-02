@@ -4,12 +4,33 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+// MARK: - Model Provider Configuration
+
+/// Specifies which embedding model to use in SwiftUI ViewModels.
+///
+/// Use `.system()` (default) for production apps with real semantic embeddings,
+/// or `.mock` for testing and SwiftUI previews.
+public enum ModelProvider: Sendable {
+    /// Use Apple's system NLContextualEmbedding model (default, recommended for production).
+    /// - Parameter language: Language code (default: "en")
+    case system(language: String = "en")
+
+    /// Use a mock model for testing and SwiftUI previews.
+    case mock
+
+    /// The default provider uses the system model.
+    public static let `default`: ModelProvider = .system()
+}
+
 // MARK: - Embedding View Model
 
 /// A SwiftUI-compatible view model for embedding operations.
 ///
 /// This class provides observable state for loading, embedding, and displaying results
 /// in a SwiftUI application. It's main-actor isolated for safe UI updates.
+///
+/// By default, uses Apple's NLContextualEmbedding for real semantic embeddings.
+/// Use `ModelProvider.mock` for testing or SwiftUI previews.
 ///
 /// Example:
 /// ```swift
@@ -55,18 +76,55 @@ public final class EmbeddingViewModel {
     /// The most recently computed batch of embeddings.
     public private(set) var lastBatchEmbeddings: [Embedding] = []
 
-    // MARK: - Private State
+    // MARK: - Configuration
 
+    private let modelProvider: ModelProvider
     private let manager = ModelManager()
     private var model: (any EmbeddingModel)?
 
     // MARK: - Initialization
 
-    public init() {}
+    /// Creates a view model with the specified model provider.
+    ///
+    /// - Parameter modelProvider: The model to use (default: `.system()` for real embeddings)
+    ///
+    /// Example:
+    /// ```swift
+    /// // Production: use real embeddings
+    /// let viewModel = EmbeddingViewModel()
+    ///
+    /// // Testing: use mock model
+    /// let testViewModel = EmbeddingViewModel(modelProvider: .mock)
+    /// ```
+    public init(modelProvider: ModelProvider = .default) {
+        self.modelProvider = modelProvider
+    }
+
+    // MARK: - Private Helpers
+
+    private func ensureModel() async throws -> any EmbeddingModel {
+        if let model = self.model {
+            return model
+        }
+
+        let newModel: any EmbeddingModel
+        switch modelProvider {
+        case .system(let language):
+            newModel = try await manager.loadNLContextualEmbedding(language: language)
+        case .mock:
+            newModel = try await manager.loadMockModel()
+        }
+
+        self.model = newModel
+        return newModel
+    }
 
     // MARK: - Single Embedding
 
     /// Embed a single text and update observable state.
+    ///
+    /// Uses the configured model provider (system model by default) to generate
+    /// semantically meaningful embeddings.
     ///
     /// - Parameter text: The text to embed.
     /// - Returns: The computed embedding, or nil if an error occurred.
@@ -78,12 +136,10 @@ public final class EmbeddingViewModel {
 
         do {
             progress = 0.3
-            if model == nil {
-                model = try await manager.loadMockModel()
-            }
+            let model = try await ensureModel()
 
             progress = 0.7
-            let embedding = try await model!.embed(text)
+            let embedding = try await model.embed(text)
 
             progress = 1.0
             lastEmbedding = embedding
@@ -112,12 +168,10 @@ public final class EmbeddingViewModel {
 
         do {
             progress = 0.2
-            if model == nil {
-                model = try await manager.loadMockModel()
-            }
+            let model = try await ensureModel()
 
             progress = 0.4
-            let embeddings = try await model!.embedBatch(texts, options: BatchOptions())
+            let embeddings = try await model.embedBatch(texts, options: BatchOptions())
 
             progress = 1.0
             lastBatchEmbeddings = embeddings
@@ -145,6 +199,8 @@ public final class EmbeddingViewModel {
     public private(set) var searchResults: [SearchResult] = []
 
     /// Perform semantic search and update observable state.
+    ///
+    /// Uses the ModelManager's semanticSearch which now uses real embeddings.
     ///
     /// - Parameters:
     ///   - query: The search query.
@@ -201,6 +257,9 @@ public final class EmbeddingViewModel {
 // MARK: - Similarity View Model
 
 /// A view model for computing and displaying similarity between texts.
+///
+/// By default, uses Apple's NLContextualEmbedding for real semantic similarity.
+/// Use `ModelProvider.mock` for testing or SwiftUI previews.
 @MainActor
 @Observable
 public final class SimilarityViewModel {
@@ -213,11 +272,38 @@ public final class SimilarityViewModel {
     /// Any error that occurred.
     public private(set) var error: Error?
 
+    private let modelProvider: ModelProvider
     private let manager = ModelManager()
+    private var model: (any EmbeddingModel)?
 
-    public init() {}
+    /// Creates a view model with the specified model provider.
+    ///
+    /// - Parameter modelProvider: The model to use (default: `.system()` for real embeddings)
+    public init(modelProvider: ModelProvider = .default) {
+        self.modelProvider = modelProvider
+    }
+
+    private func ensureModel() async throws -> any EmbeddingModel {
+        if let model = self.model {
+            return model
+        }
+
+        let newModel: any EmbeddingModel
+        switch modelProvider {
+        case .system(let language):
+            newModel = try await manager.loadNLContextualEmbedding(language: language)
+        case .mock:
+            newModel = try await manager.loadMockModel()
+        }
+
+        self.model = newModel
+        return newModel
+    }
 
     /// Compute similarity between two texts.
+    ///
+    /// Uses the configured model provider (system model by default) to generate
+    /// semantically meaningful embeddings and compute cosine similarity.
     ///
     /// - Parameters:
     ///   - text1: First text.
@@ -230,7 +316,7 @@ public final class SimilarityViewModel {
         similarity = nil
 
         do {
-            let model = try await manager.loadMockModel()
+            let model = try await ensureModel()
             let emb1 = try await model.embed(text1)
             let emb2 = try await model.embed(text2)
 
@@ -249,7 +335,10 @@ public final class SimilarityViewModel {
 
 // MARK: - Clustering View Model
 
-/// A view model for clustering documents.
+/// A view model for clustering documents using semantic embeddings.
+///
+/// Uses Apple's NLContextualEmbedding via `ModelManager.clusterDocuments()` for
+/// semantically meaningful document clustering using k-means.
 @MainActor
 @Observable
 public final class ClusteringViewModel {
@@ -273,7 +362,10 @@ public final class ClusteringViewModel {
 
     public init() {}
 
-    /// Cluster documents into groups.
+    /// Cluster documents into groups using semantic embeddings.
+    ///
+    /// Uses the ModelManager's clusterDocuments() which generates real semantic
+    /// embeddings via NLContextualEmbedding and applies k-means clustering.
     ///
     /// - Parameters:
     ///   - documents: Documents to cluster.
@@ -306,9 +398,11 @@ public final class ClusteringViewModel {
 
 #if DEBUG
 public extension EmbeddingViewModel {
-    /// Create a preview instance with mock data.
+    /// Create a preview instance with mock model and sample data.
+    ///
+    /// Uses `ModelProvider.mock` for fast, deterministic previews.
     static var preview: EmbeddingViewModel {
-        let vm = EmbeddingViewModel()
+        let vm = EmbeddingViewModel(modelProvider: .mock)
         vm.lastEmbedding = Embedding(
             vector: [0.1, 0.2, 0.3, 0.4],
             metadata: EmbeddingMetadata(
@@ -319,6 +413,15 @@ public extension EmbeddingViewModel {
             )
         )
         return vm
+    }
+}
+
+public extension SimilarityViewModel {
+    /// Create a preview instance with mock model.
+    ///
+    /// Uses `ModelProvider.mock` for fast, deterministic previews.
+    static var preview: SimilarityViewModel {
+        SimilarityViewModel(modelProvider: .mock)
     }
 }
 #endif

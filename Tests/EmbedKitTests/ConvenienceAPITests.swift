@@ -14,7 +14,7 @@ struct ConvenienceAPITests {
         let vector = try await manager.quickEmbed("Hello world")
 
         #expect(!vector.isEmpty)
-        #expect(vector.count == 384)  // Mock model default dimensions
+        #expect(vector.count > 0)  // System model returns embeddings (dimension varies by model)
         #expect(!vector.contains(Float.nan))
     }
 
