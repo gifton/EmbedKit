@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance profiling tools
 - Example applications
 
-## [0.2.0-alpha] - 2024-12 (In Progress)
+## [0.2.1-alpha] - 2024-12
 
 ### Added
 
@@ -129,22 +129,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EmbeddingConfiguration.forMiniLM()` - MiniLM model presets
 - `EmbeddingConfiguration.forBERT()` - BERT model presets
 
+#### EmbeddingGenerator (VectorProducer)
+- `EmbeddingGenerator` actor - High-level embedding generation with `VectorProducer` conformance
+- `produce(_:)` methods for batch and single-text embedding
+- `generateWithProgress(_:)` - Streaming embeddings with `OperationProgress`
+- `generateEmbeddingsWithProgress(_:)` - Streaming with `BatchProgress`
+- `generateBatch(_:onProgress:)` - Batch processing with progress callbacks
+- `produceWithIDs(_:)` - ID-preserving batch embedding
+- `produceWithIDsAndProgress(_:)` - ID-preserving streaming
+- `generateBatchWithIDs(_:onProgress:)` - ID-preserving batch with callbacks
+- `GeneratorConfiguration` with presets: `.default`, `.highThroughput`, `.lowLatency`, `.forSemanticSearch()`, `.forRAG()`
+- `warmup()` and `release()` lifecycle methods
+
+#### BatchProgress
+- `BatchProgress` struct - Embedding-specific progress with throughput metrics
+- Integration with VectorCore's `OperationProgress`
+- Batch indexing and token counting
+- Factory methods: `.started()`, `.completed()`, `.batchCompleted()`
+- Builder methods: `.withCurrent()`, `.withThroughput()`, `.nextBatch()`
+
 #### Streaming Enhancements
 - `StreamingEmbeddingGenerator` - Async streaming embedding generation
-- Cancellable embedding tasks with progress tracking
+- Cancellable embedding tasks with `Task.checkCancellation()` support
 - Back-pressure management with multiple strategies (suspend, dropOldest, dropNewest, error)
 - Rate limiting with adaptive strategies (tokenBucket, slidingWindow, fixedWindow, leakyBucket)
 
 #### VSK Integration
-- `SharedMetalContextManager` - Cross-package Metal resource sharing
-- VSKError protocol conformance for unified error handling
-- Improved error context with recovery suggestions
+- `SharedMetalContextManager` - Cross-package Metal resource sharing between EmbedKit and VectorAccelerate
+- `SharedMetalContextConfiguration` with presets: `.default`, `.forEmbedding`, `.forSearch`, `.debug`
+- `SharedContextStatistics` - Unified GPU resource monitoring
+- `AccelerationManager.createWithSharedContext()` - Shared context factory
+- `EmbeddingStore.createWithSharedContext()` - Shared context factory
+- `EmbedKitError: VSKError` conformance with error codes 2000-2999
+- `isRecoverable`, `domain`, `context` properties on all errors
+- Recovery suggestions for all error cases
 
 ### Changed
 - Upgraded minimum Metal version support to Metal 4
 - Improved GPU memory management with residency sets
 - Enhanced batch processing with adaptive sizing
 - Optimized tensor operations with fused kernels
+
+### Fixed
+- Removed unnecessary nil-coalescing on non-optional `tokenizationConcurrency`
 
 ### Testing
 - **1431 tests** across 358 test suites (up from 578 tests)
@@ -159,8 +186,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Metal4CommandEncodingTests` - Command encoding tests
   - `Metal4ResourceManagementTests` - Residency management tests
   - `Metal4EdgeCaseTests` - Edge case coverage
+- EmbeddingGenerator tests:
+  - `EmbeddingGeneratorTests` - Core functionality
+  - `EmbeddingGeneratorProgressTests` - Progress streaming
+  - `EmbeddingGeneratorIDTests` - ID-preserving methods
+- BatchProgress tests:
+  - `BatchProgressTests` - Progress tracking
+- VSK Integration tests:
+  - `VSKErrorConformanceTests` - Error protocol conformance
+  - `SharedMetalContextManagerTests` - Context sharing
+  - `MetalContextIntegrationTests` - Cross-package integration
+  - `CrossPackageIntegrationTests` - End-to-end integration
+  - `V020IntegrationTests` - Version integration tests
 - Rate limiting comprehensive tests (45+ tests)
 - Back-pressure controller comprehensive tests (50+ tests)
 - Reranking strategy comprehensive tests (50+ tests)
-- V0.2.0 integration tests
 - CI batched into test-metal, test-streaming, test-embedding jobs

@@ -93,7 +93,7 @@ public actor AppleNLContextualModel: EmbeddingModel {
 
     public func embedBatch(_ texts: [String], options: BatchOptions) async throws -> [Embedding] {
         // Parallelize embedding across texts; ignore padding/batching knobs
-        var concurrency = options.tokenizationConcurrency ?? 0
+        var concurrency = options.tokenizationConcurrency
         if concurrency <= 0 { concurrency = min(8, max(1, ProcessInfo.processInfo.activeProcessorCount)) }
 
         var results = Array<Embedding?>(repeating: nil, count: texts.count)

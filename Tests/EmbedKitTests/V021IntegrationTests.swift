@@ -1,5 +1,5 @@
-// EmbedKit - v0.2.0 Integration Tests
-// Tests integration between newly completed batches for v0.2.0 release
+// EmbedKit - v0.2.1 Integration Tests
+// Tests integration between newly completed batches for v0.2.1 release
 //
 // Covers:
 // - ConfigurationFactory + EmbeddingGenerator integration
@@ -545,8 +545,8 @@ struct MemoryAwareConfigurationTests {
 
 // MARK: - VectorProducer Protocol Integration
 
-@Suite("v0.2.0 VectorProducer Protocol")
-struct V020VectorProducerTests {
+@Suite("v0.2.1 VectorProducer Protocol")
+struct V021VectorProducerTests {
 
     @Test("EmbeddingGenerator can be used as VectorProducer existential")
     func testAsVectorProducerExistential() async throws {
