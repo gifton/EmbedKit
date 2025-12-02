@@ -185,7 +185,7 @@ jobs:
       - name: Run Metal Tests
         run: |
           echo "Running Metal/GPU tests..."
-          swift test --filter "^EmbedKitTests\.(MetalLoaderTests|MetalNormalizationParityTests|MetalPoolingParityTests|MetalSimilarityParityTests|MetalContextIntegrationTests|Metal4CommandEncodingTests|Metal4EdgeCaseTests|Metal4ResourceManagementTests|SharedMetalContextManagerTests|GPUOptimizerTests|GPUOptimizerPersistenceTests|AccelerateBLASTests|AccelerationManagerTests|TensorOperationsTests|TensorStorageManagerTests|TensorLifecycleManagerTests|TensorOperationDispatcherTests)" 2>&1 | tee test.log
+          swift test --filter "^EmbedKitTests\.(MetalLoaderTests|MetalNormalizationParityTests|MetalPoolingParityTests|MetalSimilarityParityTests|MetalContextIntegrationTests|Metal4CommandEncodingTests|Metal4EdgeCaseTests|Metal4ResourceManagementTests|SharedMetalContextManagerTests|GPUOptimizerTests|GPUOptimizerPersistenceTests|AccelerateBLASTests|AccelerationManagerTests|TensorOperationsTests|TensorStorageManagerTests|TensorLifecycleManagerTests|TensorOperationDispatcherTests|TensorResultExtractorTests|TensorDescriptorFactoryTests|CommandAllocatorTests|MetalDeviceExtensionsTests)" 2>&1 | tee test.log
 
           if grep -q "Test run with" test.log; then
             SUMMARY=$(grep "Test run with" test.log | tail -1)
@@ -230,7 +230,7 @@ jobs:
       - name: Run Embedding Core Tests
         run: |
           echo "Running embedding core tests..."
-          swift test --filter "^EmbedKitTests\.(EmbeddingGeneratorTests|EmbeddingStoreTests|EmbeddingStoreAccelerationTests|EmbeddingStoreConcurrencyTests|EmbeddingStoreExtensionsTests|EmbeddingStoreIndexTypeTests|EmbeddingStorePersistenceTests|PoolingStrategyTests|AttentionPoolingTests|NumericalStabilityTests|QuantizationTests|ShapeInferenceTests)" 2>&1 | tee test.log
+          swift test --filter "^EmbedKitTests\.(EmbeddingGeneratorTests|EmbeddingStoreTests|EmbeddingStoreAccelerationTests|EmbeddingStoreConcurrencyTests|EmbeddingStoreExtensionsTests|EmbeddingStoreIndexTypeTests|EmbeddingStorePersistenceTests|PoolingStrategyTests|AttentionPoolingTests|NumericalStabilityTests|QuantizationTests|ShapeInferenceTests|RerankingStrategyComprehensiveTests)" 2>&1 | tee test.log
 
           if grep -q "Test run with" test.log; then
             SUMMARY=$(grep "Test run with" test.log | tail -1)
@@ -368,7 +368,7 @@ jobs:
       - name: Run Streaming & Cache Tests
         run: |
           echo "Running streaming & cache tests..."
-          swift test --filter "^EmbedKitTests\.(StreamingTests|StreamingProcessorTests|PersistentCacheTests|CacheHitRateProgressionTests|ConcurrencyCacheTests|MemoryPressureHandlingTests|MemoryTrimTests|MemoryAwareGeneratorTests)" 2>&1 | tee test.log
+          swift test --filter "^EmbedKitTests\.(StreamingTests|StreamingProcessorTests|PersistentCacheTests|CacheHitRateProgressionTests|ConcurrencyCacheTests|MemoryPressureHandlingTests|MemoryTrimTests|MemoryAwareGeneratorTests|RateLimiterComprehensiveTests|BackPressureComprehensiveTests)" 2>&1 | tee test.log
 
           if grep -q "Test run with" test.log; then
             SUMMARY=$(grep "Test run with" test.log | tail -1)
