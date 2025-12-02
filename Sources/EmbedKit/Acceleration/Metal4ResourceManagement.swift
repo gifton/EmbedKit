@@ -441,7 +441,7 @@ extension MetalAccelerator {
         guard isAvailable else { return nil }
 
         #if canImport(Metal)
-        guard let dev = await getDevice() else { return nil }
+        guard let dev = getDevice() else { return nil }
         return Metal4ResidencyManager(device: dev, maxResidentMB: maxResidentMB)
         #else
         return nil

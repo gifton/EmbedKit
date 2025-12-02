@@ -98,7 +98,7 @@ struct TensorOperationConfigTests {
 
 // MARK: - TensorOperationDispatcher Tests
 
-@Suite("TensorOperationDispatcher")
+@Suite("TensorOperationDispatcher", .serialized)
 struct TensorOperationDispatcherTests {
 
     #if canImport(Metal)
@@ -388,6 +388,11 @@ struct TensorOperationDispatcherTests {
 
         // Cleanup
         await storageManager.releaseAll()
+    }
+
+    @Test("zz_cleanup - Release shared resources after tests")
+    func zz_cleanupResources() async {
+        await cleanupMetalTestResources()
     }
     #endif
 }

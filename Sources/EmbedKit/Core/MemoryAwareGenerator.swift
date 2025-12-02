@@ -140,6 +140,25 @@ public final class MemoryMonitor: @unchecked Sendable {
         updateLevel(level)
     }
 
+    /// Force reset all state for testing purposes.
+    ///
+    /// This bypasses reference counting and forcibly stops monitoring,
+    /// clearing all handlers and resetting state. Use only in test teardown.
+    @available(*, deprecated, message: "For testing only - do not use in production code")
+    public func forceResetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        #if canImport(Darwin)
+        source?.cancel()
+        source = nil
+        #endif
+
+        _referenceCount = 0
+        _currentLevel = .normal
+        _handlers.removeAll()
+    }
+
     private func updateLevel(_ level: MemoryPressureLevel) {
         lock.lock()
         let oldLevel = _currentLevel

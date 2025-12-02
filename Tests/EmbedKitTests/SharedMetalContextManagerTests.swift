@@ -377,7 +377,7 @@ extension Tag {
 
 // MARK: - Integration Tests
 
-@Suite("SharedMetalContextManager Integration", .tags(.integration))
+@Suite("SharedMetalContextManager Integration", .tags(.integration), .serialized)
 struct SharedMetalContextManagerIntegrationTests {
 
     @Test("VectorAccelerate context can compute distances")
@@ -466,5 +466,11 @@ struct SharedMetalContextManagerIntegrationTests {
             _ = factory.device
         }
         #endif
+    }
+
+    @Test("zz_cleanup - Release shared resources after tests")
+    func zz_cleanupResources() async {
+        // Named with zz_ prefix to run last in serialized suite
+        await cleanupMetalTestResources()
     }
 }

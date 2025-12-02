@@ -294,8 +294,8 @@ public actor Metal4StreamingPipeline {
                 await semaphore.wait()
 
                 group.addTask {
-                    defer { Task { await semaphore.signal() } }
-
+                    // Avoid defer { Task { } } pattern which creates orphaned tasks.
+                    // Signal semaphore explicitly after work completes.
                     let result = await self.accelerator.tensorPoolNormalizeUnified(
                         embeddings: batch,
                         batchSize: batchSize,
@@ -305,6 +305,7 @@ public actor Metal4StreamingPipeline {
                         normalize: normalize
                     )
 
+                    await semaphore.signal()
                     return (index, result)
                 }
             }

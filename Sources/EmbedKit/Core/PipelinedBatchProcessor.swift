@@ -698,14 +698,20 @@ public actor ConcurrentPipelineProcessor {
             for (index, texts) in textArrays.enumerated() {
                 group.addTask {
                     await self.semaphore.wait()
-                    defer { Task { await self.semaphore.signal() } }
-
-                    let pipeline = PipelinedBatchProcessor(
-                        generator: self.generator,
-                        config: self.pipelineConfig
-                    )
-                    let results = try await pipeline.produce(texts)
-                    return (index, results)
+                    // Use do/catch instead of defer { Task { } } to properly
+                    // await the semaphore signal and avoid orphaned tasks.
+                    do {
+                        let pipeline = PipelinedBatchProcessor(
+                            generator: self.generator,
+                            config: self.pipelineConfig
+                        )
+                        let results = try await pipeline.produce(texts)
+                        await self.semaphore.signal()
+                        return (index, results)
+                    } catch {
+                        await self.semaphore.signal()
+                        throw error
+                    }
                 }
             }
 

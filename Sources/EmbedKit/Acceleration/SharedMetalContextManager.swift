@@ -192,6 +192,18 @@ public actor SharedMetalContextManager {
         isInitialized = false
     }
 
+    /// Reset the manager for testing purposes.
+    ///
+    /// This releases all resources and resets internal state, allowing fresh
+    /// initialization on next access. Use this in test teardown to prevent
+    /// resource accumulation across test runs.
+    @available(*, deprecated, message: "For testing only - do not use in production code")
+    public func resetForTesting() async {
+        await releaseResources()
+        stats = SharedContextStatistics()
+        configuration = .default
+    }
+
     // MARK: - Private Initialization
 
     private func initializeContexts() async {

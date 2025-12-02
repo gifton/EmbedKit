@@ -403,13 +403,14 @@ public actor TensorLifecycleManager {
         _ work: @Sendable (TensorScope) async throws -> T
     ) async throws -> T {
         let scope = createScope(label: label)
-        defer {
-            Task {
-                await finalizeScope(scope)
-            }
+        do {
+            let result = try await work(scope)
+            await finalizeScope(scope)
+            return result
+        } catch {
+            await finalizeScope(scope)
+            throw error
         }
-
-        return try await work(scope)
     }
 
     /// Finalize a scope and release its tensors.
@@ -765,10 +766,12 @@ public final class AutoReleaseTensor: @unchecked Sendable {
     }
 
     deinit {
-        // Schedule async release
+        // Use Task.detached for cleanup to avoid keeping process alive.
+        // Detached tasks are independent and don't block process exit
+        // the same way unstructured Task {} does.
         let tensor = self.tensor
         let manager = self.storageManager
-        Task {
+        Task.detached(priority: .background) {
             await manager.release(tensor)
         }
     }
