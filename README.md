@@ -5,7 +5,7 @@ A high-performance text embedding framework for Apple platforms. Generate, store
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2018%20|%20macOS%2015%20|%20tvOS%2018%20|%20visionOS%202-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Tests](https://img.shields.io/badge/Tests-578%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-1431%20passing-brightgreen.svg)
 
 ## Overview
 
@@ -18,7 +18,7 @@ EmbedKit is part of the **Vector Suite Kit (VSK)** ecosystem, providing producti
 - **Vector Storage** - Built-in similarity search via VectorIndex integration
 - **Multiple Tokenizers** - WordPiece, BPE, and SentencePiece support
 - **ONNX Support** - Optional ONNX Runtime backend for .onnx models
-- **Production Ready** - 578 tests, actor-based concurrency, comprehensive error handling
+- **Production Ready** - 1431 tests, actor-based concurrency, comprehensive error handling
 
 ## Installation
 
@@ -232,7 +232,7 @@ Sources/EmbedKitONNX/  # Optional ONNX Runtime support
 ## Testing
 
 ```bash
-# Run all tests (578 tests, 159 suites)
+# Run all tests (1431 tests, 358 suites)
 swift test
 
 # Run specific test suite
@@ -246,12 +246,17 @@ swift test --filter EmbedKitONNXTests
 
 | Component | Tests |
 |-----------|-------|
-| Core Types | 30+ |
-| Tokenization | 50+ |
-| Storage/Index | 90+ |
-| Acceleration | 40+ |
-| Concurrency | 30+ |
-| Edge Cases | 50+ |
+| Core Types | 80+ |
+| Tokenization | 60+ |
+| Storage/Index | 120+ |
+| Metal/Acceleration | 200+ |
+| Rate Limiting | 45+ |
+| Back Pressure | 50+ |
+| Reranking | 50+ |
+| Streaming | 100+ |
+| Concurrency | 150+ |
+| Edge Cases | 100+ |
+| Integration | 200+ |
 
 ## Requirements
 
