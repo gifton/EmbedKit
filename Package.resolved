@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorAccelerate.git",
       "state" : {
-        "revision" : "07587bb9db70d40d0c5ce056ac233852af1485d0",
-        "version" : "0.1.2"
+        "revision" : "170c62b543d1181ce9bbfa709be88fe0e3683706",
+        "version" : "0.1.3"
       }
     },
     {

@@ -47,8 +47,14 @@ OUTPUT_METALLIB="${RESOURCES_DIR}/EmbedKitShaders.metallib"
 METALLIB_NAME="EmbedKitShaders"
 
 # Metal compiler settings
-METAL_VERSION="metal3.0"
+# Metal 4.0 (iOS 26+ / macOS 26+) - enables tensor operations, unified encoders
+# Requires MetalPerformancePrimitives framework for tensor_ops (matmul2d, reduce_rows)
+METAL_VERSION="metal4.0"
 OPTIMIZATION_LEVEL="-O3"
+
+# SDK paths for framework includes
+SDK_PATH="$(xcrun --show-sdk-path 2>/dev/null || echo "")"
+FRAMEWORK_SEARCH_PATH="${SDK_PATH}/System/Library/Frameworks"
 
 # Expected kernels (for validation)
 EXPECTED_KERNELS=(
@@ -61,7 +67,7 @@ EXPECTED_KERNELS=(
     "cosine_similarity"
     "cosine_similarity_batch"
 
-    # Metal 4 Tensor Pooling kernels (Phase 3)
+    # Tensor Pooling kernels (Metal 4 optimized)
     "tensor_mean_pool"
     "tensor_max_pool"
     "tensor_cls_pool"
@@ -69,14 +75,14 @@ EXPECTED_KERNELS=(
     "tensor_mean_pool_cooperative"
     "tensor_attention_pool"
 
-    # Metal 4 Tensor Normalization kernels (Phase 3)
+    # Tensor Normalization kernels (Metal 4 optimized)
     "tensor_l2_normalize_with_norms"
     "tensor_compute_norms"
     "tensor_l2_normalize_fused"
     "tensor_l2_normalize_stable"
     "tensor_l2_normalize_inplace"
 
-    # Metal 4 Fused Operations kernels (Phase 3)
+    # Fused Operations kernels (Metal 4 optimized)
     "fused_mean_pool_normalize"
     "fused_max_pool_normalize"
     "fused_pool_normalize_unified"
@@ -84,6 +90,32 @@ EXPECTED_KERNELS=(
     "tensor_similarity_matrix_normalized"
     "tensor_similarity_matrix_full"
     "fused_embed_compare_pipeline"
+
+    # Tensor Similarity V2 kernels (Metal 4 with MPP matmul2d)
+    "tensor_similarity_matrix_v2"
+    "tensor_similarity_matrix_full_v2"
+    "tensor_similarity_batch_v2"
+
+    # Tensor Pooling V2 kernels (Metal 4 with tensor_handle)
+    "tensor_mean_pool_v2"
+    "tensor_max_pool_v2"
+    "tensor_cls_pool_v2"
+    "tensor_pool_unified_v2"
+    "tensor_attention_pool_v2"
+    "tensor_pool_cooperative_v2"
+
+    # Tensor Normalization V2 kernels (Metal 4 with tensor_handle)
+    "tensor_l2_normalize_v2"
+    "tensor_l2_normalize_stable_v2"
+    "tensor_l2_normalize_inplace_v2"
+    "tensor_compute_norms_v2"
+    "tensor_normalize_with_norms_v2"
+
+    # Fused Operations V2 kernels (Metal 4 with tensor_handle)
+    "fused_pool_normalize_v2"
+    "fused_mean_pool_normalize_v2"
+    "fused_max_pool_normalize_v2"
+    "fused_attention_pool_normalize_v2"
 )
 
 # ============================================================================
@@ -185,6 +217,38 @@ check_metal_compiler() {
     log_success "Metal compiler available"
 }
 
+check_metal4_sdk() {
+    log_info "Checking for Metal 4 SDK support..."
+
+    # Verify SDK path is available
+    if [[ -z "$SDK_PATH" ]]; then
+        log_warning "Could not determine SDK path. Metal 4 features may not be available."
+        return
+    fi
+
+    log_verbose "SDK path: $SDK_PATH"
+
+    # Check for MetalPerformancePrimitives framework (Metal 4 feature)
+    local mpp_framework="${FRAMEWORK_SEARCH_PATH}/MetalPerformancePrimitives.framework"
+    if [[ -d "$mpp_framework" ]]; then
+        log_success "MetalPerformancePrimitives framework found"
+        log_verbose "Framework path: $mpp_framework"
+    else
+        log_warning "MetalPerformancePrimitives framework not found at: $mpp_framework"
+        log_warning "Tensor operations (matmul2d, reduce_rows) may not be available"
+        log_warning "Ensure you're using Xcode 26+ with iOS 26+ / macOS 26+ SDK"
+    fi
+
+    # Check SDK version (should be iOS 26+ / macOS 26+)
+    local sdk_settings="${SDK_PATH}/SDKSettings.plist"
+    if [[ -f "$sdk_settings" ]]; then
+        local sdk_version=$(defaults read "$sdk_settings" Version 2>/dev/null || echo "unknown")
+        log_verbose "SDK version: $sdk_version"
+    fi
+
+    log_success "Metal 4 SDK check complete"
+}
+
 check_directories() {
     log_info "Checking directory structure..."
 
@@ -243,6 +307,15 @@ compile_metal_file() {
         -std="$METAL_VERSION"
         "$OPTIMIZATION_LEVEL"
         -ffast-math
+        -I "${SHADERS_DIR}/Common"
+    )
+
+    # Add framework search path if SDK is available (for MetalPerformancePrimitives headers)
+    if [[ -n "$FRAMEWORK_SEARCH_PATH" && -d "$FRAMEWORK_SEARCH_PATH" ]]; then
+        compile_cmd+=(-F "$FRAMEWORK_SEARCH_PATH")
+    fi
+
+    compile_cmd+=(
         -c "$input_file"
         -o "$output_file"
     )
@@ -419,6 +492,7 @@ main() {
 
     # Pre-flight checks
     check_metal_compiler
+    check_metal4_sdk
     check_directories
     find_metal_files
 

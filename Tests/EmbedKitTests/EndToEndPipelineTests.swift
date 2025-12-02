@@ -307,7 +307,17 @@ struct EndToEndPipelineTests {
         // Create stores with different index types
         let flatStore = try await EmbeddingStore(config: .exact(dimension: dim))
         let hnswStore = try await EmbeddingStore(config: .default(dimension: dim))
-        let ivfStore = try await EmbeddingStore(config: .scalable(dimension: dim, expectedSize: 100))
+        // Use custom IVF config with storeText: true for this test
+        // (scalable preset disables text storage for memory efficiency)
+        let ivfConfig = IndexConfiguration(
+            indexType: .ivf,
+            dimension: dim,
+            metric: .cosine,
+            storeText: true,  // Enable text storage for test verification
+            hnswConfig: nil,
+            ivfConfig: IVFConfiguration(nlist: 16, nprobe: 4)
+        )
+        let ivfStore = try await EmbeddingStore(config: ivfConfig)
 
         // Generate embeddings once
         let documents = ["doc1", "doc2", "doc3"]

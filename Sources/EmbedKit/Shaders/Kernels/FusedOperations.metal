@@ -13,7 +13,7 @@
 /// - No intermediate buffers needed
 /// - Optimal for unified command encoder
 ///
-/// **Compatibility**: Metal 3.0+ (iOS 16+ / macOS 13+)
+/// **Compatibility**: Metal 4.0 (iOS 26+ / macOS 26+)
 
 #include "../Common/MetalCommon.h"
 

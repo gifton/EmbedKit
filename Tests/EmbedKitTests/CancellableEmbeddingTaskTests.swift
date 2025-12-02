@@ -333,7 +333,7 @@ struct CancellableEmbeddingTaskTests {
         let counter = Counter()
 
         let task = CancellableEmbeddingTask<Int> { token in
-            for i in 0..<10 {
+            for _ in 0..<10 {
                 if token.shouldStopAt(checkpoint: .afterItem) {
                     return await counter.count
                 }

@@ -26,7 +26,8 @@ struct VSKErrorConformanceTests {
             .metalDeviceUnavailable,
             .metalBufferFailed,
             .metalPipelineNotFound("test_kernel"),
-            .metalEncoderFailed
+            .metalEncoderFailed,
+            .metalTensorFailed("test")
         ]
 
         for error in errors {
@@ -51,7 +52,8 @@ struct VSKErrorConformanceTests {
             .metalDeviceUnavailable,
             .metalBufferFailed,
             .metalPipelineNotFound("test_kernel"),
-            .metalEncoderFailed
+            .metalEncoderFailed,
+            .metalTensorFailed("test")
         ]
 
         var codes = Set<Int>()
@@ -103,6 +105,9 @@ struct VSKErrorConformanceTests {
         #expect(metalBufferFailed.errorCode == 2601)
         #expect(metalPipelineNotFound.errorCode == 2602)
         #expect(metalEncoderFailed.errorCode == 2603)
+
+        let metalTensorFailed = EmbedKitError.metalTensorFailed("test")
+        #expect(metalTensorFailed.errorCode == 2604)
     }
 
     // MARK: - Domain Tests
@@ -124,7 +129,8 @@ struct VSKErrorConformanceTests {
             .modelLoadFailed("test"),
             .invalidConfiguration("test"),
             .metalDeviceUnavailable,
-            .metalPipelineNotFound("test")
+            .metalPipelineNotFound("test"),
+            .dimensionMismatch(expected: 384, got: 512)
         ]
 
         for error in nonRecoverable {
@@ -137,13 +143,13 @@ struct VSKErrorConformanceTests {
         let recoverable: [EmbedKitError] = [
             .tokenizationFailed("test"),
             .inferenceFailed("test"),
-            .dimensionMismatch(expected: 384, got: 512),
             .deviceNotAvailable(.gpu),
             .inputTooLong(length: 1000, max: 512),
             .batchSizeExceeded(size: 100, max: 32),
             .processingTimeout,
             .metalBufferFailed,
-            .metalEncoderFailed
+            .metalEncoderFailed,
+            .metalTensorFailed("test")
         ]
 
         for error in recoverable {
@@ -179,6 +185,14 @@ struct VSKErrorConformanceTests {
 
         #expect(context.additionalInfo["message"] != nil)
         #expect(context.additionalInfo["message"]?.contains("timeout") == true)
+    }
+
+    @Test("Context contains reason for invalidConfiguration")
+    func testContextInvalidConfiguration() {
+        let error = EmbedKitError.invalidConfiguration("batch size must be positive")
+        let context = error.context
+
+        #expect(context.additionalInfo["reason"] == "batch size must be positive")
     }
 
     // MARK: - Recovery Suggestion Tests

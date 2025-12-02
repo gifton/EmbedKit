@@ -270,6 +270,40 @@ public struct EmbeddingConfiguration: Sendable {
     /// Deprecated: Use `inferenceDevice` instead.
     @available(*, deprecated, renamed: "inferenceDevice")
     public var preferredDevice: ComputeDevice { inferenceDevice }
+
+    /// Returns a copy of this configuration with the specified inference device.
+    ///
+    /// - Parameter device: The new inference device
+    /// - Returns: A new configuration with the updated device
+    public func with(inferenceDevice device: ComputeDevice) -> EmbeddingConfiguration {
+        EmbeddingConfiguration(
+            maxTokens: maxTokens,
+            truncationStrategy: truncationStrategy,
+            paddingStrategy: paddingStrategy,
+            includeSpecialTokens: includeSpecialTokens,
+            poolingStrategy: poolingStrategy,
+            normalizeOutput: normalizeOutput,
+            inferenceDevice: device,
+            minElementsForGPU: minElementsForGPU
+        )
+    }
+
+    /// Returns a copy of this configuration with the specified GPU threshold.
+    ///
+    /// - Parameter threshold: The new minimum elements for GPU
+    /// - Returns: A new configuration with the updated threshold
+    public func with(minElementsForGPU threshold: Int) -> EmbeddingConfiguration {
+        EmbeddingConfiguration(
+            maxTokens: maxTokens,
+            truncationStrategy: truncationStrategy,
+            paddingStrategy: paddingStrategy,
+            includeSpecialTokens: includeSpecialTokens,
+            poolingStrategy: poolingStrategy,
+            normalizeOutput: normalizeOutput,
+            inferenceDevice: inferenceDevice,
+            minElementsForGPU: threshold
+        )
+    }
 }
 
 /// Target device for model inference operations.

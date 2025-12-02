@@ -142,9 +142,11 @@ public actor SharedMetalContextManager {
         var currentStats = stats
 
         #if canImport(Metal)
-        if let factory = sharedBufferFactory {
-            currentStats.sharedBufferPoolUtilization = factory.poolUtilization
-            currentStats.sharedBufferCount = factory.pooledBufferCount
+        if sharedBufferFactory != nil {
+            // SharedBufferFactory doesn't track pool stats directly;
+            // stats come from the underlying MetalContext pool
+            currentStats.sharedBufferPoolUtilization = 0  // Not tracked at this level
+            currentStats.sharedBufferCount = 0  // Not tracked at this level
         }
         #endif
 
@@ -184,7 +186,7 @@ public actor SharedMetalContextManager {
         vectorAccelerateContext = nil
         embedKitAccelerator = nil
         #if canImport(Metal)
-        sharedBufferFactory?.clearPool()
+        // SharedBufferFactory is managed by MetalContext; just release our reference
         sharedBufferFactory = nil
         #endif
         isInitialized = false
@@ -203,11 +205,15 @@ public actor SharedMetalContextManager {
 
         // Create VectorAccelerate's MetalContext
         do {
-            let vaConfig = SharedMetalConfiguration(
-                maxBufferPoolMB: configuration.maxBufferPoolMB,
-                enableCrossPackageBufferReuse: configuration.enableBufferSharing,
-                commandQueuePriority: configuration.highPriority ? .high : .default,
-                enableMetrics: configuration.enableMetrics
+            let baseConfig = MetalConfiguration(
+                maxBufferPoolMemory: configuration.maxBufferPoolMB * 1024 * 1024,
+                enableProfiling: configuration.enableMetrics
+            )
+            let vaConfig = SharedConfiguration(
+                baseConfiguration: baseConfig,
+                queuePriority: configuration.highPriority ? .high : .normal,
+                enableBufferSharing: configuration.enableBufferSharing,
+                identifier: "embedkit-shared"
             )
             vectorAccelerateContext = try await MetalContext.create(sharedConfig: vaConfig)
             stats.vectorAccelerateInitialized = true
@@ -224,13 +230,10 @@ public actor SharedMetalContextManager {
             stats.embedKitInitialized = false
         }
 
-        // Create shared buffer factory if both are available
+        // Create shared buffer factory from VectorAccelerate context
         #if canImport(Metal)
-        if let device = await getSharedDevice() {
-            sharedBufferFactory = SharedBufferFactory(
-                device: device,
-                maxPoolSizeMB: configuration.sharedBufferPoolMB
-            )
+        if let context = vectorAccelerateContext {
+            sharedBufferFactory = await context.sharedBufferFactory()
         }
         #endif
     }

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 /*
@@ -15,7 +15,7 @@
  - EmbedKit: Core library with CoreML + VectorIndex integration
  - EmbedKitONNX: Optional ONNX Runtime support for .onnx models
 
- Copyright (c) 2024 Vector Suite Kit Contributors
+ Copyright (c) 2024-2025 Vector Suite Kit Contributors
  Licensed under MIT License
  */
 
@@ -24,12 +24,12 @@ import PackageDescription
 let package = Package(
     name: "EmbedKit",
     platforms: [
-        .macOS(.v15),
-        .iOS(.v18),
-        .tvOS(.v18),
-        .watchOS(.v11),
-        .visionOS(.v2)
-        // Requires macOS 15+/iOS 18+ for VectorAccelerate GPU APIs
+        .macOS(.v26),
+        .iOS(.v26),
+        .tvOS(.v26),
+        .custom("watchOS", versionString: "13.0"),
+        .custom("visionOS", versionString: "3.0")
+        // Requires macOS 26+/iOS 26+ for Metal 4 APIs
     ],
     products: [
         // Core library - CoreML only, minimal dependencies
@@ -75,12 +75,14 @@ let package = Package(
                 .copy("Resources/EmbedKitShaders.metallib")
             ],
             swiftSettings: [
-                .enableUpcomingFeature("BareSlashRegexLiterals"),
-                .enableUpcomingFeature("ConciseMagicFile"),
-                .enableUpcomingFeature("ForwardTrailingClosures"),
-                .enableUpcomingFeature("ImplicitOpenExistentials"),
-                .enableUpcomingFeature("DisableOutwardActorInference"),
-                .enableExperimentalFeature("StrictConcurrency"),
+                // Swift 6+ has strict concurrency enabled by default
+            ],
+            linkerSettings: [
+                // Metal 4 tensor operations framework (iOS 26+ / macOS 26+)
+                // Required for MTLTensor and tensor_ops in Metal shaders
+                .linkedFramework("MetalPerformancePrimitives"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalPerformanceShaders")
             ]
         ),
 
@@ -93,19 +95,20 @@ let package = Package(
             ],
             path: "Sources/EmbedKitONNX",
             swiftSettings: [
-                .enableUpcomingFeature("BareSlashRegexLiterals"),
-                .enableUpcomingFeature("ConciseMagicFile"),
-                .enableUpcomingFeature("ForwardTrailingClosures"),
-                .enableUpcomingFeature("ImplicitOpenExistentials"),
-                .enableUpcomingFeature("DisableOutwardActorInference"),
-                .enableExperimentalFeature("StrictConcurrency"),
+                // Swift 6+ has strict concurrency enabled by default
             ]
         ),
 
         // MARK: - Tests
         .testTarget(
             name: "EmbedKitTests",
-            dependencies: ["EmbedKit"]
+            dependencies: ["EmbedKit"],
+            linkerSettings: [
+                // Metal 4 frameworks for tensor tests
+                .linkedFramework("MetalPerformancePrimitives"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalPerformanceShaders")
+            ]
         ),
         .testTarget(
             name: "EmbedKitONNXTests",

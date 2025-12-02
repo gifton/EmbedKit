@@ -564,11 +564,12 @@ struct StreamingEdgeCases {
         let streaming = StreamingEmbeddingGenerator(
             generator: generator,
             config: FlowControlConfig(
-                rateLimitStrategy: .tokenBucket(capacity: 5, refillRate: 0.1)
+                rateLimitStrategy: .tokenBucket(capacity: 5, refillRate: 100.0),
+                batchSize: 1  // Process one at a time so each consumes 1 token
             )
         )
 
-        // Exhaust rate limiter
+        // Exhaust rate limiter - first 5 pass, then rate limited
         let texts = (0..<10).map { "Text \($0)" }
         let result = try await streaming.produce(texts)
 
