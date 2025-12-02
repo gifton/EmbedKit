@@ -14,7 +14,7 @@
 /// This file should be included first in all kernel .metal files
 ///
 /// **Compatibility**:
-/// Requires Metal 3.0+ (iOS 16+ / macOS 13+)
+/// Metal 4.0 (iOS 26+ / macOS 26+)
 
 #include <metal_stdlib>
 using namespace metal;
@@ -23,8 +23,7 @@ using namespace metal;
 // MARK: - Metal Configuration
 // ============================================================================
 
-// Metal 3 optimizations
-#pragma METAL internals : enable
+// Metal 4 optimizations
 #pragma METAL fast_math enable
 
 // ============================================================================

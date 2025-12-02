@@ -688,9 +688,11 @@ public actor CoreMLBackend: ModelBackend {
         var dimensions: [DimensionConstraint] = []
 
         // Check for shape flexibility
-        if let shape = constraint.shape as? [NSNumber], !shape.isEmpty {
+        let shape = constraint.shape
+        if !shape.isEmpty {
             // Check if we have shape range info
-            if let shapeRange = constraint.shapeConstraint.enumeratedShapes as? [[NSNumber]], !shapeRange.isEmpty {
+            let shapeRange = constraint.shapeConstraint.enumeratedShapes
+            if !shapeRange.isEmpty {
                 // Model has enumerated shapes
                 // Extract per-dimension from the enumerated shapes
                 let numDims = shapeRange[0].count

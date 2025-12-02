@@ -3,6 +3,7 @@
 
 import Foundation
 import Dispatch
+import VectorCore
 
 // MARK: - Request Priority
 
@@ -439,6 +440,213 @@ public actor AdaptiveBatcher {
     /// - Parameter pressure: A value from 0.0 (no pressure) to 1.0 (critical).
     public func setMemoryPressure(_ pressure: Float) {
         currentMemoryPressure = max(0, min(1, pressure))
+    }
+}
+
+// MARK: - Progress Reporting
+
+extension AdaptiveBatcher {
+    /// Progress callback type for batch operations
+    public typealias ProgressCallback = @Sendable (BatchProgress) -> Void
+
+    /// Embed multiple texts with progress reporting via callback.
+    ///
+    /// This method processes all texts in batches and reports progress after each batch.
+    /// Use this for progress bars or status indicators.
+    ///
+    /// - Parameters:
+    ///   - texts: The texts to embed.
+    ///   - priority: Priority level for all requests.
+    ///   - onProgress: Callback invoked after each batch completes.
+    /// - Returns: All embeddings in the same order as input.
+    /// - Throws: Any error from the underlying model.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let embeddings = try await batcher.embedWithProgress(texts) { progress in
+    ///     print("[\(progress.percentage)%] \(progress.itemsPerSecond ?? 0) items/sec")
+    /// }
+    /// ```
+    public func embedWithProgress(
+        _ texts: [String],
+        priority: RequestPriority = .normal,
+        onProgress: ProgressCallback? = nil
+    ) async throws -> [Embedding] {
+        guard !texts.isEmpty else { return [] }
+
+        let batchSize = optimalBatchSize()
+        let batches = stride(from: 0, to: texts.count, by: batchSize).map {
+            Array(texts[$0..<min($0 + batchSize, texts.count)])
+        }
+        let totalBatches = batches.count
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        var results: [Embedding] = []
+        results.reserveCapacity(texts.count)
+
+        var totalTokens = 0
+
+        // Report started
+        onProgress?(BatchProgress.started(total: texts.count, totalBatches: totalBatches))
+
+        for (batchIndex, batch) in batches.enumerated() {
+            let batchEmbeddings = try await model.embedBatch(batch, options: config.batchOptions)
+            results.append(contentsOf: batchEmbeddings)
+
+            // Estimate tokens (rough approximation: 1 token per 4 characters)
+            let tokensInBatch = batch.reduce(0) { $0 + max(1, $1.count / 4) }
+            totalTokens += tokensInBatch
+
+            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            let progress = BatchProgress.batchCompleted(
+                itemsCompleted: results.count,
+                totalItems: texts.count,
+                batchIndex: batchIndex,
+                totalBatches: totalBatches,
+                batchSize: batch.count,
+                tokensInBatch: tokensInBatch,
+                totalTokens: totalTokens,
+                elapsedTime: elapsed
+            )
+            onProgress?(progress)
+        }
+
+        return results
+    }
+
+    /// Embed multiple texts and yield results with progress as an AsyncSequence.
+    ///
+    /// This method returns a stream that yields (embedding, progress) tuples.
+    /// Results are yielded as batches complete, not waiting for all to finish.
+    ///
+    /// - Parameters:
+    ///   - texts: The texts to embed.
+    ///   - priority: Priority level for all requests.
+    /// - Returns: An async stream of (embeddings, progress) tuples.
+    ///
+    /// ## Example
+    /// ```swift
+    /// for try await (embeddings, progress) in batcher.embedBatchStream(texts) {
+    ///     print("Batch done: \(embeddings.count) items, \(progress.percentage)% complete")
+    ///     allResults.append(contentsOf: embeddings)
+    /// }
+    /// ```
+    public func embedBatchStream(
+        _ texts: [String],
+        priority: RequestPriority = .normal
+    ) -> AsyncThrowingStream<([Embedding], BatchProgress), Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard !texts.isEmpty else {
+                        continuation.finish()
+                        return
+                    }
+
+                    let batchSize = optimalBatchSize()
+                    let batches = stride(from: 0, to: texts.count, by: batchSize).map {
+                        Array(texts[$0..<min($0 + batchSize, texts.count)])
+                    }
+                    let totalBatches = batches.count
+                    let startTime = CFAbsoluteTimeGetCurrent()
+
+                    var processedCount = 0
+                    var totalTokens = 0
+
+                    for (batchIndex, batch) in batches.enumerated() {
+                        let batchEmbeddings = try await model.embedBatch(batch, options: config.batchOptions)
+                        processedCount += batchEmbeddings.count
+
+                        // Estimate tokens
+                        let tokensInBatch = batch.reduce(0) { $0 + max(1, $1.count / 4) }
+                        totalTokens += tokensInBatch
+
+                        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                        let progress = BatchProgress.batchCompleted(
+                            itemsCompleted: processedCount,
+                            totalItems: texts.count,
+                            batchIndex: batchIndex,
+                            totalBatches: totalBatches,
+                            batchSize: batch.count,
+                            tokensInBatch: tokensInBatch,
+                            totalTokens: totalTokens,
+                            elapsedTime: elapsed
+                        )
+
+                        continuation.yield((batchEmbeddings, progress))
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Embed texts and yield individual embeddings with progress.
+    ///
+    /// Unlike `embedBatchStream`, this yields one embedding at a time with progress,
+    /// making it suitable for progress bars that update per-item.
+    ///
+    /// - Parameters:
+    ///   - texts: The texts to embed.
+    /// - Returns: An EmbeddingProgressStream (each element is ([Float], BatchProgress))
+    public func embedWithProgressStream(
+        _ texts: [String]
+    ) -> EmbeddingProgressStream {
+        let stream = AsyncThrowingStream<([Float], OperationProgress), Error> { continuation in
+            Task {
+                do {
+                    guard !texts.isEmpty else {
+                        continuation.finish()
+                        return
+                    }
+
+                    let batchSize = optimalBatchSize()
+                    let batches = stride(from: 0, to: texts.count, by: batchSize).map {
+                        Array(texts[$0..<min($0 + batchSize, texts.count)])
+                    }
+                    let totalBatches = batches.count
+                    let startTime = CFAbsoluteTimeGetCurrent()
+
+                    var processedCount = 0
+                    var totalTokens = 0
+
+                    for (batchIndex, batch) in batches.enumerated() {
+                        let batchEmbeddings = try await model.embedBatch(batch, options: config.batchOptions)
+
+                        // Yield each embedding individually with updated progress
+                        for (itemIndex, embedding) in batchEmbeddings.enumerated() {
+                            processedCount += 1
+                            let tokensInItem = max(1, batch[itemIndex].count / 4)
+                            totalTokens += tokensInItem
+
+                            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                            let itemsPerSec = elapsed > 0 ? Double(processedCount) / elapsed : nil
+                            let remaining = texts.count - processedCount
+                            let eta = itemsPerSec.map { remaining > 0 && $0 > 0 ? Double(remaining) / $0 : 0 }
+
+                            let progress = OperationProgress(
+                                current: processedCount,
+                                total: texts.count,
+                                phase: batchIndex < totalBatches - 1 ? "Processing" : "Finalizing",
+                                message: "Item \(processedCount)/\(texts.count)",
+                                estimatedTimeRemaining: eta
+                            )
+
+                            continuation.yield((embedding.vector, progress))
+                        }
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+
+        return EmbeddingProgressStream(stream)
     }
 }
 

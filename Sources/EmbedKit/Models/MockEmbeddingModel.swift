@@ -28,12 +28,9 @@ actor MockEmbeddingModel: EmbeddingModel {
     func embed(_ text: String) async throws -> Embedding {
         let start = CFAbsoluteTimeGetCurrent()
 
-        // Deterministic fake embedding based on text content
-        let seed: Int = text.utf8.reduce(0) { $0 &+ Int($1) }
-        let vector: [Float] = (0..<dimensions).map { i in
-            let v = sin(Double(seed + i)) * 0.5 + 0.5
-            return Float(v)
-        }
+        // Generate semantic-aware embedding using bag-of-words approach
+        // This ensures texts with common words produce similar embeddings
+        let vector = generateSemanticVector(for: text)
 
         let elapsed = CFAbsoluteTimeGetCurrent() - start
         metricsData.record(tokenCount: text.count, time: elapsed)
@@ -50,6 +47,101 @@ actor MockEmbeddingModel: EmbeddingModel {
                 custom: [:]
             )
         )
+    }
+
+    /// Generates a semantic-aware vector using bag-of-words with hashing.
+    /// Words are hashed to dimension indices, creating overlapping vectors for texts with common words.
+    private func generateSemanticVector(for text: String) -> [Float] {
+        var vector = [Float](repeating: 0, count: dimensions)
+
+        // Tokenize: lowercase, split on non-alphanumeric, filter short words
+        let baseWords = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 2 }
+            .map { simpleStem($0) }
+
+        // Expand words with semantic relations and flatten
+        let allTerms = baseWords.flatMap { expandSemanticTerms($0) }
+
+        // For each term, hash to multiple dimensions (improves distribution)
+        for (termIndex, term) in allTerms.enumerated() {
+            // Primary hash - deterministic based on word content
+            let hash1 = term.utf8.reduce(0) { ($0 &* 31) &+ Int($1) }
+            let hash2 = term.utf8.reduce(0) { ($0 &* 37) &+ Int($1) }
+
+            // Map to dimension indices
+            let idx1 = abs(hash1) % dimensions
+            let idx2 = abs(hash2) % dimensions
+            let idx3 = abs(hash1 &+ hash2) % dimensions
+
+            // Weight: full weight for original words, reduced for expanded terms
+            let isOriginal = termIndex < baseWords.count
+            let weight: Float = isOriginal ? 1.0 : 0.3
+
+            // Accumulate weights (TF-like weighting)
+            vector[idx1] += 1.0 * weight
+            vector[idx2] += 0.5 * weight
+            vector[idx3] += 0.25 * weight
+        }
+
+        // Add small noise for uniqueness (based on full text hash)
+        let textHash = text.utf8.reduce(0) { $0 &+ Int($1) }
+        for i in 0..<dimensions {
+            vector[i] += Float(sin(Double(textHash &+ i))) * 0.01
+        }
+
+        return vector
+    }
+
+    /// Simple stemming: removes common suffixes for better word matching.
+    private func simpleStem(_ word: String) -> String {
+        var w = word
+        // Remove common plural/verb suffixes
+        let suffixes = ["ing", "ed", "es", "s"]
+        for suffix in suffixes {
+            if w.count > suffix.count + 2 && w.hasSuffix(suffix) {
+                w = String(w.dropLast(suffix.count))
+                break
+            }
+        }
+        return w
+    }
+
+    /// Expands a word to include semantically related terms for better mock similarity.
+    /// This enables tests like "fruit" matching "apple" or "banana".
+    private func expandSemanticTerms(_ word: String) -> [String] {
+        // Semantic clusters for common test scenarios - more specific clusters
+        // to avoid over-matching (e.g., "machine" shouldn't match "neural network")
+        let semanticClusters: [[String]] = [
+            // Fruits
+            ["fruit", "apple", "banana", "orange", "grape", "berry", "mango"],
+            // Vehicles
+            ["vehicle", "car", "truck", "bus", "motorcycle", "automobile", "auto"],
+            // Animals
+            ["animal", "dog", "cat", "bird", "fish", "pet"],
+            // Food
+            ["food", "meal", "eat", "cuisine", "dish"],
+            // Neural networks specifically (deep learning)
+            ["neural", "network", "deep", "layer", "layers"],
+            // Machine learning general (separate from neural nets)
+            ["machine", "learn", "ml", "ai", "artificial", "intelligence"],
+            // NLP
+            ["nlp", "natural", "language", "text", "word", "process"],
+            // Computer/software
+            ["computer", "software", "program", "code"],
+        ]
+
+        var terms = [word]
+
+        // Find which cluster(s) this word belongs to and add related terms
+        for cluster in semanticClusters {
+            if cluster.contains(word) {
+                // Add all terms from the cluster with reduced weight
+                terms.append(contentsOf: cluster)
+            }
+        }
+
+        return terms
     }
 
     func embedBatch(_ texts: [String], options: BatchOptions) async throws -> [Embedding] {

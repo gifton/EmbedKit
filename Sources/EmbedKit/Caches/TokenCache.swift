@@ -53,7 +53,7 @@ public actor TokenCache<Key: Hashable & Sendable, Value: Sendable> {
         }
 
         // Insert new entry at head
-        var newEntry = Entry(value: value, prev: nil, next: head)
+        let newEntry = Entry(value: value, prev: nil, next: head)
         if let h = head { map[h]?.prev = key }
         head = key
         if tail == nil { tail = key }

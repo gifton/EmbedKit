@@ -52,6 +52,33 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
         var startTime: CFAbsoluteTime? = nil
     }
 
+    // MARK: - Statistics Helpers
+
+    /// Increment rate limit hits counter (callable from async contexts).
+    private func recordRateLimitHit() {
+        stats.rateLimitHits += 1
+    }
+
+    /// Record processed items count.
+    private func recordProcessed(count: Int) {
+        stats.totalProcessed += count
+    }
+
+    /// Record submitted items count.
+    private func recordSubmitted(count: Int) {
+        stats.totalSubmitted += count
+    }
+
+    /// Record wait time.
+    private func recordWaitTime(_ time: TimeInterval) {
+        stats.totalWaitTime += time
+    }
+
+    /// Update peak queue depth.
+    private func updatePeakQueueDepth(_ depth: Int) {
+        stats.peakQueueDepth = max(stats.peakQueueDepth, depth)
+    }
+
     // MARK: - VectorProducer Requirements
 
     public nonisolated var dimensions: Int {
@@ -105,13 +132,18 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
         while position < texts.count {
             try Task.checkCancellation()
 
-            // Apply rate limiting if configured
+            // Calculate batch size first so we can use it for rate limiting cost
+            let end = min(position + config.batchSize, texts.count)
+            let batch = Array(texts[position..<end])
+            let batchCost = Double(batch.count)
+
+            // Apply rate limiting if configured (cost = batch size)
             if let limiter = rateLimiter {
                 let startWait = CFAbsoluteTimeGetCurrent()
-                let allowed = await limiter.allowRequest()
+                let allowed = await limiter.allowRequest(cost: batchCost)
                 if !allowed {
                     stats.rateLimitHits += 1
-                    try await limiter.waitForPermit()
+                    try await limiter.waitForPermit(cost: batchCost)
                 }
                 stats.totalWaitTime += CFAbsoluteTimeGetCurrent() - startWait
             }
@@ -119,10 +151,6 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
             // Acquire back-pressure token
             let token = try await backPressure.acquire()
             defer { token.release() }
-
-            // Process batch
-            let end = min(position + config.batchSize, texts.count)
-            let batch = Array(texts[position..<end])
 
             stats.totalSubmitted += batch.count
 
@@ -178,6 +206,7 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
         let config = self.config
         let rateLimiter = self.rateLimiter
         let backPressure = self.backPressure
+        let streamingSelf = self  // Capture self for stats recording
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -192,21 +221,27 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
                     while position < totalItems {
                         try Task.checkCancellation()
 
-                        // Rate limiting
+                        // Calculate batch first for rate limiting cost
+                        let end = min(position + config.batchSize, totalItems)
+                        let batch = Array(texts[position..<end])
+                        let batchCost = Double(batch.count)
+
+                        // Rate limiting (cost = batch size)
                         if let limiter = rateLimiter {
-                            if !(await limiter.allowRequest()) {
-                                try await limiter.waitForPermit()
+                            let waitStart = CFAbsoluteTimeGetCurrent()
+                            if !(await limiter.allowRequest(cost: batchCost)) {
+                                await streamingSelf.recordRateLimitHit()
+                                try await limiter.waitForPermit(cost: batchCost)
                             }
+                            await streamingSelf.recordWaitTime(CFAbsoluteTimeGetCurrent() - waitStart)
                         }
 
                         // Back-pressure
                         let token = try await backPressure.acquire()
                         defer { token.release() }
-
-                        // Process batch
-                        let end = min(position + config.batchSize, totalItems)
-                        let batch = Array(texts[position..<end])
+                        await streamingSelf.recordSubmitted(count: batch.count)
                         let batchResults = try await generator.produce(batch)
+                        await streamingSelf.recordProcessed(count: batchResults.count)
 
                         // Yield each result with progress
                         for vector in batchResults {
@@ -258,6 +293,7 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
         let config = self.config
         let rateLimiter = self.rateLimiter
         let backPressure = self.backPressure
+        let streamingSelf = self  // Capture self for stats recording
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -272,17 +308,23 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
 
                         // Process when batch is full
                         if batch.count >= config.batchSize {
-                            // Rate limiting
+                            // Rate limiting (cost = batch size)
+                            let batchCost = Double(batch.count)
                             if let limiter = rateLimiter {
-                                if !(await limiter.allowRequest()) {
-                                    try await limiter.waitForPermit()
+                                let waitStart = CFAbsoluteTimeGetCurrent()
+                                if !(await limiter.allowRequest(cost: batchCost)) {
+                                    await streamingSelf.recordRateLimitHit()
+                                    try await limiter.waitForPermit(cost: batchCost)
                                 }
+                                await streamingSelf.recordWaitTime(CFAbsoluteTimeGetCurrent() - waitStart)
                             }
 
                             // Back-pressure
                             let token = try await backPressure.acquire()
 
+                            await streamingSelf.recordSubmitted(count: batch.count)
                             let results = try await generator.produce(batch)
+                            await streamingSelf.recordProcessed(count: results.count)
                             token.release()
 
                             for vector in results {
@@ -295,14 +337,21 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
 
                     // Process remaining items
                     if !batch.isEmpty {
+                        // Rate limiting (cost = remaining batch size)
+                        let batchCost = Double(batch.count)
                         if let limiter = rateLimiter {
-                            if !(await limiter.allowRequest()) {
-                                try await limiter.waitForPermit()
+                            let waitStart = CFAbsoluteTimeGetCurrent()
+                            if !(await limiter.allowRequest(cost: batchCost)) {
+                                await streamingSelf.recordRateLimitHit()
+                                try await limiter.waitForPermit(cost: batchCost)
                             }
+                            await streamingSelf.recordWaitTime(CFAbsoluteTimeGetCurrent() - waitStart)
                         }
 
                         let token = try await backPressure.acquire()
+                        await streamingSelf.recordSubmitted(count: batch.count)
                         let results = try await generator.produce(batch)
+                        await streamingSelf.recordProcessed(count: results.count)
                         token.release()
 
                         for vector in results {
@@ -354,18 +403,24 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
                 let index = batchIndex
 
                 group.addTask {
-                    // Rate limiting
+                    // Rate limiting (cost = batch size)
+                    let batchCost = Double(batch.count)
                     if let limiter = self.rateLimiter {
-                        if !(await limiter.allowRequest()) {
-                            try await limiter.waitForPermit()
+                        let startWait = CFAbsoluteTimeGetCurrent()
+                        if !(await limiter.allowRequest(cost: batchCost)) {
+                            await self.recordRateLimitHit()
+                            try await limiter.waitForPermit(cost: batchCost)
                         }
+                        await self.recordWaitTime(CFAbsoluteTimeGetCurrent() - startWait)
                     }
 
                     // Back-pressure
                     let token = try await self.backPressure.acquire()
                     defer { token.release() }
 
+                    await self.recordSubmitted(count: batch.count)
                     let embeddings = try await self.generator.produce(batch)
+                    await self.recordProcessed(count: embeddings.count)
                     return (index, embeddings)
                 }
 
@@ -384,16 +439,23 @@ public actor StreamingEmbeddingGenerator: VectorProducer {
                     let index = batchIndex
 
                     group.addTask {
+                        // Rate limiting (cost = batch size)
+                        let batchCost = Double(batch.count)
                         if let limiter = self.rateLimiter {
-                            if !(await limiter.allowRequest()) {
-                                try await limiter.waitForPermit()
+                            let startWait = CFAbsoluteTimeGetCurrent()
+                            if !(await limiter.allowRequest(cost: batchCost)) {
+                                await self.recordRateLimitHit()
+                                try await limiter.waitForPermit(cost: batchCost)
                             }
+                            await self.recordWaitTime(CFAbsoluteTimeGetCurrent() - startWait)
                         }
 
                         let token = try await self.backPressure.acquire()
                         defer { token.release() }
 
+                        await self.recordSubmitted(count: batch.count)
                         let embeddings = try await self.generator.produce(batch)
+                        await self.recordProcessed(count: embeddings.count)
                         return (index, embeddings)
                     }
 

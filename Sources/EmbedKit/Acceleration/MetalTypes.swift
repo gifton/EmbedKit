@@ -144,7 +144,7 @@ internal struct VectorBatch: Sendable {
             return
         }
         let dims = first.count
-        for (i, v) in vectors.enumerated() {
+        for (_, v) in vectors.enumerated() {
             guard v.count == dims else {
                 throw EmbedKitError.dimensionMismatch(expected: dims, got: v.count)
             }

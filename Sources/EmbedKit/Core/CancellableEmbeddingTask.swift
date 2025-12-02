@@ -127,7 +127,8 @@ public final class CancellationToken: @unchecked Sendable {
     /// - Parameter mode: How cancellation should be handled.
     public func cancel(mode: CancellationMode = .graceful) {
         lock.lock()
-        guard !_isCancelled else {
+        // Don't allow cancellation if already cancelled or in a terminal state
+        guard !_isCancelled && _state != .completed && _state != .failed else {
             lock.unlock()
             return
         }

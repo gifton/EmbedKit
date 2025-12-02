@@ -31,7 +31,7 @@ struct MemoryPressureLevelTests {
 
 // MARK: - MemoryMonitor Tests
 
-@Suite("MemoryMonitor")
+@Suite("MemoryMonitor", .serialized)
 struct MemoryMonitorTests {
 
     @Test("Shared instance exists")
@@ -98,6 +98,11 @@ struct MemoryMonitorTests {
         #expect(stats.physicalMemory > 0)
         #expect(stats.memoryUtilization >= 0)
         #expect(stats.memoryUtilization <= 1.0)
+    }
+
+    @Test("zz_cleanup - Reset MemoryMonitor after tests")
+    func zz_cleanupResources() {
+        cleanupMemoryMonitorTestResources()
     }
 }
 
@@ -512,5 +517,10 @@ struct MemoryAwareIntegrationTests {
         let stats = await memoryAware.getStatistics()
         #expect(stats.totalBatches == 20)  // 100 / 5
         #expect(stats.batchesAtCritical == 20)
+    }
+
+    @Test("zz_cleanup - Release all resources after integration tests")
+    func zz_cleanupResources() async {
+        await cleanupEmbedKitTestResources()
     }
 }

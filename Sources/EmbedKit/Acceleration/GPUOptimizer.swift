@@ -182,23 +182,9 @@ public struct GPUDeviceCapabilities: Sendable {
         }
 
         // Simdgroup matrix support (Apple7+)
-        #if os(macOS)
-        if #available(macOS 13.0, *) {
-            self.supportsSimdgroupMatrix = device.supportsFamily(.apple7) ||
-                                          device.supportsFamily(.apple8) ||
-                                          device.supportsFamily(.apple9)
-        } else {
-            self.supportsSimdgroupMatrix = false
-        }
-        #else
-        if #available(iOS 16.0, tvOS 16.0, *) {
-            self.supportsSimdgroupMatrix = device.supportsFamily(.apple7) ||
-                                          device.supportsFamily(.apple8) ||
-                                          device.supportsFamily(.apple9)
-        } else {
-            self.supportsSimdgroupMatrix = false
-        }
-        #endif
+        self.supportsSimdgroupMatrix = device.supportsFamily(.apple7) ||
+                                      device.supportsFamily(.apple8) ||
+                                      device.supportsFamily(.apple9)
     }
     #endif
 
@@ -844,7 +830,10 @@ public struct ProgressiveSimilarityComputer: Sendable {
 // MARK: - Buffer Residency Manager
 
 #if canImport(Metal)
-/// Manages buffer residency hints for frequently used embeddings.
+/// Manages buffer residency tracking for frequently used embeddings.
+///
+/// This actor tracks buffer access patterns to optimize GPU memory residency.
+/// For Metal 4's native residency sets, see `Metal4ResidencyManager`.
 public actor BufferResidencyManager {
     private let device: MTLDevice
     private var residentBuffers: [ObjectIdentifier: ResidentBufferInfo] = [:]
@@ -881,13 +870,8 @@ public actor BufferResidencyManager {
                 accessCount: 1
             )
 
-            // Set residency hint if available
-            #if os(macOS)
-            if #available(macOS 13.0, *) {
-                // Metal 3 residency sets would go here
-                // For now, just track in our data structure
-            }
-            #endif
+            // Buffer tracking is handled by the data structure above
+            // For native Metal 4 residency sets, use Metal4ResidencyManager
         }
     }
 

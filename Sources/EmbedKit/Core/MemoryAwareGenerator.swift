@@ -43,6 +43,7 @@ public final class MemoryMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var _currentLevel: MemoryPressureLevel = .normal
     private var _handlers: [(MemoryPressureLevel) -> Void] = []
+    private var _referenceCount: Int = 0
 
     #if canImport(Darwin)
     private var source: DispatchSourceMemoryPressure?
@@ -58,7 +59,13 @@ public final class MemoryMonitor: @unchecked Sendable {
     }
 
     /// Start monitoring system memory pressure.
+    /// Uses reference counting - call stopMonitoring() when done.
     public func startMonitoring() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        _referenceCount += 1
+
         #if canImport(Darwin)
         guard source == nil else { return }
 
@@ -93,8 +100,15 @@ public final class MemoryMonitor: @unchecked Sendable {
     }
 
     /// Stop monitoring system memory pressure.
+    /// Only actually stops when reference count reaches zero.
     public func stopMonitoring() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        _referenceCount = max(0, _referenceCount - 1)
+
         #if canImport(Darwin)
+        guard _referenceCount == 0 else { return }
         source?.cancel()
         source = nil
         #endif
@@ -124,6 +138,25 @@ public final class MemoryMonitor: @unchecked Sendable {
     /// Manually set memory pressure level (for testing).
     public func simulatePressure(_ level: MemoryPressureLevel) {
         updateLevel(level)
+    }
+
+    /// Force reset all state for testing purposes.
+    ///
+    /// This bypasses reference counting and forcibly stops monitoring,
+    /// clearing all handlers and resetting state. Use only in test teardown.
+    @available(*, deprecated, message: "For testing only - do not use in production code")
+    public func forceResetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        #if canImport(Darwin)
+        source?.cancel()
+        source = nil
+        #endif
+
+        _referenceCount = 0
+        _currentLevel = .normal
+        _handlers.removeAll()
     }
 
     private func updateLevel(_ level: MemoryPressureLevel) {
@@ -327,6 +360,19 @@ public actor MemoryAwareGenerator: VectorProducer {
         self.config = config
     }
 
+    deinit {
+        // Clean up monitoring on deallocation
+        // Note: We can't access actor-isolated monitorHandlerID here,
+        // but we can ensure the DispatchSource is stopped if it was started.
+        // The reference counting in MemoryMonitor handles multiple start/stop calls.
+        if _wasMonitoringStarted {
+            MemoryMonitor.shared.stopMonitoring()
+        }
+    }
+
+    // Track if monitoring was ever started (for deinit cleanup)
+    private nonisolated(unsafe) var _wasMonitoringStarted = false
+
     // MARK: - Monitoring
 
     /// Start monitoring system memory pressure.
@@ -336,6 +382,7 @@ public actor MemoryAwareGenerator: VectorProducer {
     public func startMonitoring() {
         guard monitorHandlerID == nil else { return }
 
+        _wasMonitoringStarted = true
         MemoryMonitor.shared.startMonitoring()
 
         monitorHandlerID = MemoryMonitor.shared.onPressureChange { [weak self] level in
@@ -349,7 +396,9 @@ public actor MemoryAwareGenerator: VectorProducer {
     public func stopMonitoring() {
         if let id = monitorHandlerID {
             MemoryMonitor.shared.removeHandler(at: id)
+            MemoryMonitor.shared.stopMonitoring()
             monitorHandlerID = nil
+            _wasMonitoringStarted = false
         }
     }
 

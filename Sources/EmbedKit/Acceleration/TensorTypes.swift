@@ -183,6 +183,71 @@ public struct EmbeddingTensor: @unchecked Sendable {
         let offset = index * dimensions
         return Array(UnsafeBufferPointer(start: ptr + offset, count: dimensions))
     }
+
+    // MARK: - Write Operations
+
+    /// Write embeddings to the tensor buffer.
+    ///
+    /// - Parameter embeddings: Array of embedding vectors (must match tensor dimensions)
+    /// - Throws: `EmbedKitError.dimensionMismatch` if dimensions don't match
+    public func write(embeddings: [[Float]]) throws {
+        guard embeddings.count == batchSize else {
+            throw EmbedKitError.dimensionMismatch(expected: batchSize, got: embeddings.count)
+        }
+
+        let ptr = buffer.contents().bindMemory(to: Float.self, capacity: totalElements)
+        var offset = 0
+        for embedding in embeddings {
+            guard embedding.count == dimensions else {
+                throw EmbedKitError.dimensionMismatch(expected: dimensions, got: embedding.count)
+            }
+            embedding.withUnsafeBufferPointer { src in
+                (ptr + offset).update(from: src.baseAddress!, count: dimensions)
+            }
+            offset += dimensions
+        }
+    }
+
+    /// Write flat data to the tensor buffer.
+    ///
+    /// - Parameter data: Flat row-major float array
+    /// - Throws: `EmbedKitError.dimensionMismatch` if size doesn't match
+    public func write(data: [Float]) throws {
+        guard data.count == totalElements else {
+            throw EmbedKitError.dimensionMismatch(expected: totalElements, got: data.count)
+        }
+
+        let ptr = buffer.contents().bindMemory(to: Float.self, capacity: totalElements)
+        data.withUnsafeBufferPointer { src in
+            ptr.update(from: src.baseAddress!, count: totalElements)
+        }
+    }
+
+    /// Write a single embedding at the specified index.
+    ///
+    /// - Parameters:
+    ///   - embedding: The embedding vector to write
+    ///   - index: Index in the batch (0..<batchSize)
+    /// - Throws: `EmbedKitError.dimensionMismatch` if dimensions don't match
+    public func write(embedding: [Float], at index: Int) throws {
+        guard index >= 0 && index < batchSize else {
+            throw EmbedKitError.invalidConfiguration("Index \(index) out of range [0, \(batchSize))")
+        }
+        guard embedding.count == dimensions else {
+            throw EmbedKitError.dimensionMismatch(expected: dimensions, got: embedding.count)
+        }
+
+        let ptr = buffer.contents().bindMemory(to: Float.self, capacity: totalElements)
+        let offset = index * dimensions
+        embedding.withUnsafeBufferPointer { src in
+            (ptr + offset).update(from: src.baseAddress!, count: dimensions)
+        }
+    }
+
+    /// Clear the tensor buffer to zeros.
+    public func clear() {
+        memset(buffer.contents(), 0, sizeInBytes)
+    }
     #endif
 }
 
@@ -428,6 +493,56 @@ public struct TokenEmbeddingTensor: @unchecked Sendable {
         let offset = batchIndex * elementsPerSequence + tokenIndex * dimensions
         return Array(UnsafeBufferPointer(start: ptr + offset, count: dimensions))
     }
+
+    // MARK: - Write Operations
+
+    /// Write token embeddings to the tensor buffer.
+    ///
+    /// - Parameter tokens: 3D array [batchSize][sequenceLength][dimensions]
+    /// - Throws: `EmbedKitError.dimensionMismatch` if dimensions don't match
+    public func write(tokens: [[[Float]]]) throws {
+        guard tokens.count == batchSize else {
+            throw EmbedKitError.dimensionMismatch(expected: batchSize, got: tokens.count)
+        }
+
+        let ptr = buffer.contents().bindMemory(to: Float.self, capacity: totalElements)
+        var offset = 0
+
+        for batch in tokens {
+            guard batch.count == sequenceLength else {
+                throw EmbedKitError.dimensionMismatch(expected: sequenceLength, got: batch.count)
+            }
+            for token in batch {
+                guard token.count == dimensions else {
+                    throw EmbedKitError.dimensionMismatch(expected: dimensions, got: token.count)
+                }
+                token.withUnsafeBufferPointer { src in
+                    (ptr + offset).update(from: src.baseAddress!, count: dimensions)
+                }
+                offset += dimensions
+            }
+        }
+    }
+
+    /// Write flat data to the tensor buffer.
+    ///
+    /// - Parameter data: Flat row-major float array
+    /// - Throws: `EmbedKitError.dimensionMismatch` if size doesn't match
+    public func write(data: [Float]) throws {
+        guard data.count == totalElements else {
+            throw EmbedKitError.dimensionMismatch(expected: totalElements, got: data.count)
+        }
+
+        let ptr = buffer.contents().bindMemory(to: Float.self, capacity: totalElements)
+        data.withUnsafeBufferPointer { src in
+            ptr.update(from: src.baseAddress!, count: totalElements)
+        }
+    }
+
+    /// Clear the tensor buffer to zeros.
+    public func clear() {
+        memset(buffer.contents(), 0, sizeInBytes)
+    }
     #endif
 }
 
@@ -484,6 +599,32 @@ public struct TensorNormalizationParams: Sendable {
     }
 }
 
+/// Parameters for V2 tensor normalization kernels.
+///
+/// **Memory Layout**: 16 bytes (4 × Int32), 16-byte aligned
+/// Matches Metal shader `TensorNormParams` struct in MetalCommon.h.
+@frozen
+public struct TensorNormParams: Sendable {
+    /// Number of vectors in the batch.
+    public let batchSize: Int32
+
+    /// Dimensionality of each vector.
+    public let dimensions: Int32
+
+    /// Padding for 16-byte alignment.
+    private let _padding0: Int32
+
+    /// Padding for 16-byte alignment.
+    private let _padding1: Int32
+
+    public init(batchSize: Int, dimensions: Int) {
+        self.batchSize = Int32(batchSize)
+        self.dimensions = Int32(dimensions)
+        self._padding0 = 0
+        self._padding1 = 0
+    }
+}
+
 /// Parameters for tensor-based similarity operations.
 ///
 /// **Memory Layout**: 16 bytes (4 × Int32), 16-byte aligned
@@ -498,14 +639,21 @@ public struct TensorSimilarityParams: Sendable {
     /// Dimensionality of vectors.
     public let dimensions: Int32
 
-    /// Padding for 16-byte alignment.
-    private let _padding: Int32
+    /// Similarity metric: 0=cosine, 1=dot, 2=euclidean
+    public let metric: Int32
 
-    public init(queryBatchSize: Int, keyBatchSize: Int, dimensions: Int) {
+    /// Creates tensor similarity parameters.
+    ///
+    /// - Parameters:
+    ///   - queryBatchSize: Number of query vectors
+    ///   - keyBatchSize: Number of key vectors
+    ///   - dimensions: Vector dimensionality
+    ///   - metric: Similarity metric (0=cosine, 1=dot, 2=euclidean). Default is 0 (cosine).
+    public init(queryBatchSize: Int, keyBatchSize: Int, dimensions: Int, metric: Int = 0) {
         self.queryBatchSize = Int32(queryBatchSize)
         self.keyBatchSize = Int32(keyBatchSize)
         self.dimensions = Int32(dimensions)
-        self._padding = 0
+        self.metric = Int32(metric)
     }
 }
 

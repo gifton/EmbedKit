@@ -25,6 +25,8 @@ public enum EmbedKitError: LocalizedError, Sendable {
     case metalPipelineNotFound(String)
     /// Failed to create Metal command encoder
     case metalEncoderFailed
+    /// Failed to create Metal tensor (Metal 4+)
+    case metalTensorFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -56,6 +58,8 @@ public enum EmbedKitError: LocalizedError, Sendable {
             return "Metal pipeline not found for kernel: \(kernel)"
         case .metalEncoderFailed:
             return "Failed to create Metal command encoder"
+        case .metalTensorFailed(let reason):
+            return "Failed to create Metal tensor: \(reason)"
         }
     }
 
@@ -102,6 +106,9 @@ public enum EmbedKitError: LocalizedError, Sendable {
 
         case .metalEncoderFailed:
             return "The GPU command queue may be overloaded. Try reducing concurrent GPU operations or adding delays between batches."
+
+        case .metalTensorFailed:
+            return "Ensure you're running on iOS 26+ or macOS 26+ with Metal 4 support. Try reducing tensor dimensions or batch size if memory is limited."
         }
     }
 
@@ -149,6 +156,9 @@ public enum EmbedKitError: LocalizedError, Sendable {
 
         case .metalEncoderFailed:
             return "The GPU command encoder could not be created from the command buffer."
+
+        case .metalTensorFailed:
+            return "The Metal tensor could not be created with the specified shape and data type."
         }
     }
 }
@@ -191,6 +201,7 @@ extension EmbedKitError: VSKError {
         case .metalBufferFailed: return 601
         case .metalPipelineNotFound: return 602
         case .metalEncoderFailed: return 603
+        case .metalTensorFailed: return 604
         }
     }
 
@@ -202,13 +213,14 @@ extension EmbedKitError: VSKError {
         switch self {
         // Not recoverable - requires configuration/setup changes
         case .modelNotFound, .modelLoadFailed, .invalidConfiguration,
-             .metalDeviceUnavailable, .metalPipelineNotFound:
+             .metalDeviceUnavailable, .metalPipelineNotFound, .dimensionMismatch:
             return false
 
         // Recoverable - can retry with different parameters
-        case .tokenizationFailed, .inferenceFailed, .dimensionMismatch,
+        case .tokenizationFailed, .inferenceFailed,
              .deviceNotAvailable, .inputTooLong, .batchSizeExceeded,
-             .processingTimeout, .metalBufferFailed, .metalEncoderFailed:
+             .processingTimeout, .metalBufferFailed, .metalEncoderFailed,
+             .metalTensorFailed:
             return true
         }
     }
@@ -240,7 +252,11 @@ extension EmbedKitError: VSKError {
             info["maxBatchSize"] = "\(max)"
         case .metalPipelineNotFound(let kernel):
             info["kernel"] = kernel
-        case .processingTimeout, .invalidConfiguration,
+        case .metalTensorFailed(let reason):
+            info["reason"] = reason
+        case .invalidConfiguration(let reason):
+            info["reason"] = reason
+        case .processingTimeout,
              .metalDeviceUnavailable, .metalBufferFailed, .metalEncoderFailed:
             break
         }
