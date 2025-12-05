@@ -4,6 +4,7 @@
 import Foundation
 import Accelerate
 import VectorCore
+import struct VectorCore.TopKResult
 
 /// High-performance CPU operations using Apple's Accelerate framework.
 ///
