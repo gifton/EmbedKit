@@ -5,7 +5,6 @@ import Testing
 import Foundation
 @testable import EmbedKit
 import VectorCore
-import VectorIndex
 
 // MARK: - VectorProducer Conformance Tests
 
@@ -351,13 +350,14 @@ struct VectorProducerIntegrationTests {
 
     // MARK: - Concurrent Cross-Package Operations
 
-    @Test("Concurrent VectorProducer operations with VectorIndex")
+    @Test("Concurrent VectorProducer operations with EmbeddingStore")
     func concurrentVectorProducerOperations() async throws {
         let manager = ModelManager()
         let model = try await manager.loadMockModel()
         let generator = EmbeddingGenerator(model: model)
 
-        let index = FlatIndex(dimension: generator.dimensions, metric: .cosine)
+        let config = IndexConfiguration.flat(dimension: 384)
+        let store = try await EmbeddingStore(config: config)
 
         // Concurrent embedding generation and insertion
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -365,13 +365,22 @@ struct VectorProducerIntegrationTests {
                 group.addTask {
                     let text = "document \(i)"
                     let vector = try await generator.produce(text)
-                    try await index.insert(id: text, vector: vector, metadata: nil)
+                    let embedding = Embedding(
+                        vector: vector,
+                        metadata: EmbeddingMetadata(
+                            modelID: ModelID(provider: "test", name: "mock", version: "1.0"),
+                            tokenCount: 1,
+                            processingTime: 0.01,
+                            normalized: true
+                        )
+                    )
+                    _ = try await store.store(embedding, id: text, text: text, metadata: nil)
                 }
             }
             try await group.waitForAll()
         }
 
-        let count = await index.count
+        let count = await store.count
         #expect(count == 10)
     }
 

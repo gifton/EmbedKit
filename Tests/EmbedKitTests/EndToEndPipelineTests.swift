@@ -5,7 +5,6 @@ import Testing
 import Foundation
 @testable import EmbedKit
 import VectorCore
-import VectorIndex
 
 // MARK: - Complete RAG Pipeline Tests
 

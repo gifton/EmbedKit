@@ -3,7 +3,6 @@
 
 import Foundation
 import VectorCore
-import VectorIndex
 
 // MARK: - Embedding Storable Protocol
 

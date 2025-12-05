@@ -6,13 +6,13 @@
 
  Part of the Vector Suite Kit (VSK) ecosystem, EmbedKit provides:
  - On-device text embedding generation using CoreML
- - Vector storage and similarity search via VectorIndex integration
- - GPU acceleration via Metal compute shaders
+ - GPU-first vector storage and similarity search via VectorAccelerate
+ - Metal4 GPU acceleration for all vector operations
  - Complete tokenization system (BERT, BPE, SentencePiece)
  - Production-ready with Swift 6 actor-based concurrency
 
  Products:
- - EmbedKit: Core library with CoreML + VectorIndex integration
+ - EmbedKit: Core library with CoreML + VectorAccelerate integration
  - EmbedKitONNX: Optional ONNX Runtime support for .onnx models
 
  Copyright (c) 2024-2025 Vector Suite Kit Contributors
@@ -44,9 +44,8 @@ let package = Package(
         )
     ],
     dependencies: [
-        // VSK dependencies - Official releases (updated Nov 2024)
+        // VSK dependencies - VectorAccelerate provides GPU-first indexing (v0.3.0+)
         .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.6"),
-        .package(url: "https://github.com/gifton/VectorIndex.git", from: "0.1.3"),
         .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.3.0"),
 
         // System dependencies
@@ -61,7 +60,6 @@ let package = Package(
             name: "EmbedKit",
             dependencies: [
                 .product(name: "VectorCore", package: "VectorCore"),
-                .product(name: "VectorIndex", package: "VectorIndex"),
                 .product(name: "VectorAccelerate", package: "VectorAccelerate"),
                 .product(name: "Logging", package: "swift-log")
             ],

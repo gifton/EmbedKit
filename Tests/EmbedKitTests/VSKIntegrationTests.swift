@@ -1,11 +1,10 @@
 // EmbedKit - VSK Integration Tests
-// Tests for VectorCore 0.1.5, VectorIndex 0.1.2, VectorAccelerate 0.1.2 integration
+// Tests for VectorCore and VectorAccelerate integration
 
 import Testing
 import Foundation
 @testable import EmbedKit
 import VectorCore
-import VectorIndex
 
 // MARK: - Vector384Optimized Auto-Optimization Tests
 

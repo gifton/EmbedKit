@@ -1,5 +1,5 @@
 {
-  "originHash" : "8f84eec9224160e88341b8d34fdeca6adbf720961ea19518894a127fe0950898",
+  "originHash" : "cf3a6f57e0ca64398351035f5b7c16a83827b14ccf801dabb4d74886c3b25578",
   "pins" : [
     {
       "identity" : "onnxruntime-swift-package-manager",
@@ -35,15 +35,6 @@
       "state" : {
         "revision" : "506d3d2adc893fe1d24513b329568a6b834f20bc",
         "version" : "0.1.6"
-      }
-    },
-    {
-      "identity" : "vectorindex",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gifton/VectorIndex.git",
-      "state" : {
-        "revision" : "7e1369be7dea9266e012c0e78e539fa239938bb5",
-        "version" : "0.1.3"
       }
     }
   ],
