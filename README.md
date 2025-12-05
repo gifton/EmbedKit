@@ -3,7 +3,7 @@
 A high-performance text embedding framework for Apple platforms. Generate, store, and search text embeddings on-device using CoreML, with optional GPU acceleration via Metal.
 
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
-![Platforms](https://img.shields.io/badge/Platforms-iOS%2018%20|%20macOS%2015%20|%20tvOS%2018%20|%20visionOS%202-blue.svg)
+![Platforms](https://img.shields.io/badge/Platforms-iOS%2026%20|%20macOS%2026%20|%20tvOS%2026%20|%20visionOS%203-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Tests](https://img.shields.io/badge/Tests-1431%20passing-brightgreen.svg)
 
