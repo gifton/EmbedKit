@@ -283,7 +283,6 @@ struct PipelineConfigurationTests {
 
         #expect(config.embedding.maxTokens == 512)
         #expect(config.batch.maxBatchSize == 32)
-        #expect(config.compute.preference == .auto)
         #expect(config.cache == nil)
         #expect(config.memoryBudget == nil)
     }
@@ -300,8 +299,6 @@ struct PipelineConfigurationTests {
 
         #expect(config.embedding.maxTokens == 512)
         #expect(config.batch.maxBatchSize == 64)
-        #expect(config.compute.preference == .auto)
-        #expect(config.compute.thresholds.minCandidatesForGPU == 100)
         #expect(config.cache != nil)
         #expect(config.memoryBudget == 256 * 1024 * 1024)
     }
@@ -312,7 +309,6 @@ struct PipelineConfigurationTests {
     func computeConfigDefault() {
         let config = ComputeConfiguration.default
 
-        #expect(config.preference == .auto)
         #expect(config.useFusedKernels == true)
         #expect(config.adaptiveKernelSelection == true)
         #expect(config.maxResidentMemoryMB == 512)
@@ -322,28 +318,14 @@ struct PipelineConfigurationTests {
     func computeConfigGPUOptimized() {
         let config = ComputeConfiguration.gpuOptimized()
 
-        #expect(config.preference == .auto)
-        #expect(config.thresholds.minCandidatesForGPU == 100)  // Aggressive
         #expect(config.useFusedKernels == true)
         #expect(config.maxResidentMemoryMB == 1024)
-    }
-
-    @Test("CPU only compute configuration")
-    func computeConfigCPUOnly() {
-        let config = ComputeConfiguration.cpuOnly()
-
-        #expect(config.preference == .cpuOnly)
-        #expect(config.useFusedKernels == false)
-        #expect(config.adaptiveKernelSelection == false)
-        #expect(config.maxResidentMemoryMB == 0)
     }
 
     @Test("Memory efficient compute configuration")
     func computeConfigMemoryEfficient() {
         let config = ComputeConfiguration.memoryEfficient()
 
-        #expect(config.preference == .auto)
-        #expect(config.thresholds.minCandidatesForGPU == 10_000)  // Conservative
         #expect(config.maxResidentMemoryMB == 128)
     }
 
@@ -366,16 +348,6 @@ struct PipelineConfigurationTests {
 
         let withBudget = config.withMemoryBudget(mb: 256)
         #expect(withBudget.memoryBudget == 256 * 1024 * 1024)
-    }
-
-    @Test("withCPUOnly switches to CPU")
-    func withCPUOnlyMethod() {
-        let config = ConfigurationFactory.highThroughput()
-        let cpuOnly = config.withCPUOnly()
-
-        #expect(cpuOnly.embedding.inferenceDevice == .cpu)
-        #expect(cpuOnly.embedding.minElementsForGPU == Int.max)
-        #expect(cpuOnly.compute.preference == .cpuOnly)
     }
 
     @Test("toAdaptiveBatcherConfig creates valid config")
@@ -405,7 +377,6 @@ struct PipelineConfigurationTests {
         let config = ComputeConfiguration.gpuOptimized()
         let desc = config.description
 
-        #expect(desc.contains("auto"))
         #expect(desc.contains("fused"))
     }
 }
@@ -423,7 +394,6 @@ struct ConfigurationFactoryPresetsTests {
 
         #expect(config.embedding.maxTokens == 512)
         #expect(config.batch.maxBatchSize == 32)
-        #expect(config.compute.preference == .auto)
         #expect(config.cache == nil)
     }
 
@@ -438,7 +408,6 @@ struct ConfigurationFactoryPresetsTests {
 
         // Aggressive GPU
         #expect(config.embedding.minElementsForGPU == 2048)
-        #expect(config.compute.thresholds.minCandidatesForGPU == 100)
 
         // Token limits
         #expect(config.batch.maxBatchTokens == 16384)
@@ -455,7 +424,6 @@ struct ConfigurationFactoryPresetsTests {
 
         // Conservative GPU (CPU often faster for small)
         #expect(config.embedding.minElementsForGPU == 16384)
-        #expect(config.compute.thresholds.minCandidatesForGPU == 10_000)
 
         // Short timeout
         #expect(config.batch.timeout == 5.0)
@@ -465,7 +433,7 @@ struct ConfigurationFactoryPresetsTests {
     func gpuOptimizedFactory() {
         let config = ConfigurationFactory.gpuOptimized()
 
-        // GPU preference
+        // GPU settings
         #expect(config.embedding.inferenceDevice == .gpu)
         #expect(config.embedding.minElementsForGPU == 1024)
 
@@ -606,10 +574,6 @@ struct ConfigurationFactoryPresetsTests {
 
         // Larger batches (smaller model)
         #expect(config.batch.maxBatchSize == 64)
-
-        // Adjusted thresholds for 384-dim
-        #expect(config.compute.thresholds.minCandidatesForGPU == 500)
-        #expect(config.compute.thresholds.minBatchForNormalization == 50)
     }
 
     @Test("forMiniLM with different use cases")
@@ -630,9 +594,6 @@ struct ConfigurationFactoryPresetsTests {
         // Smaller batches (larger model)
         #expect(config.batch.maxBatchSize == 32)
         #expect(config.batch.maxBatchTokens == 8192)
-
-        // Adjusted thresholds for 768-dim
-        #expect(config.compute.thresholds.minCandidatesForGPU == 200)
         #expect(config.compute.maxResidentMemoryMB == 512)
     }
 
@@ -651,8 +612,6 @@ struct ConfigurationFactoryPresetsTests {
     func forLargeModelFactory() {
         let config = ConfigurationFactory.forLargeModel(dimensions: 1024)
 
-        // Very low GPU threshold for high-dim
-        #expect(config.compute.thresholds.minCandidatesForGPU == 100)
         #expect(config.compute.maxResidentMemoryMB == 1024)
 
         // Batch size adjusted for dimensions
@@ -707,7 +666,7 @@ struct ConfigurationFactoryPresetsTests {
         #expect(highThroughput.batch.maxBatchSize > lowLatency.batch.maxBatchSize)
     }
 
-    @Test("GPU optimized has lower GPU thresholds than memory efficient")
+    @Test("GPU optimized has lower GPU element threshold than memory efficient")
     func gpuVsMemoryThresholds() {
         let gpuOptimized = ConfigurationFactory.gpuOptimized()
         let memoryEfficient = ConfigurationFactory.memoryEfficient()
@@ -752,7 +711,7 @@ struct ConfigurationSendabilityTests {
         let config = ComputeConfiguration.gpuOptimized()
 
         await Task {
-            #expect(config.preference == .auto)
+            #expect(config.useFusedKernels == true)
         }.value
     }
 }

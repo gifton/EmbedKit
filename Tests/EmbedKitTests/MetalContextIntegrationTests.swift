@@ -1,5 +1,5 @@
 // EmbedKit - Metal Context Integration Tests
-// Tests for SharedMetalContext and Metal resource management across components
+// Tests for Metal4Context and Metal resource management across components
 
 import Testing
 import Foundation
@@ -8,46 +8,43 @@ import Metal
 
 #if canImport(Metal)
 
-// MARK: - Shared Metal Context Tests
+// MARK: - Metal4 Context Tests
 
-@Suite("SharedMetalContext Integration", .tags(.integration))
-struct SharedMetalContextIntegrationTests {
+@Suite("Metal4Context Integration", .tags(.integration))
+struct Metal4ContextIntegrationTests {
 
     // MARK: - Context Sharing Tests
 
-    @Test("AccelerationManager uses shared Metal context")
+    @Test("AccelerationManager uses shared Metal4 context")
     func accelerationManagerSharedContext() async throws {
         #if !targetEnvironment(simulator)
         guard MTLCreateSystemDefaultDevice() != nil else {
             throw XCTSkip("Metal not available")
         }
 
-        let manager = await AccelerationManager(preference: .auto)
-        let hasContext = await manager.isGPUAvailable
+        let manager = try await AccelerationManager.create()
+        let hasContext = manager.isGPUAvailable
 
-        if hasContext {
-            // Verify context exists and is usable
-            #expect(hasContext == true)
-        }
+        // GPU is always available in new architecture
+        #expect(hasContext == true)
         #else
         throw XCTSkip("Metal not available in simulator")
         #endif
     }
 
-    @Test("Multiple components share same Metal device")
-    func multipleComponentsShareDevice() async throws {
+    @Test("Multiple components share same Metal4 context")
+    func multipleComponentsShareContext() async throws {
         #if !targetEnvironment(simulator)
         guard MTLCreateSystemDefaultDevice() != nil else {
             throw XCTSkip("Metal not available")
         }
 
-        let manager1 = await AccelerationManager(preference: .auto)
-        let manager2 = await AccelerationManager(preference: .auto)
+        let manager1 = try await AccelerationManager.create()
+        let manager2 = try await AccelerationManager.create()
 
-        // Both should use the same underlying Metal device
-        let context1 = await manager1.isGPUAvailable
-        let context2 = await manager2.isGPUAvailable
-        #expect(context1 == context2)
+        // Both should use GPU (Metal4)
+        #expect(manager1.isGPUAvailable == true)
+        #expect(manager2.isGPUAvailable == true)
         #else
         throw XCTSkip("Metal not available in simulator")
         #endif
@@ -79,7 +76,7 @@ struct SharedMetalContextIntegrationTests {
             throw XCTSkip("Metal not available")
         }
 
-        let manager = await AccelerationManager(preference: .auto)
+        _ = try await AccelerationManager.create()
 
         // Perform multiple operations that should reuse buffers
         for _ in 0..<5 {
@@ -102,7 +99,7 @@ struct SharedMetalContextIntegrationTests {
             throw XCTSkip("Metal not available")
         }
 
-        let manager = await AccelerationManager(preference: .auto)
+        _ = try await AccelerationManager.create()
 
         // Concurrent operations should safely share buffer pool
         try await withThrowingTaskGroup(of: Float.self) { group in
@@ -135,7 +132,7 @@ struct SharedMetalContextIntegrationTests {
             throw XCTSkip("Metal not available")
         }
 
-        let manager = await AccelerationManager(preference: .auto)
+        _ = try await AccelerationManager.create()
 
         // Create large allocations to simulate memory pressure
         var largeData: [[Float]] = []
@@ -171,13 +168,13 @@ struct SharedMetalContextIntegrationTests {
 
         // Create and destroy manager
         do {
-            let manager = await AccelerationManager(preference: .auto)
-            _ = await manager.isGPUAvailable
+            let manager = try await AccelerationManager.create()
+            _ = manager.isGPUAvailable
         }
 
         // Create new manager - should still work
-        let newManager = await AccelerationManager(preference: .auto)
-        _ = await newManager.isGPUAvailable
+        let newManager = try await AccelerationManager.create()
+        _ = newManager.isGPUAvailable
 
         // Verify operations still work
         let data = [Float](repeating: 1.0, count: 384)
@@ -225,7 +222,7 @@ struct SharedMetalContextIntegrationTests {
             throw XCTSkip("Metal not available")
         }
 
-        _ = await AccelerationManager(preference: .auto)
+        _ = try await AccelerationManager.create()
 
         // Create test data for pooling
         let batchSize = 4
@@ -306,7 +303,7 @@ struct SharedMetalContextIntegrationTests {
             throw XCTSkip("Metal not available")
         }
 
-        let manager = await AccelerationManager(preference: .auto)
+        _ = try await AccelerationManager.create()
 
         // Create test data
         let query = [Float](repeating: 1.0, count: 384)
@@ -335,11 +332,9 @@ struct SharedMetalContextIntegrationTests {
         }
 
         // Multiple managers sharing context
-        let managers = await [
-            AccelerationManager(preference: .gpuOnly),
-            AccelerationManager(preference: .gpuOnly),
-            AccelerationManager(preference: .gpuOnly)
-        ]
+        _ = try await AccelerationManager.create()
+        _ = try await AccelerationManager.create()
+        _ = try await AccelerationManager.create()
 
         // Interleaved operations should not cause excessive overhead
         let data = [Float](repeating: 1.0, count: 384)
@@ -358,34 +353,40 @@ struct SharedMetalContextIntegrationTests {
 
     // MARK: - Error Handling
 
-    @Test("Metal unavailable falls back gracefully")
-    func metalUnavailableFallback() async throws {
-        // Test with CPU-only preference
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        let data = [Float](repeating: 1.0, count: 384)
-        let result = AccelerateBLAS.dotProduct(data, data)
-
-        // Should work even without Metal
-        #expect(result.isFinite)
-        #expect(result > 0)
-    }
-
-    @Test("Metal buffer allocation failure recovery")
-    func metalBufferAllocationFailure() async throws {
+    @Test("Metal operations complete successfully")
+    func metalOperationsComplete() async throws {
         #if !targetEnvironment(simulator)
         guard MTLCreateSystemDefaultDevice() != nil else {
             throw XCTSkip("Metal not available")
         }
 
-        // Try to allocate extremely large buffer (should fail gracefully)
-        let manager = await AccelerationManager(preference: .auto)
+        let manager = try await AccelerationManager.create()
 
-        // Create reasonable-sized data (not too large to cause issues)
         let data = [Float](repeating: 1.0, count: 384)
         let result = AccelerateBLAS.dotProduct(data, data)
 
-        // Should still work with fallback
+        #expect(result.isFinite)
+        #expect(result > 0)
+
+        _ = manager.isGPUAvailable
+        #else
+        throw XCTSkip("Metal not available in simulator")
+        #endif
+    }
+
+    @Test("Metal buffer allocation works correctly")
+    func metalBufferAllocationWorks() async throws {
+        #if !targetEnvironment(simulator)
+        guard MTLCreateSystemDefaultDevice() != nil else {
+            throw XCTSkip("Metal not available")
+        }
+
+        _ = try await AccelerationManager.create()
+
+        // Create reasonable-sized data
+        let data = [Float](repeating: 1.0, count: 384)
+        let result = AccelerateBLAS.dotProduct(data, data)
+
         #expect(result.isFinite)
         #else
         throw XCTSkip("Metal not available in simulator")
@@ -434,8 +435,8 @@ private extension Array {
 #else
 // Non-Metal platforms - provide placeholder tests
 
-@Suite("SharedMetalContext Integration (No Metal)", .tags(.integration))
-struct SharedMetalContextPlaceholderTests {
+@Suite("Metal4Context Integration (No Metal)", .tags(.integration))
+struct Metal4ContextPlaceholderTests {
     @Test("Metal not available on this platform")
     func metalNotAvailable() throws {
         throw XCTSkip("Metal not available on this platform")

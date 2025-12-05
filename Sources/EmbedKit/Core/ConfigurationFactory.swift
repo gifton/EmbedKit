@@ -94,17 +94,11 @@ public struct PipelineConfiguration: Sendable {
 
 // MARK: - Compute Configuration
 
-/// Configuration for GPU/CPU compute path selection and acceleration behavior.
+/// Configuration for GPU-accelerated compute operations.
 ///
-/// Bundles together the compute preference (GPU/CPU/auto), acceleration thresholds,
-/// and Metal-specific optimization settings.
+/// EmbedKit uses GPU acceleration (Metal4) for all compute operations.
+/// This configuration controls kernel optimization settings.
 public struct ComputeConfiguration: Sendable {
-
-    /// Preference for GPU vs CPU compute path selection.
-    public let preference: ComputePreference
-
-    /// Thresholds for determining when GPU acceleration is beneficial.
-    public let thresholds: AccelerationThresholds
 
     /// Whether to use fused Metal kernels when available.
     /// Fused kernels combine multiple operations (e.g., pooling + normalization)
@@ -124,55 +118,34 @@ public struct ComputeConfiguration: Sendable {
     /// Creates a compute configuration with the specified options.
     ///
     /// - Parameters:
-    ///   - preference: GPU/CPU preference (default: auto)
-    ///   - thresholds: Acceleration thresholds (default: standard)
     ///   - useFusedKernels: Use fused Metal kernels (default: true)
     ///   - adaptiveKernelSelection: Enable adaptive learning (default: true)
     ///   - maxResidentMemoryMB: Max GPU resident memory (default: 512)
     public init(
-        preference: ComputePreference = .auto,
-        thresholds: AccelerationThresholds = .default,
         useFusedKernels: Bool = true,
         adaptiveKernelSelection: Bool = true,
         maxResidentMemoryMB: Int = 512
     ) {
-        self.preference = preference
-        self.thresholds = thresholds
         self.useFusedKernels = useFusedKernels
         self.adaptiveKernelSelection = adaptiveKernelSelection
         self.maxResidentMemoryMB = maxResidentMemoryMB
     }
 
-    /// Default configuration with auto compute preference.
+    /// Default GPU-optimized configuration.
     public static let `default` = ComputeConfiguration()
 
-    /// Configuration optimized for GPU utilization.
+    /// Configuration optimized for maximum GPU utilization.
     public static func gpuOptimized() -> ComputeConfiguration {
         ComputeConfiguration(
-            preference: .auto,
-            thresholds: .aggressive,
             useFusedKernels: true,
             adaptiveKernelSelection: true,
             maxResidentMemoryMB: 1024
         )
     }
 
-    /// Configuration for CPU-only processing.
-    public static func cpuOnly() -> ComputeConfiguration {
-        ComputeConfiguration(
-            preference: .cpuOnly,
-            thresholds: .conservative,
-            useFusedKernels: false,
-            adaptiveKernelSelection: false,
-            maxResidentMemoryMB: 0
-        )
-    }
-
     /// Configuration for memory-constrained environments.
     public static func memoryEfficient() -> ComputeConfiguration {
         ComputeConfiguration(
-            preference: .auto,
-            thresholds: .conservative,
             useFusedKernels: true,
             adaptiveKernelSelection: false,
             maxResidentMemoryMB: 128
@@ -311,7 +284,6 @@ public enum ConfigurationFactory {
     /// - Dynamic batching: disabled for immediate processing
     /// - No length sorting (avoids delay)
     /// - Short timeout
-    /// - CPU may be faster for single items (no GPU dispatch overhead)
     ///
     /// - Returns: A latency-optimized pipeline configuration
     ///
@@ -330,7 +302,7 @@ public enum ConfigurationFactory {
                 poolingStrategy: .mean,
                 normalizeOutput: true,
                 inferenceDevice: .auto,
-                minElementsForGPU: 16384  // Higher threshold - CPU often faster for small
+                minElementsForGPU: 16384
             ),
             batch: BatchOptions(
                 maxBatchSize: 8,
@@ -340,8 +312,6 @@ public enum ConfigurationFactory {
                 bucketSize: 8
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: .conservative,  // Prefer CPU for small operations
                 useFusedKernels: true,
                 adaptiveKernelSelection: false,  // Consistent latency
                 maxResidentMemoryMB: 256
@@ -448,13 +418,12 @@ public enum ConfigurationFactory {
 
     /// Configuration optimized for battery efficiency on mobile devices.
     ///
-    /// Reduces power consumption by preferring CPU over GPU when possible
-    /// and using smaller batch sizes. Best for iOS apps where battery life
-    /// is a priority.
+    /// Uses moderate batch sizes and smaller GPU memory footprint.
+    /// Best for iOS apps where battery life is a priority.
     ///
-    /// - CPU-preferred for small operations (GPU has power overhead)
     /// - Moderate batch sizes
     /// - ANE (Apple Neural Engine) for inference when available
+    /// - Lower GPU memory usage
     ///
     /// - Returns: A battery-efficient pipeline configuration
     ///
@@ -473,7 +442,7 @@ public enum ConfigurationFactory {
                 poolingStrategy: .mean,
                 normalizeOutput: true,
                 inferenceDevice: .ane,  // Neural Engine is power-efficient
-                minElementsForGPU: 32768  // High threshold - prefer CPU/ANE
+                minElementsForGPU: 32768
             ),
             batch: BatchOptions(
                 maxBatchSize: 16,  // Moderate batches
@@ -484,8 +453,6 @@ public enum ConfigurationFactory {
                 tokenizationConcurrency: 2  // Fewer threads = less power
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: .conservative,
                 useFusedKernels: true,
                 adaptiveKernelSelection: false,  // Consistent, no learning overhead
                 maxResidentMemoryMB: 128
@@ -610,8 +577,6 @@ public enum ConfigurationFactory {
                 timeout: 2.0
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: .conservative,
                 useFusedKernels: true,
                 adaptiveKernelSelection: false,
                 maxResidentMemoryMB: 256
@@ -719,12 +684,6 @@ public enum ConfigurationFactory {
                 bucketSize: 16
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: AccelerationThresholds(
-                    minCandidatesForGPU: 500,  // Lower for 384-dim vectors
-                    minDimensionForGPU: 64,
-                    minBatchForNormalization: 50
-                ),
                 useFusedKernels: true,
                 adaptiveKernelSelection: true,
                 maxResidentMemoryMB: 256
@@ -767,12 +726,6 @@ public enum ConfigurationFactory {
                 maxBatchTokens: 8192  // Limit total tokens
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: AccelerationThresholds(
-                    minCandidatesForGPU: 200,  // Lower for 768-dim vectors
-                    minDimensionForGPU: 64,
-                    minBatchForNormalization: 25
-                ),
                 useFusedKernels: true,
                 adaptiveKernelSelection: true,
                 maxResidentMemoryMB: 512  // More memory for larger embeddings
@@ -821,12 +774,6 @@ public enum ConfigurationFactory {
                 maxBatchTokens: maxTokens * maxBatch
             ),
             compute: ComputeConfiguration(
-                preference: .auto,
-                thresholds: AccelerationThresholds(
-                    minCandidatesForGPU: 100,  // Very low for high-dim vectors
-                    minDimensionForGPU: 64,
-                    minBatchForNormalization: 10
-                ),
                 useFusedKernels: true,
                 adaptiveKernelSelection: true,
                 maxResidentMemoryMB: 1024  // More memory for large vectors
@@ -917,16 +864,14 @@ extension PipelineConfiguration {
         )
     }
 
-    /// Returns a copy of this configuration with CPU-only compute.
+    /// Returns a copy of this configuration with memory-efficient settings.
     ///
-    /// - Returns: A new pipeline configuration using CPU-only compute
-    public func withCPUOnly() -> PipelineConfiguration {
+    /// - Returns: A new pipeline configuration using memory-efficient compute
+    public func withMemoryEfficiency() -> PipelineConfiguration {
         PipelineConfiguration(
-            embedding: embedding
-                .with(inferenceDevice: .cpu)
-                .with(minElementsForGPU: Int.max),  // Never use GPU
+            embedding: embedding,
             batch: batch,
-            compute: .cpuOnly(),
+            compute: .memoryEfficient(),
             cache: cache,
             memoryBudget: memoryBudget
         )
@@ -941,7 +886,7 @@ extension PipelineConfiguration: CustomStringConvertible {
 
         parts.append("embedding: maxTokens=\(embedding.maxTokens), pool=\(embedding.poolingStrategy)")
         parts.append("batch: max=\(batch.maxBatchSize), dynamic=\(batch.dynamicBatching)")
-        parts.append("compute: \(compute.preference), fused=\(compute.useFusedKernels)")
+        parts.append("compute: fused=\(compute.useFusedKernels), memory=\(compute.maxResidentMemoryMB)MB")
 
         if let cache = cache {
             parts.append("cache: entries=\(cache.maxEntries)")
@@ -957,6 +902,6 @@ extension PipelineConfiguration: CustomStringConvertible {
 
 extension ComputeConfiguration: CustomStringConvertible {
     public var description: String {
-        "ComputeConfiguration(preference: \(preference), fused: \(useFusedKernels), adaptive: \(adaptiveKernelSelection))"
+        "ComputeConfiguration(fused: \(useFusedKernels), adaptive: \(adaptiveKernelSelection), memory: \(maxResidentMemoryMB)MB)"
     }
 }

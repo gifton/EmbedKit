@@ -1,24 +1,35 @@
 // EmbedKit - Index Configuration
-// Configuration types for vector index setup
+// Configuration types for GPU-accelerated vector index
 
 import Foundation
 import VectorCore
-import VectorIndex
+import VectorAccelerate
 
 // MARK: - Index Type
 
-/// Type of vector index to use.
-public enum IndexType: String, Sendable, CaseIterable {
-    /// Flat index - exact nearest neighbor search.
-    /// Best for: small datasets (<10K vectors), when exact results required.
+/// Type of GPU vector index to use.
+///
+/// EmbedKit uses VectorAccelerate's `AcceleratedVectorIndex` for all indexing,
+/// providing GPU-accelerated search with two index types.
+public enum IndexType: String, Sendable, CaseIterable, Codable {
+    /// Flat (brute-force) GPU index.
+    ///
+    /// Best for:
+    /// - Small to medium datasets (< 50K vectors)
+    /// - When exact results are required
+    /// - Sub-millisecond search latency
+    ///
+    /// Performance: ~0.30ms search on 5K vectors (128D)
     case flat
 
-    /// HNSW (Hierarchical Navigable Small World) index.
-    /// Best for: medium to large datasets, fast approximate search.
-    case hnsw
-
-    /// IVF (Inverted File) index.
-    /// Best for: very large datasets with acceptable accuracy trade-off.
+    /// IVF (Inverted File) GPU index with K-means clustering.
+    ///
+    /// Best for:
+    /// - Large datasets (50K+ vectors)
+    /// - When approximate results are acceptable
+    /// - Memory-constrained environments
+    ///
+    /// Requires calling `train()` after inserting vectors.
     case ivf
 }
 
@@ -29,9 +40,29 @@ public typealias DistanceMetric = SupportedDistanceMetric
 
 // MARK: - Index Configuration
 
-/// Configuration for creating an embedding index.
+/// Configuration for creating a GPU-accelerated embedding index.
+///
+/// `IndexConfiguration` defines the parameters for VectorAccelerate's
+/// `AcceleratedVectorIndex`, which provides GPU-first vector search.
+///
+/// ## Example Usage
+/// ```swift
+/// // Small dataset - exact search
+/// let config = IndexConfiguration.flat(dimension: 384)
+///
+/// // Large dataset - approximate search
+/// let config = IndexConfiguration.ivf(
+///     dimension: 768,
+///     nlist: 256,
+///     nprobe: 16,
+///     capacity: 100_000
+/// )
+/// ```
 public struct IndexConfiguration: Sendable {
-    /// Type of index to create.
+
+    // MARK: - Core Properties
+
+    /// Type of GPU index to create.
     public let indexType: IndexType
 
     /// Vector dimension (must match embedding model output).
@@ -40,173 +71,204 @@ public struct IndexConfiguration: Sendable {
     /// Distance metric for similarity computation.
     public let metric: DistanceMetric
 
+    /// Initial GPU buffer capacity (number of vectors).
+    ///
+    /// The buffer grows automatically (2x strategy) if exceeded,
+    /// but pre-allocating reduces reallocations.
+    public let capacity: Int
+
     /// Whether to store original text with embeddings.
     public let storeText: Bool
 
-    /// HNSW-specific configuration.
-    public let hnswConfig: HNSWConfiguration?
+    // MARK: - IVF Parameters
 
-    /// IVF-specific configuration.
-    public let ivfConfig: IVFConfiguration?
+    /// Number of clusters for IVF index.
+    ///
+    /// Only used when `indexType == .ivf`.
+    /// Recommended: sqrt(n) to 4*sqrt(n) where n = expected vector count.
+    public let nlist: Int?
 
-    /// Compute preference for GPU/CPU selection.
-    public let computePreference: ComputePreference
+    /// Number of clusters to probe during IVF search.
+    ///
+    /// Only used when `indexType == .ivf`.
+    /// Higher values = better recall, slower search.
+    /// Recommended: 1-20% of nlist.
+    public let nprobe: Int?
 
-    /// Default configuration for common use cases.
-    public static func `default`(
+    // MARK: - Factory Methods
+
+    /// Create a flat index configuration for exact search.
+    ///
+    /// - Parameters:
+    ///   - dimension: Vector dimension (e.g., 384 for MiniLM, 768 for BERT)
+    ///   - metric: Distance metric (default: cosine)
+    ///   - capacity: Initial capacity (default: 10,000)
+    ///   - storeText: Whether to store original text (default: true)
+    /// - Returns: Configuration for flat GPU index
+    public static func flat(
         dimension: Int,
-        computePreference: ComputePreference = .auto
-    ) -> IndexConfiguration {
-        IndexConfiguration(
-            indexType: .hnsw,
-            dimension: dimension,
-            metric: .cosine,
-            storeText: true,
-            hnswConfig: .default,
-            ivfConfig: nil,
-            computePreference: computePreference
-        )
-    }
-
-    /// Configuration for small datasets with exact search.
-    public static func exact(
-        dimension: Int,
-        computePreference: ComputePreference = .auto
+        metric: DistanceMetric = .cosine,
+        capacity: Int = 10_000,
+        storeText: Bool = true
     ) -> IndexConfiguration {
         IndexConfiguration(
             indexType: .flat,
             dimension: dimension,
-            metric: .cosine,
-            storeText: true,
-            hnswConfig: nil,
-            ivfConfig: nil,
-            computePreference: computePreference
+            metric: metric,
+            capacity: capacity,
+            storeText: storeText,
+            nlist: nil,
+            nprobe: nil
         )
+    }
+
+    /// Create an IVF index configuration for approximate search.
+    ///
+    /// IVF uses K-means clustering to partition vectors. At search time,
+    /// only `nprobe` clusters are searched instead of all vectors.
+    ///
+    /// **Important:** Call `train()` on the EmbeddingStore after inserting
+    /// vectors to build the cluster centroids.
+    ///
+    /// - Parameters:
+    ///   - dimension: Vector dimension
+    ///   - nlist: Number of clusters (default: 256)
+    ///   - nprobe: Clusters to search (default: 16)
+    ///   - metric: Distance metric (default: cosine)
+    ///   - capacity: Initial capacity (default: 100,000)
+    ///   - storeText: Whether to store original text (default: false for large datasets)
+    /// - Returns: Configuration for IVF GPU index
+    public static func ivf(
+        dimension: Int,
+        nlist: Int = 256,
+        nprobe: Int = 16,
+        metric: DistanceMetric = .cosine,
+        capacity: Int = 100_000,
+        storeText: Bool = false
+    ) -> IndexConfiguration {
+        IndexConfiguration(
+            indexType: .ivf,
+            dimension: dimension,
+            metric: metric,
+            capacity: capacity,
+            storeText: storeText,
+            nlist: nlist,
+            nprobe: nprobe
+        )
+    }
+
+    /// Default configuration - flat index with cosine similarity.
+    ///
+    /// Suitable for most embedding use cases with < 50K vectors.
+    public static func `default`(dimension: Int) -> IndexConfiguration {
+        .flat(dimension: dimension)
+    }
+
+    /// Configuration for small datasets with exact search.
+    public static func exact(dimension: Int) -> IndexConfiguration {
+        .flat(dimension: dimension, capacity: 10_000, storeText: true)
     }
 
     /// Configuration for large datasets prioritizing speed.
-    public static func fast(
+    ///
+    /// Uses IVF with automatic cluster sizing based on expected size.
+    public static func scalable(
         dimension: Int,
-        computePreference: ComputePreference = .auto
+        expectedSize: Int = 100_000
     ) -> IndexConfiguration {
-        IndexConfiguration(
-            indexType: .hnsw,
+        let nlist = max(16, min(Int(sqrt(Double(expectedSize)) * 2), 1024))
+        let nprobe = max(1, nlist / 16)
+        return .ivf(
             dimension: dimension,
-            metric: .cosine,
-            storeText: false,
-            hnswConfig: .fast,
-            ivfConfig: nil,
-            computePreference: computePreference
+            nlist: nlist,
+            nprobe: nprobe,
+            capacity: expectedSize,
+            storeText: false
         )
     }
 
-    /// Configuration for very large datasets.
-    public static func scalable(
-        dimension: Int,
-        expectedSize: Int = 100_000,
-        computePreference: ComputePreference = .auto
-    ) -> IndexConfiguration {
-        let nlist = max(16, min(expectedSize / 100, 1024))
-        return IndexConfiguration(
-            indexType: .ivf,
-            dimension: dimension,
-            metric: .cosine,
-            storeText: false,
-            hnswConfig: nil,
-            ivfConfig: IVFConfiguration(nlist: nlist, nprobe: max(1, nlist / 16)),
-            computePreference: computePreference
-        )
-    }
+    // MARK: - Initialization
 
     public init(
         indexType: IndexType,
         dimension: Int,
         metric: DistanceMetric = .cosine,
+        capacity: Int = 10_000,
         storeText: Bool = true,
-        hnswConfig: HNSWConfiguration? = nil,
-        ivfConfig: IVFConfiguration? = nil,
-        computePreference: ComputePreference = .auto
+        nlist: Int? = nil,
+        nprobe: Int? = nil
     ) {
         self.indexType = indexType
         self.dimension = dimension
         self.metric = metric
+        self.capacity = capacity
         self.storeText = storeText
-        self.hnswConfig = hnswConfig
-        self.ivfConfig = ivfConfig
-        self.computePreference = computePreference
-    }
-}
-
-// MARK: - HNSW Configuration
-
-/// Configuration for HNSW index.
-public struct HNSWConfiguration: Sendable {
-    /// Maximum number of connections per node per layer.
-    public let m: Int
-
-    /// Size of dynamic candidate list during construction.
-    public let efConstruction: Int
-
-    /// Size of dynamic candidate list during search.
-    public let efSearch: Int
-
-    /// Default balanced configuration.
-    public static let `default` = HNSWConfiguration(
-        m: 16,
-        efConstruction: 200,
-        efSearch: 64
-    )
-
-    /// Configuration prioritizing search speed.
-    public static let fast = HNSWConfiguration(
-        m: 12,
-        efConstruction: 100,
-        efSearch: 32
-    )
-
-    /// Configuration prioritizing accuracy.
-    public static let accurate = HNSWConfiguration(
-        m: 32,
-        efConstruction: 400,
-        efSearch: 128
-    )
-
-    public init(m: Int = 16, efConstruction: Int = 200, efSearch: Int = 64) {
-        self.m = m
-        self.efConstruction = efConstruction
-        self.efSearch = efSearch
-    }
-
-    /// Convert to VectorIndex HNSW configuration.
-    internal var toVectorIndex: HNSWIndex.Configuration {
-        HNSWIndex.Configuration(
-            m: m,
-            efConstruction: efConstruction,
-            efSearch: efSearch
-        )
-    }
-}
-
-// MARK: - IVF Configuration
-
-/// Configuration for IVF index.
-public struct IVFConfiguration: Sendable {
-    /// Number of clusters (coarse centroids).
-    public let nlist: Int
-
-    /// Number of clusters to probe during search.
-    public let nprobe: Int
-
-    /// Default configuration.
-    public static let `default` = IVFConfiguration(nlist: 256, nprobe: 8)
-
-    public init(nlist: Int = 256, nprobe: Int = 8) {
         self.nlist = nlist
         self.nprobe = nprobe
     }
 
-    /// Convert to VectorIndex IVF configuration.
-    internal var toVectorIndex: IVFIndex.Configuration {
-        IVFIndex.Configuration(nlist: nlist, nprobe: nprobe)
+    // MARK: - VectorAccelerate Conversion
+
+    /// Convert to VectorAccelerate's IndexConfiguration.
+    internal func toVectorAccelerate() -> VectorAccelerate.IndexConfiguration {
+        switch indexType {
+        case .flat:
+            return .flat(
+                dimension: dimension,
+                metric: metric,
+                capacity: capacity
+            )
+        case .ivf:
+            return .ivf(
+                dimension: dimension,
+                nlist: nlist ?? 256,
+                nprobe: nprobe ?? 16,
+                metric: metric,
+                capacity: capacity
+            )
+        }
+    }
+
+    // MARK: - Validation
+
+    /// Validate the configuration.
+    /// - Throws: `IndexConfigurationError` if invalid
+    public func validate() throws {
+        guard dimension > 0 else {
+            throw IndexConfigurationError.invalidDimension(dimension)
+        }
+
+        guard capacity > 0 else {
+            throw IndexConfigurationError.invalidCapacity(capacity)
+        }
+
+        if indexType == .ivf {
+            guard let nlist = nlist, nlist > 0 else {
+                throw IndexConfigurationError.invalidIVFParameters("nlist must be > 0")
+            }
+            guard let nprobe = nprobe, nprobe > 0, nprobe <= nlist else {
+                throw IndexConfigurationError.invalidIVFParameters("nprobe must be > 0 and <= nlist")
+            }
+        }
+    }
+}
+
+// MARK: - Errors
+
+/// Errors from index configuration validation.
+public enum IndexConfigurationError: Error, LocalizedError, Sendable {
+    case invalidDimension(Int)
+    case invalidCapacity(Int)
+    case invalidIVFParameters(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidDimension(let d):
+            return "Invalid dimension: \(d). Dimension must be > 0."
+        case .invalidCapacity(let c):
+            return "Invalid capacity: \(c). Capacity must be > 0."
+        case .invalidIVFParameters(let msg):
+            return "Invalid IVF parameters: \(msg)"
+        }
     }
 }

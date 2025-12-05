@@ -47,7 +47,7 @@ let package = Package(
         // VSK dependencies - Official releases (updated Nov 2024)
         .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.6"),
         .package(url: "https://github.com/gifton/VectorIndex.git", from: "0.1.3"),
-        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.1.2"),
+        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.3.0"),
 
         // System dependencies
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),

@@ -103,7 +103,7 @@ let cpuStore = try await EmbeddingStore(
 )
 
 // Check acceleration status
-let isGPU = await store.isAccelerationAvailable
+let isGPU = store.isAccelerationAvailable
 let stats = await store.accelerationStatistics()
 print("GPU ops: \(stats?.gpuOperations ?? 0)")
 ```

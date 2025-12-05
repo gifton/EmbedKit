@@ -142,17 +142,17 @@ struct EmbeddingStoreConvenienceTests {
 @Suite("Storage Extensions - Factory")
 struct EmbeddingStoresFactoryTests {
 
-    @Test("inMemory creates flat index store")
-    func inMemoryFactory() async throws {
-        let store = try await EmbeddingStores.inMemory(dimension: 384)
+    @Test("flat creates GPU flat index store")
+    func flatFactory() async throws {
+        let store = try await EmbeddingStores.flat(dimension: 384)
 
         let count = await store.count
         #expect(count == 0)
     }
 
-    @Test("fast creates HNSW store")
-    func fastFactory() async throws {
-        let store = try await EmbeddingStores.fast(dimension: 384)
+    @Test("ivf creates GPU IVF store")
+    func ivfFactory() async throws {
+        let store = try await EmbeddingStores.ivf(dimension: 384)
 
         let embedding = Embedding(
             vector: [Float](repeating: 0.1, count: 384),
