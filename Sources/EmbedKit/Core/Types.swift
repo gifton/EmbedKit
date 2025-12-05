@@ -208,8 +208,7 @@ public struct EmbeddingConfiguration: Sendable {
 
     /// Target device for model inference (CoreML compute units).
     ///
-    /// - Note: For GPU acceleration of search/distance operations, configure
-    ///   `ComputePreference` on `IndexConfiguration` or `AccelerationManager` instead.
+    /// - Note: Search/distance operations always use GPU via Metal4.
     public let inferenceDevice: ComputeDevice
 
     /// Minimum number of elements (sequenceLength × dimensions) before GPU acceleration
@@ -309,7 +308,7 @@ public struct EmbeddingConfiguration: Sendable {
 /// Target device for model inference operations.
 ///
 /// Controls which compute units CoreML uses for model inference.
-/// This is different from `ComputePreference` (used for search/distance acceleration).
+/// Search/distance operations always use GPU via Metal4.
 ///
 /// - `cpu`: Force CPU-only inference. Most compatible, but slowest.
 /// - `gpu`: Prefer GPU for inference. Good for large models.
@@ -321,8 +320,6 @@ public struct EmbeddingConfiguration: Sendable {
 /// var config = EmbeddingConfiguration()
 /// config.inferenceDevice = .ane  // Use Neural Engine for inference
 /// ```
-///
-/// - Note: For GPU acceleration of search/distance operations, use `ComputePreference` instead.
 public enum ComputeDevice: String, CaseIterable, Codable, Sendable {
     case cpu
     case gpu

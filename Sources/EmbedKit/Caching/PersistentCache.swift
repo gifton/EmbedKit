@@ -455,7 +455,7 @@ public actor PersistentCache {
 
     private func updateAccessTime(id: Int64) {
         let now = Date().timeIntervalSince1970
-        try? connection.execute(
+        _ = try? connection.execute(
             "UPDATE embeddings SET accessed_at = ?, access_count = access_count + 1 WHERE id = ?",
             parameters: [.real(now), .integer(id)]
         )

@@ -508,7 +508,8 @@ enum TensorTestError: Error {
     case invalidDimensions
 }
 
-// Tag for performance tests
+// Tags for test categorization
 extension Tag {
     @Tag static var performance: Self
+    @Tag static var integration: Self
 }

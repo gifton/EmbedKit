@@ -3,120 +3,6 @@ import Testing
 import Foundation
 @testable import EmbedKit
 
-// MARK: - HNSW Index Tests
-
-@Suite("EmbeddingStore - HNSW Index")
-struct EmbeddingStoreHNSWTests {
-
-    @Test("HNSW index creates with default config")
-    func hnswDefaultConfig() async throws {
-        let config = IndexConfiguration.default(dimension: 128)
-        let store = try await EmbeddingStore(config: config)
-
-        #expect(config.indexType == .hnsw)
-        #expect(config.hnswConfig != nil)
-
-        let count = await store.count
-        #expect(count == 0)
-    }
-
-    @Test("HNSW index creates with fast config")
-    func hnswFastConfig() async throws {
-        let config = IndexConfiguration(
-            indexType: .hnsw,
-            dimension: 128,
-            metric: .cosine,
-            hnswConfig: .fast
-        )
-        let store = try await EmbeddingStore(config: config)
-
-        // Store and search should work
-        let embedding = Embedding(
-            vector: [Float](repeating: 0.1, count: 128),
-            metadata: EmbeddingMetadata.mock()
-        )
-        _ = try await store.store(embedding)
-
-        let count = await store.count
-        #expect(count == 1)
-    }
-
-    @Test("HNSW index creates with accurate config")
-    func hnswAccurateConfig() async throws {
-        let config = IndexConfiguration(
-            indexType: .hnsw,
-            dimension: 64,
-            metric: .cosine,
-            hnswConfig: .accurate
-        )
-        let store = try await EmbeddingStore(config: config)
-
-        // Store multiple embeddings
-        for i in 0..<20 {
-            let embedding = Embedding(
-                vector: (0..<64).map { _ in Float.random(in: 0...1) },
-                metadata: EmbeddingMetadata.mock()
-            )
-            _ = try await store.store(embedding, id: "e\(i)")
-        }
-
-        let count = await store.count
-        #expect(count == 20)
-    }
-
-    @Test("HNSW search returns approximate neighbors")
-    func hnswApproximateSearch() async throws {
-        let config = IndexConfiguration.default(dimension: 32)
-        let store = try await EmbeddingStore(config: config)
-
-        // Insert many vectors
-        for i in 0..<100 {
-            let embedding = Embedding(
-                vector: (0..<32).map { j in Float(i + j) / 100 },
-                metadata: EmbeddingMetadata.mock()
-            )
-            _ = try await store.store(embedding, id: "e\(i)")
-        }
-
-        let query = Embedding(
-            vector: (0..<32).map { Float($0) / 100 },
-            metadata: EmbeddingMetadata.mock()
-        )
-        let results = try await store.search(query, k: 10)
-
-        #expect(results.count == 10)
-        // Results should include e0 or nearby vectors
-    }
-
-    @Test("HNSW custom M and efConstruction")
-    func hnswCustomParams() async throws {
-        let hnswConfig = HNSWConfiguration(m: 8, efConstruction: 50, efSearch: 20)
-        let config = IndexConfiguration(
-            indexType: .hnsw,
-            dimension: 16,
-            metric: .cosine,
-            hnswConfig: hnswConfig
-        )
-        let store = try await EmbeddingStore(config: config)
-
-        for i in 0..<50 {
-            let embedding = Embedding(
-                vector: [Float](repeating: Float(i) / 50, count: 16),
-                metadata: EmbeddingMetadata.mock()
-            )
-            _ = try await store.store(embedding)
-        }
-
-        let query = Embedding(
-            vector: [Float](repeating: 0.5, count: 16),
-            metadata: EmbeddingMetadata.mock()
-        )
-        let results = try await store.search(query, k: 5)
-
-        #expect(results.count == 5)
-    }
-}
-
 // MARK: - IVF Index Tests
 
 @Suite("EmbeddingStore - IVF Index")
@@ -128,7 +14,8 @@ struct EmbeddingStoreIVFTests {
         let store = try await EmbeddingStore(config: config)
 
         #expect(config.indexType == .ivf)
-        #expect(config.ivfConfig != nil)
+        #expect(config.nlist != nil)
+        #expect(config.nprobe != nil)
 
         let count = await store.count
         #expect(count == 0)
@@ -151,12 +38,12 @@ struct EmbeddingStoreIVFTests {
 
     @Test("IVF custom nlist and nprobe")
     func ivfCustomParams() async throws {
-        let ivfConfig = IVFConfiguration(nlist: 16, nprobe: 4)
-        let config = IndexConfiguration(
-            indexType: .ivf,
+        let config = IndexConfiguration.ivf(
             dimension: 32,
+            nlist: 16,
+            nprobe: 4,
             metric: .euclidean,
-            ivfConfig: ivfConfig
+            capacity: 1000
         )
         let store = try await EmbeddingStore(config: config)
 
@@ -168,13 +55,21 @@ struct EmbeddingStoreIVFTests {
             _ = try await store.store(embedding)
         }
 
+        // Train the IVF index
+        try await store.train()
+
         let count = await store.count
         #expect(count == 30)
     }
 
     @Test("IVF search with many vectors")
     func ivfSearchManyVectors() async throws {
-        let config = IndexConfiguration.scalable(dimension: 16, expectedSize: 200)
+        let config = IndexConfiguration.ivf(
+            dimension: 16,
+            nlist: 8,
+            nprobe: 4,
+            capacity: 200
+        )
         let store = try await EmbeddingStore(config: config)
 
         // Insert vectors
@@ -186,6 +81,9 @@ struct EmbeddingStoreIVFTests {
             _ = try await store.store(embedding, id: "v\(i)")
         }
 
+        // Train the IVF index
+        try await store.train()
+
         let query = Embedding(
             vector: (0..<16).map { Float($0) / 16 },
             metadata: EmbeddingMetadata.mock()
@@ -193,6 +91,37 @@ struct EmbeddingStoreIVFTests {
         let results = try await store.search(query, k: 10)
 
         #expect(results.count == 10)
+    }
+
+    @Test("IVF training is required for search")
+    func ivfTrainingRequired() async throws {
+        let config = IndexConfiguration.ivf(
+            dimension: 16,
+            nlist: 4,
+            nprobe: 2,
+            capacity: 50
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        // Insert vectors
+        for i in 0..<20 {
+            let embedding = Embedding(
+                vector: (0..<16).map { _ in Float.random(in: 0...1) },
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding)
+        }
+
+        // Before training, isTrained should be false
+        let trainedBefore = await store.isTrained
+        #expect(trainedBefore == false)
+
+        // Train
+        try await store.train()
+
+        // After training, isTrained should be true
+        let trainedAfter = await store.isTrained
+        #expect(trainedAfter == true)
     }
 }
 
@@ -270,43 +199,77 @@ struct EmbeddingStoreFlatTests {
         #expect(results.count == 1)
         #expect(results[0].similarity > 0.99)
     }
-}
 
-// MARK: - Optimize Tests
+    @Test("Flat index with default config")
+    func flatDefaultConfig() async throws {
+        let config = IndexConfiguration.default(dimension: 128)
+        let store = try await EmbeddingStore(config: config)
 
-@Suite("EmbeddingStore - Optimize")
-struct EmbeddingStoreOptimizeTests {
-
-    @Test("Optimize flat index is no-op")
-    func optimizeFlatNoOp() async throws {
-        let store = try await EmbeddingStore(config: .exact(dimension: 3))
-        let embedding = Embedding(vector: [1.0, 0.0, 0.0], metadata: EmbeddingMetadata.mock())
-        _ = try await store.store(embedding)
-
-        // Should not throw
-        try await store.optimize()
+        #expect(config.indexType == .flat)
 
         let count = await store.count
-        #expect(count == 1)
+        #expect(count == 0)
     }
 
-    @Test("Optimize HNSW index")
-    func optimizeHNSW() async throws {
-        let store = try await EmbeddingStore(config: .default(dimension: 16))
+    @Test("Flat index search with many vectors")
+    func flatSearchManyVectors() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 32, capacity: 200))
 
+        // Insert many vectors
+        for i in 0..<100 {
+            let embedding = Embedding(
+                vector: (0..<32).map { j in Float(i + j) / 100 },
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding, id: "e\(i)")
+        }
+
+        let query = Embedding(
+            vector: (0..<32).map { Float($0) / 100 },
+            metadata: EmbeddingMetadata.mock()
+        )
+        let results = try await store.search(query, k: 10)
+
+        #expect(results.count == 10)
+        // Results should include e0 or nearby vectors
+    }
+}
+
+// MARK: - Compaction Tests
+
+@Suite("EmbeddingStore - Compaction")
+struct EmbeddingStoreCompactionTests {
+
+    @Test("Compact reclaims deleted space")
+    func compactReclaimsSpace() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 16, capacity: 50))
+
+        // Store embeddings
         for i in 0..<20 {
             let embedding = Embedding(
                 vector: [Float](repeating: Float(i) / 20, count: 16),
                 metadata: EmbeddingMetadata.mock()
             )
-            _ = try await store.store(embedding)
+            _ = try await store.store(embedding, id: "e\(i)")
         }
 
-        // Should not throw
-        try await store.optimize()
+        // Remove some
+        for i in 0..<10 {
+            try await store.remove(id: "e\(i)")
+        }
 
-        let count = await store.count
-        #expect(count == 20)
+        let countBefore = await store.count
+        #expect(countBefore == 10)
+
+        // Compact
+        let remapped = try await store.compact()
+
+        // Some handles may have been remapped
+        #expect(remapped >= 0)
+
+        // Count should still be correct
+        let countAfter = await store.count
+        #expect(countAfter == 10)
     }
 }
 
@@ -332,25 +295,20 @@ struct EmbeddingStoreStatisticsTests {
         #expect(stats.vectorCount == 7)
     }
 
-    @Test("Statistics reflect correct dimension")
-    func statisticsDimension() async throws {
-        let store = try await EmbeddingStore(config: .exact(dimension: 256))
+    @Test("Statistics show memory usage")
+    func statisticsMemory() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 256, capacity: 100))
 
-        let stats = await store.statistics()
+        for i in 0..<10 {
+            let embedding = Embedding(
+                vector: [Float](repeating: Float(i) / 10, count: 256),
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding)
+        }
 
-        #expect(stats.dimension == 256)
-    }
-
-    @Test("Statistics reflect index type")
-    func statisticsIndexType() async throws {
-        let flatStore = try await EmbeddingStore(config: .exact(dimension: 3))
-        let hnswStore = try await EmbeddingStore(config: .default(dimension: 3))
-
-        let flatStats = await flatStore.statistics()
-        let hnswStats = await hnswStore.statistics()
-
-        #expect(flatStats.indexType == "Flat")
-        #expect(hnswStats.indexType == "HNSW")
+        let memUsage = await store.memoryUsage
+        #expect(memUsage > 0)
     }
 }
 

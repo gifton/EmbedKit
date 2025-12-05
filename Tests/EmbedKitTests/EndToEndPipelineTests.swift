@@ -5,7 +5,6 @@ import Testing
 import Foundation
 @testable import EmbedKit
 import VectorCore
-import VectorIndex
 
 // MARK: - Complete RAG Pipeline Tests
 
@@ -306,16 +305,13 @@ struct EndToEndPipelineTests {
 
         // Create stores with different index types
         let flatStore = try await EmbeddingStore(config: .exact(dimension: dim))
-        let hnswStore = try await EmbeddingStore(config: .default(dimension: dim))
-        // Use custom IVF config with storeText: true for this test
-        // (scalable preset disables text storage for memory efficiency)
-        let ivfConfig = IndexConfiguration(
-            indexType: .ivf,
+        // Use IVF config with storeText: true for this test
+        let ivfConfig = IndexConfiguration.ivf(
             dimension: dim,
-            metric: .cosine,
-            storeText: true,  // Enable text storage for test verification
-            hnswConfig: nil,
-            ivfConfig: IVFConfiguration(nlist: 16, nprobe: 4)
+            nlist: 16,
+            nprobe: 4,
+            capacity: 1000,
+            storeText: true
         )
         let ivfStore = try await EmbeddingStore(config: ivfConfig)
 
@@ -328,21 +324,21 @@ struct EndToEndPipelineTests {
             let embedding = Embedding(vector: vector, metadata: EmbeddingMetadata.mock())
 
             _ = try await flatStore.store(embedding, text: doc)
-            _ = try await hnswStore.store(embedding, text: doc)
             _ = try await ivfStore.store(embedding, text: doc)
         }
+
+        // Train IVF index
+        try await ivfStore.train()
 
         // Query all indexes
         let query = try await generator.produce("doc1")
         let queryEmbed = Embedding(vector: query, metadata: EmbeddingMetadata.mock())
 
         let flatResults = try await flatStore.search(queryEmbed, k: 1)
-        let hnswResults = try await hnswStore.search(queryEmbed, k: 1)
         let ivfResults = try await ivfStore.search(queryEmbed, k: 1)
 
         // All should return similar results
         #expect(flatResults.first?.text == "doc1")
-        #expect(hnswResults.first?.text == "doc1")
         #expect(ivfResults.first?.text == "doc1")
     }
 

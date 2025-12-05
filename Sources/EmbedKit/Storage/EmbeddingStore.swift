@@ -1,23 +1,23 @@
 // EmbedKit - Embedding Store
-// Main storage actor wrapping VectorIndex
+// GPU-accelerated storage using VectorAccelerate's AcceleratedVectorIndex
 
 import Foundation
 import VectorCore
-import VectorIndex
+import VectorAccelerate
 
 // MARK: - Embedding Store
 
-/// Actor for storing and searching embeddings using VectorIndex.
+/// Actor for GPU-accelerated embedding storage and search.
 ///
 /// `EmbeddingStore` provides a high-level interface for semantic search operations,
-/// wrapping VectorIndex's low-level index implementations with embedding-aware
-/// functionality.
+/// using VectorAccelerate's `AcceleratedVectorIndex` for GPU-first vector search
+/// with sub-millisecond latency.
 ///
 /// ## Example Usage
 /// ```swift
-/// // Create a store with HNSW index
+/// // Create a store with flat GPU index
 /// let store = try await EmbeddingStore(
-///     config: .default(dimension: 384),
+///     config: .flat(dimension: 384),
 ///     model: myEmbeddingModel
 /// )
 ///
@@ -27,16 +27,15 @@ import VectorIndex
 /// // Search with text query
 /// let results = try await store.search(text: "greeting", k: 5)
 ///
-/// // Or search with pre-computed embedding
-/// let embedding = try await model.embed("query")
-/// let results = try await store.search(embedding, k: 5)
+/// // For IVF index, call train() after inserting vectors
+/// try await store.train()
 /// ```
 public actor EmbeddingStore: EmbeddingStorable {
 
     // MARK: - Properties
 
-    /// The underlying vector index.
-    private let index: any VectorIndexProtocol
+    /// The GPU-accelerated vector index.
+    private let index: AcceleratedVectorIndex
 
     /// Configuration used to create this store.
     public nonisolated let config: IndexConfiguration
@@ -44,14 +43,20 @@ public actor EmbeddingStore: EmbeddingStorable {
     /// Optional embedding model for automatic text embedding.
     private let model: (any EmbeddingModel)?
 
+    /// VectorHandle to String ID mapping.
+    private var handleToID: [VectorHandle: String] = [:]
+
+    /// String ID to VectorHandle mapping.
+    private var idToHandle: [String: VectorHandle] = [:]
+
     /// Stored text lookup (id -> text).
     private var textStore: [String: String] = [:]
 
     /// Stored embeddings lookup (id -> embedding) for reranking.
     private var embeddingStore: [String: Embedding] = [:]
 
-    /// Acceleration manager for GPU-accelerated operations.
-    private var accelerator: AccelerationManager?
+    /// Stored metadata lookup (id -> metadata).
+    private var metadataStore: [String: [String: String]] = [:]
 
     /// Number of stored embeddings.
     public var count: Int {
@@ -73,60 +78,31 @@ public actor EmbeddingStore: EmbeddingStorable {
         self.config = config
         self.model = model
 
-        // Create the appropriate index type
-        switch config.indexType {
-        case .flat:
-            self.index = FlatIndex(dimension: config.dimension, metric: config.metric)
-        case .hnsw:
-            let hnswConfig = config.hnswConfig ?? .default
-            self.index = HNSWIndex(
-                dimension: config.dimension,
-                metric: config.metric,
-                config: hnswConfig.toVectorIndex
-            )
-        case .ivf:
-            let ivfConfig = config.ivfConfig ?? .default
-            self.index = IVFIndex(
-                dimension: config.dimension,
-                metric: config.metric,
-                config: ivfConfig.toVectorIndex
-            )
-        }
+        // Validate configuration
+        try config.validate()
 
-        // Initialize accelerator if not CPU-only
-        if config.computePreference != .cpuOnly {
-            self.accelerator = await AccelerationManager(preference: config.computePreference)
-        }
+        // Create GPU-accelerated index
+        let vaConfig = config.toVectorAccelerate()
+        self.index = try await AcceleratedVectorIndex(configuration: vaConfig)
     }
 
-    /// Create an embedding store from an existing VectorIndex.
+    /// Create an embedding store with a custom Metal4Context.
     /// - Parameters:
-    ///   - index: Existing vector index
-    ///   - config: Optional configuration (uses defaults if not provided)
+    ///   - config: Index configuration
+    ///   - context: Shared Metal4Context for GPU operations
     ///   - model: Optional embedding model
-    public init<I: VectorIndexProtocol>(
-        index: I,
-        config: IndexConfiguration? = nil,
+    public init(
+        config: IndexConfiguration,
+        context: Metal4Context,
         model: (any EmbeddingModel)? = nil
-    ) async {
-        self.index = index
+    ) async throws {
+        self.config = config
         self.model = model
 
-        // Compute default config if not provided
-        if let providedConfig = config {
-            self.config = providedConfig
-        } else {
-            self.config = IndexConfiguration(
-                indexType: .flat, // We don't know the actual type
-                dimension: await index.dimension,
-                metric: await index.metric
-            )
-        }
+        try config.validate()
 
-        // Initialize accelerator if not CPU-only
-        if self.config.computePreference != .cpuOnly {
-            self.accelerator = await AccelerationManager(preference: self.config.computePreference)
-        }
+        let vaConfig = config.toVectorAccelerate()
+        self.index = try await AcceleratedVectorIndex(configuration: vaConfig, context: context)
     }
 
     // MARK: - Store Operations
@@ -148,12 +124,15 @@ public actor EmbeddingStore: EmbeddingStorable {
             )
         }
 
-        // Store in index
-        try await index.insert(
-            id: vectorId,
-            vector: embedding.vector,
-            metadata: metadata
-        )
+        // Convert metadata to VectorAccelerate format
+        let vaMetadata: VectorMetadata? = metadata
+
+        // Insert into GPU index
+        let handle = try await index.insert(embedding.vector, metadata: vaMetadata)
+
+        // Store mappings
+        handleToID[handle] = vectorId
+        idToHandle[vectorId] = handle
 
         // Store text if configured
         if config.storeText, let text = text {
@@ -162,6 +141,11 @@ public actor EmbeddingStore: EmbeddingStorable {
 
         // Store embedding for potential reranking
         embeddingStore[vectorId] = embedding
+
+        // Store metadata
+        if let metadata = metadata {
+            metadataStore[vectorId] = metadata
+        }
 
         return StoredEmbedding(
             id: vectorId,
@@ -196,18 +180,36 @@ public actor EmbeddingStore: EmbeddingStorable {
     ) async throws -> [EmbeddingSearchResult] {
         guard k > 0 else { return [] }
 
-        let results = try await index.search(
-            query: query.vector,
-            k: k,
-            filter: filter
-        )
+        // Validate dimension
+        guard query.vector.count == config.dimension else {
+            throw EmbeddingStoreError.dimensionMismatch(
+                expected: config.dimension,
+                actual: query.vector.count
+            )
+        }
 
-        return results.map { result in
-            EmbeddingSearchResult(
-                from: result,
-                text: textStore[result.id],
-                metadata: nil, // VectorIndex stores this internally
-                embedding: embeddingStore[result.id],
+        let results: [IndexSearchResult]
+        if let filter = filter {
+            // Use filtered search with predicate
+            results = try await index.search(query: query.vector, k: k) { [metadataStore, handleToID] handle, vaMetadata in
+                // Get our string ID for this handle
+                guard let id = handleToID[handle] else { return true }
+                // Get metadata from our store (more complete than VA metadata)
+                let metadata = metadataStore[id] ?? vaMetadata
+                return filter(metadata)
+            }
+        } else {
+            results = try await index.search(query: query.vector, k: k)
+        }
+
+        return results.compactMap { result in
+            guard let id = handleToID[result.handle] else { return nil }
+            return EmbeddingSearchResult(
+                id: id,
+                distance: result.distance,
+                text: textStore[id],
+                metadata: metadataStore[id],
+                embedding: embeddingStore[id],
                 metric: config.metric
             )
         }
@@ -296,10 +298,6 @@ public actor EmbeddingStore: EmbeddingStorable {
     }
 
     /// Batch search with multiple queries.
-    ///
-    /// Uses VectorIndex's parallel batch search for concurrent query execution.
-    /// All queries are processed simultaneously using TaskGroup, providing
-    /// significant speedup over sequential search for multiple queries.
     public func batchSearch(
         texts: [String],
         k: Int,
@@ -312,71 +310,138 @@ public actor EmbeddingStore: EmbeddingStorable {
 
         let queryEmbeddings = try await model.embedBatch(texts, options: BatchOptions())
 
-        // Use VectorIndex's parallel batch search (TaskGroup-based concurrency)
-        let indexResults = try await index.batchSearch(
-            queries: queryEmbeddings.map { $0.vector },
-            k: k,
-            filter: filter
-        )
+        // Search each query
+        var results: [[EmbeddingSearchResult]] = []
+        results.reserveCapacity(queryEmbeddings.count)
 
-        // Convert VectorIndex results to EmbeddingSearchResults with stored metadata
-        return indexResults.map { queryResults in
-            queryResults.map { result in
-                EmbeddingSearchResult(
-                    from: result,
-                    text: textStore[result.id],
-                    metadata: nil,
-                    embedding: embeddingStore[result.id],
-                    metric: config.metric
-                )
-            }
+        for queryEmbedding in queryEmbeddings {
+            let queryResults = try await search(queryEmbedding, k: k, filter: filter)
+            results.append(queryResults)
         }
+
+        return results
     }
 
     // MARK: - Management Operations
 
     /// Remove an embedding by ID.
     public func remove(id: String) async throws {
-        try await index.remove(id: id)
+        guard let handle = idToHandle[id] else {
+            return // Already removed or never existed
+        }
+
+        try await index.remove(handle)
+
+        // Clean up mappings
+        handleToID.removeValue(forKey: handle)
+        idToHandle.removeValue(forKey: id)
         textStore.removeValue(forKey: id)
         embeddingStore.removeValue(forKey: id)
+        metadataStore.removeValue(forKey: id)
     }
 
     /// Check if an embedding exists.
     public func contains(id: String) async -> Bool {
-        await index.contains(id: id)
+        idToHandle[id] != nil
     }
 
     /// Clear all stored embeddings.
     public func clear() async throws {
-        await index.clear()
+        // Remove all handles from index
+        for handle in handleToID.keys {
+            try await index.remove(handle)
+        }
+
+        // Clear all mappings
+        handleToID.removeAll()
+        idToHandle.removeAll()
         textStore.removeAll()
         embeddingStore.removeAll()
+        metadataStore.removeAll()
     }
 
-    /// Optimize the index for better search performance.
-    public func optimize() async throws {
-        try await index.optimize()
+    // MARK: - IVF Training
+
+    /// Train the IVF index.
+    ///
+    /// For IVF indexes, this builds the K-means cluster centroids.
+    /// Call this after inserting a representative sample of vectors.
+    ///
+    /// - Note: Has no effect on flat indexes.
+    public func train() async throws {
+        guard config.indexType == .ivf else { return }
+        try await index.train()
     }
 
-    /// Get index statistics.
-    public func statistics() async -> IndexStats {
+    /// Whether the IVF index is trained.
+    public var isTrained: Bool {
+        get async {
+            let stats = await index.statistics()
+            return stats.ivfStats?.isTrained ?? true
+        }
+    }
+
+    // MARK: - Compaction
+
+    /// Compact the index to reclaim space from deleted vectors.
+    ///
+    /// Compaction may remap VectorHandles. This method updates all internal
+    /// mappings to use the new handles.
+    ///
+    /// Returns the number of handles that were remapped.
+    @discardableResult
+    public func compact() async throws -> Int {
+        let remapping = try await index.compact()
+
+        // Update handle mappings with new handles
+        for (oldHandle, newHandle) in remapping {
+            if let id = handleToID[oldHandle] {
+                handleToID.removeValue(forKey: oldHandle)
+                handleToID[newHandle] = id
+                idToHandle[id] = newHandle
+            }
+        }
+
+        return remapping.count
+    }
+
+    // MARK: - Statistics
+
+    /// Get GPU index statistics.
+    public func statistics() async -> GPUIndexStats {
         await index.statistics()
+    }
+
+    /// Get memory usage in bytes.
+    public var memoryUsage: Int {
+        get async {
+            let stats = await index.statistics()
+            return stats.gpuMemoryBytes
+        }
     }
 
     // MARK: - Persistence
 
-    /// Save the store to a directory.
+    /// Save the store's mappings and text data to a directory.
+    ///
+    /// **Note:** The GPU index vectors are NOT saved. On reload, you must
+    /// re-insert all vectors. This saves only:
+    /// - Configuration
+    /// - ID mappings
+    /// - Text store
+    /// - Metadata store
+    /// - Embeddings (so they can be re-inserted)
     public func save(to directory: URL) async throws {
-        // Create directory if needed
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
         )
 
-        // Save index
-        let indexURL = directory.appendingPathComponent("index.json")
-        try await index.save(to: indexURL)
+        // Save config
+        let configURL = directory.appendingPathComponent("config.json")
+        let storedConfig = StoredConfig(from: config)
+        let configData = try JSONEncoder().encode(storedConfig)
+        try configData.write(to: configURL)
 
         // Save text store
         if !textStore.isEmpty {
@@ -385,13 +450,25 @@ public actor EmbeddingStore: EmbeddingStorable {
             try textData.write(to: textURL)
         }
 
-        // Save config
-        let configURL = directory.appendingPathComponent("config.json")
-        let configData = try JSONEncoder().encode(StoredConfig(from: config))
-        try configData.write(to: configURL)
+        // Save metadata store
+        if !metadataStore.isEmpty {
+            let metaURL = directory.appendingPathComponent("metadata.json")
+            let metaData = try JSONEncoder().encode(metadataStore)
+            try metaData.write(to: metaURL)
+        }
+
+        // Save embeddings (required for re-insertion)
+        if !embeddingStore.isEmpty {
+            let embURL = directory.appendingPathComponent("embeddings.json")
+            let embeddingsDict = embeddingStore.mapValues { $0.vector }
+            let embData = try JSONEncoder().encode(embeddingsDict)
+            try embData.write(to: embURL)
+        }
     }
 
     /// Load a store from a directory.
+    ///
+    /// This creates a new GPU index and re-inserts all saved embeddings.
     public static func load(
         from directory: URL,
         model: (any EmbeddingModel)? = nil
@@ -402,80 +479,89 @@ public actor EmbeddingStore: EmbeddingStorable {
         let storedConfig = try JSONDecoder().decode(StoredConfig.self, from: configData)
         let config = storedConfig.toConfig()
 
-        // Load index
-        let indexURL = directory.appendingPathComponent("index.json")
+        // Create new store
+        let store = try await EmbeddingStore(config: config, model: model)
 
-        let store: EmbeddingStore
-        switch config.indexType {
-        case .flat:
-            let index = try await FlatIndex.load(from: indexURL)
-            store = await EmbeddingStore(index: index, config: config, model: model)
-        case .hnsw:
-            let index = try await HNSWIndex.load(from: indexURL)
-            store = await EmbeddingStore(index: index, config: config, model: model)
-        case .ivf:
-            let index = try await IVFIndex.load(from: indexURL)
-            store = await EmbeddingStore(index: index, config: config, model: model)
-        }
-
-        // Load text store if exists
+        // Load text store
         let textURL = directory.appendingPathComponent("texts.json")
         if FileManager.default.fileExists(atPath: textURL.path) {
             let textData = try Data(contentsOf: textURL)
-            let loadedTexts = try JSONDecoder().decode([String: String].self, from: textData)
-            await store.setTextStore(loadedTexts)
+            let texts = try JSONDecoder().decode([String: String].self, from: textData)
+            await store.setTextStore(texts)
+        }
+
+        // Load metadata store
+        let metaURL = directory.appendingPathComponent("metadata.json")
+        if FileManager.default.fileExists(atPath: metaURL.path) {
+            let metaData = try Data(contentsOf: metaURL)
+            let metadata = try JSONDecoder().decode([String: [String: String]].self, from: metaData)
+            await store.setMetadataStore(metadata)
+        }
+
+        // Load and re-insert embeddings
+        let embURL = directory.appendingPathComponent("embeddings.json")
+        if FileManager.default.fileExists(atPath: embURL.path) {
+            let embData = try Data(contentsOf: embURL)
+            let embeddingsDict = try JSONDecoder().decode([String: [Float]].self, from: embData)
+
+            // Placeholder ModelID for loaded embeddings
+            let loadedModelID = ModelID(provider: "embedkit", name: "loaded", version: "1.0")
+
+            for (id, vector) in embeddingsDict {
+                let embMetadata = EmbeddingMetadata(
+                    modelID: loadedModelID,
+                    tokenCount: 0,
+                    processingTime: 0
+                )
+                let embedding = Embedding(vector: vector, metadata: embMetadata)
+                let text = await store.getText(for: id)
+                let metadata = await store.getMetadata(for: id)
+                _ = try await store.store(embedding, id: id, text: text, metadata: metadata)
+            }
+        }
+
+        // Train if IVF
+        if config.indexType == .ivf {
+            try await store.train()
         }
 
         return store
     }
 
-    /// Internal method to set text store (for loading).
+    // MARK: - Private Helpers
+
     private func setTextStore(_ texts: [String: String]) {
         self.textStore = texts
     }
 
-    // MARK: - Acceleration
-
-    /// Whether GPU acceleration is available for this store.
-    public var isAccelerationAvailable: Bool {
-        get async {
-            guard let accelerator = accelerator else { return false }
-            return await accelerator.isGPUAvailable
-        }
+    private func setMetadataStore(_ metadata: [String: [String: String]]) {
+        self.metadataStore = metadata
     }
 
-    /// Get acceleration statistics.
-    public func accelerationStatistics() async -> AccelerationStatistics? {
-        await accelerator?.statistics()
+    private func getText(for id: String) -> String? {
+        textStore[id]
     }
 
-    /// Compute batch distances with acceleration (for custom operations).
-    ///
-    /// Uses GPU acceleration when available, otherwise falls back to
-    /// Accelerate/vDSP optimized CPU computation.
+    private func getMetadata(for id: String) -> [String: String]? {
+        metadataStore[id]
+    }
+
+    // MARK: - Acceleration (Convenience)
+
+    /// Whether GPU acceleration is available.
+    /// Always true for EmbeddingStore since it requires GPU.
+    public nonisolated var isAccelerationAvailable: Bool {
+        true
+    }
+
+    /// Compute batch distances using GPU.
     public func computeDistances(
         from query: Embedding,
         to candidates: [Embedding]
     ) async throws -> [Float] {
-        guard let accelerator = accelerator else {
-            // CPU fallback using Accelerate BLAS
-            let candidateVectors = candidates.map { $0.vector }
-            switch config.metric {
-            case .cosine:
-                return AccelerateBLAS.batchCosineDistance(query: query.vector, candidates: candidateVectors)
-            case .euclidean:
-                return AccelerateBLAS.batchEuclideanDistance(query: query.vector, candidates: candidateVectors)
-            case .dotProduct:
-                // For dot product, higher is better, so we negate to get "distance"
-                return candidateVectors.map { -AccelerateBLAS.dotProduct(query.vector, $0) }
-            case .manhattan:
-                return AccelerateBLAS.batchManhattanDistance(query: query.vector, candidates: candidateVectors)
-            case .chebyshev:
-                return AccelerateBLAS.batchChebyshevDistance(query: query.vector, candidates: candidateVectors)
-            }
-        }
-
-        return try await accelerator.batchDistance(
+        // Use AccelerationManager for standalone distance computation
+        let manager = try await AccelerationManager.create()
+        return try await manager.batchDistance(
             from: query.vector,
             to: candidates.map { $0.vector },
             metric: config.metric
@@ -489,15 +575,19 @@ private struct StoredConfig: Codable {
     let indexType: String
     let dimension: Int
     let metric: String
+    let capacity: Int
     let storeText: Bool
-    let computePreference: String?
+    let nlist: Int?
+    let nprobe: Int?
 
     init(from config: IndexConfiguration) {
         self.indexType = config.indexType.rawValue
         self.dimension = config.dimension
         self.metric = config.metric.rawValue
+        self.capacity = config.capacity
         self.storeText = config.storeText
-        self.computePreference = config.computePreference.rawValue
+        self.nlist = config.nlist
+        self.nprobe = config.nprobe
     }
 
     func toConfig() -> IndexConfiguration {
@@ -505,8 +595,10 @@ private struct StoredConfig: Codable {
             indexType: IndexType(rawValue: indexType) ?? .flat,
             dimension: dimension,
             metric: SupportedDistanceMetric(rawValue: metric) ?? .cosine,
+            capacity: capacity,
             storeText: storeText,
-            computePreference: computePreference.flatMap { ComputePreference(rawValue: $0) } ?? .auto
+            nlist: nlist,
+            nprobe: nprobe
         )
     }
 }
@@ -514,11 +606,12 @@ private struct StoredConfig: Codable {
 // MARK: - Errors
 
 /// Errors from embedding store operations.
-public enum EmbeddingStoreError: Error, LocalizedError {
+public enum EmbeddingStoreError: Error, LocalizedError, Sendable {
     case noModelConfigured
     case dimensionMismatch(expected: Int, actual: Int)
     case indexNotFound
     case persistenceError(String)
+    case gpuInitializationFailed(Error)
 
     public var errorDescription: String? {
         switch self {
@@ -530,19 +623,8 @@ public enum EmbeddingStoreError: Error, LocalizedError {
             return "Index not found at specified path"
         case .persistenceError(let msg):
             return "Persistence error: \(msg)"
-        }
-    }
-
-    public var recoverySuggestion: String? {
-        switch self {
-        case .noModelConfigured:
-            return "Initialize the EmbeddingStore with an embedding model, or use store(embedding:) with pre-computed embeddings instead of store(text:)."
-        case .dimensionMismatch:
-            return "Ensure all embeddings stored in this index have the same dimensions. Create a new store with the correct dimension if needed."
-        case .indexNotFound:
-            return "Verify the file path is correct and the index was previously saved. Check file permissions and ensure the directory exists."
-        case .persistenceError:
-            return "Check available disk space and file permissions. Ensure the target directory exists and is writable."
+        case .gpuInitializationFailed(let error):
+            return "GPU initialization failed: \(error.localizedDescription)"
         }
     }
 }

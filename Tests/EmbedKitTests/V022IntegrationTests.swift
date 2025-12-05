@@ -467,25 +467,10 @@ struct PipelineConfigurationIntegrationTests {
         #expect(withBudget.memoryBudget == 256 * 1024 * 1024)
     }
 
-    @Test("withCPUOnly modifier switches compute preference")
-    func testWithCPUOnlyModifier() {
-        let base = ConfigurationFactory.gpuOptimized()
-        let cpuOnly = base.withCPUOnly()
-
-        #expect(cpuOnly.compute.preference == .cpuOnly)
-        #expect(cpuOnly.embedding.inferenceDevice == .cpu)
-    }
-
     @Test("ComputeConfiguration presets have correct values")
     func testComputeConfigurationPresets() {
-        let defaultCompute = ComputeConfiguration.default
-        #expect(defaultCompute.preference == .auto)
-
         let gpuOptimized = ComputeConfiguration.gpuOptimized()
         #expect(gpuOptimized.useFusedKernels == true)
-
-        let cpuOnly = ComputeConfiguration.cpuOnly()
-        #expect(cpuOnly.preference == .cpuOnly)
 
         let memEfficient = ComputeConfiguration.memoryEfficient()
         #expect(memEfficient.maxResidentMemoryMB < 256)

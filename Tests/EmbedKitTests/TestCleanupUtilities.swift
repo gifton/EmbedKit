@@ -14,8 +14,8 @@ import Foundation
 /// memory monitoring to prevent resource accumulation.
 @available(*, deprecated, message: "For testing only")
 func cleanupEmbedKitTestResources() async {
-    // Reset SharedMetalContextManager
-    await SharedMetalContextManager.shared.resetForTesting()
+    // Metal4ContextManager is now managed internally by VectorAccelerate
+    // No explicit cleanup needed
 
     // Reset MemoryMonitor
     MemoryMonitor.shared.forceResetForTesting()
@@ -26,7 +26,8 @@ func cleanupEmbedKitTestResources() async {
 /// Use when you only need to release GPU buffers and contexts.
 @available(*, deprecated, message: "For testing only")
 func cleanupMetalTestResources() async {
-    await SharedMetalContextManager.shared.resetForTesting()
+    // Metal4ContextManager is now managed internally by VectorAccelerate
+    // No explicit cleanup needed
 }
 
 /// Clean up only memory monitoring resources.

@@ -390,11 +390,11 @@ struct EmbeddingStoreRerankTests {
 @Suite("EmbeddingStore - Configuration")
 struct EmbeddingStoreConfigTests {
 
-    @Test("Default config uses HNSW")
-    func defaultConfigHNSW() {
+    @Test("Default config uses flat GPU index")
+    func defaultConfigFlat() {
         let config = IndexConfiguration.default(dimension: 384)
 
-        #expect(config.indexType == .hnsw)
+        #expect(config.indexType == .flat)
         #expect(config.dimension == 384)
         #expect(config.metric == .cosine)
         #expect(config.storeText == true)
@@ -408,11 +408,12 @@ struct EmbeddingStoreConfigTests {
         #expect(config.dimension == 768)
     }
 
-    @Test("Fast config disables text storage")
-    func fastConfigNoText() {
-        let config = IndexConfiguration.fast(dimension: 384)
+    @Test("Flat config with custom capacity")
+    func flatConfigCapacity() {
+        let config = IndexConfiguration.flat(dimension: 384, capacity: 50_000)
 
-        #expect(config.storeText == false)
+        #expect(config.indexType == .flat)
+        #expect(config.capacity == 50_000)
     }
 
     @Test("Scalable config uses IVF")
@@ -420,17 +421,23 @@ struct EmbeddingStoreConfigTests {
         let config = IndexConfiguration.scalable(dimension: 384, expectedSize: 100_000)
 
         #expect(config.indexType == .ivf)
-        #expect(config.ivfConfig != nil)
+        #expect(config.nlist != nil)
+        #expect(config.nprobe != nil)
     }
 
-    @Test("HNSW config presets")
-    func hnswPresets() {
-        let defaultConfig = HNSWConfiguration.default
-        let fastConfig = HNSWConfiguration.fast
-        let accurateConfig = HNSWConfiguration.accurate
+    @Test("IVF config with custom parameters")
+    func ivfCustomParams() {
+        let config = IndexConfiguration.ivf(
+            dimension: 768,
+            nlist: 512,
+            nprobe: 32,
+            capacity: 200_000
+        )
 
-        #expect(fastConfig.efConstruction < defaultConfig.efConstruction)
-        #expect(accurateConfig.efConstruction > defaultConfig.efConstruction)
+        #expect(config.indexType == .ivf)
+        #expect(config.nlist == 512)
+        #expect(config.nprobe == 32)
+        #expect(config.capacity == 200_000)
     }
 }
 

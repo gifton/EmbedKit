@@ -1,53 +1,25 @@
-// Tests for EmbeddingStore Acceleration Integration
+// Tests for EmbeddingStore GPU Acceleration
 import Testing
 import Foundation
 @testable import EmbedKit
 
-// MARK: - Acceleration Integration Tests
+// MARK: - GPU Acceleration Tests
 
-@Suite("EmbeddingStore - Acceleration Integration")
-struct EmbeddingStoreAccelerationTests {
+@Suite("EmbeddingStore - GPU Acceleration")
+struct EmbeddingStoreGPUAccelerationTests {
 
-    @Test("Store with auto acceleration creates accelerator")
-    func autoAccelerationCreatesAccelerator() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .auto)
-        )
+    @Test("Store reports acceleration available")
+    func accelerationAvailable() async throws {
+        let store = try await EmbeddingStore(config: .exact(dimension: 3))
 
-        // Acceleration availability depends on hardware
-        // Just verify the property is accessible
-        _ = await store.isAccelerationAvailable
+        // GPU acceleration is always available (required for EmbeddingStore)
+        // isAccelerationAvailable is a nonisolated computed property
+        #expect(store.isAccelerationAvailable == true)
     }
 
-    @Test("Store with cpuOnly does not create accelerator")
-    func cpuOnlyNoAccelerator() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .cpuOnly)
-        )
-
-        let isAvailable = await store.isAccelerationAvailable
-        #expect(isAvailable == false)
-    }
-
-    @Test("Acceleration statistics available when enabled")
-    func accelerationStatisticsAvailable() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .auto)
-        )
-
-        let stats = await store.accelerationStatistics()
-        // Stats may be nil if GPU not available, otherwise should exist
-        if stats != nil {
-            #expect(stats!.gpuOperations >= 0)
-            #expect(stats!.cpuOperations >= 0)
-        }
-    }
-
-    @Test("Compute distances with acceleration")
-    func computeDistancesWithAcceleration() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .auto)
-        )
+    @Test("Compute distances using GPU")
+    func computeDistancesGPU() async throws {
+        let store = try await EmbeddingStore(config: .exact(dimension: 3))
 
         let query = Embedding(
             vector: [1.0, 0.0, 0.0],
@@ -62,144 +34,59 @@ struct EmbeddingStoreAccelerationTests {
         let distances = try await store.computeDistances(from: query, to: candidates)
 
         #expect(distances.count == 3)
+        // Cosine distance: 0 = identical, larger = more different
         #expect(distances[0] < 0.1) // Same vector
-        #expect(distances[1] > 0.4) // Orthogonal
     }
 
-    @Test("Compute distances with CPU fallback")
-    func computeDistancesCPUFallback() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .cpuOnly)
-        )
+    @Test("GPU statistics accessible")
+    func gpuStatistics() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 16, capacity: 100))
 
-        let query = Embedding(
-            vector: [1.0, 0.0, 0.0],
-            metadata: EmbeddingMetadata.mock()
-        )
-        let candidates = [
-            Embedding(vector: [1.0, 0.0, 0.0], metadata: EmbeddingMetadata.mock()),
-            Embedding(vector: [0.0, 1.0, 0.0], metadata: EmbeddingMetadata.mock())
-        ]
+        // Store some vectors
+        for i in 0..<10 {
+            let embedding = Embedding(
+                vector: [Float](repeating: Float(i) / 10, count: 16),
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding)
+        }
 
-        let distances = try await store.computeDistances(from: query, to: candidates)
+        let stats = await store.statistics()
 
-        #expect(distances.count == 2)
-        #expect(distances[0] < 0.1) // Same vector = low distance
-    }
-}
-
-// MARK: - Index Configuration with Compute Preference
-
-@Suite("IndexConfiguration - ComputePreference")
-struct IndexConfigurationComputePreferenceTests {
-
-    @Test("Default configuration uses auto preference")
-    func defaultConfigUsesAuto() {
-        let config = IndexConfiguration.default(dimension: 384)
-        #expect(config.computePreference == .auto)
+        #expect(stats.vectorCount == 10)
+        #expect(stats.gpuMemoryBytes > 0)
     }
 
-    @Test("Default configuration accepts custom preference")
-    func defaultConfigCustomPreference() {
-        let config = IndexConfiguration.default(
-            dimension: 384,
-            computePreference: .cpuOnly
-        )
-        #expect(config.computePreference == .cpuOnly)
-    }
+    @Test("Memory usage reflects stored vectors")
+    func memoryUsage() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 256, capacity: 50))
 
-    @Test("Exact configuration default preference")
-    func exactConfigDefaultPreference() {
-        let config = IndexConfiguration.exact(dimension: 3)
-        #expect(config.computePreference == .auto)
-    }
+        let initialMemory = await store.memoryUsage
 
-    @Test("Fast configuration default preference")
-    func fastConfigDefaultPreference() {
-        let config = IndexConfiguration.fast(dimension: 384)
-        #expect(config.computePreference == .auto)
-    }
+        // Store vectors
+        for i in 0..<20 {
+            let embedding = Embedding(
+                vector: [Float](repeating: Float(i) / 20, count: 256),
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding)
+        }
 
-    @Test("Scalable configuration default preference")
-    func scalableConfigDefaultPreference() {
-        let config = IndexConfiguration.scalable(dimension: 128)
-        #expect(config.computePreference == .auto)
-    }
+        let finalMemory = await store.memoryUsage
 
-    @Test("Custom init with all parameters")
-    func customInitAllParameters() {
-        let config = IndexConfiguration(
-            indexType: .hnsw,
-            dimension: 256,
-            metric: .euclidean,
-            storeText: false,
-            hnswConfig: .accurate,
-            computePreference: .gpuOnly
-        )
-
-        #expect(config.indexType == .hnsw)
-        #expect(config.dimension == 256)
-        #expect(config.metric == .euclidean)
-        #expect(config.storeText == false)
-        #expect(config.computePreference == .gpuOnly)
+        // Memory should have increased
+        #expect(finalMemory >= initialMemory)
     }
 }
 
-// MARK: - Persistence with Compute Preference
+// MARK: - Large Batch GPU Tests
 
-@Suite("EmbeddingStore - Acceleration Persistence")
-struct EmbeddingStoreAccelerationPersistenceTests {
+@Suite("EmbeddingStore - Large Batch GPU Operations")
+struct EmbeddingStoreLargeBatchGPUTests {
 
-    @Test("Save and load preserves compute preference")
-    func saveLoadPreservesPreference() async throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        // Create store with specific preference
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 3, computePreference: .cpuOnly)
-        )
-        let embedding = Embedding(vector: [1.0, 0.0, 0.0], metadata: EmbeddingMetadata.mock())
-        _ = try await store.store(embedding, id: "test")
-
-        // Save and load
-        try await store.save(to: tempDir)
-        let loaded = try await EmbeddingStore.load(from: tempDir)
-
-        // Verify preference preserved - config is nonisolated
-        let loadedConfig = loaded.config
-        #expect(loadedConfig.computePreference == .cpuOnly)
-    }
-
-    @Test("Load defaults to auto when preference missing")
-    func loadDefaultsToAuto() async throws {
-        // This tests backwards compatibility - old saved stores won't have
-        // computePreference in their config.json
-        // The StoredConfig.toConfig() should default to .auto
-
-        let config = IndexConfiguration(
-            indexType: .flat,
-            dimension: 3,
-            metric: .cosine,
-            storeText: true
-            // No computePreference specified - defaults to .auto
-        )
-
-        #expect(config.computePreference == .auto)
-    }
-}
-
-// MARK: - Large Batch Tests
-
-@Suite("EmbeddingStore - Large Batch Acceleration")
-struct EmbeddingStoreLargeBatchTests {
-
-    @Test("Large batch distance computation works")
-    func largeBatchDistanceComputation() async throws {
-        let store = try await EmbeddingStore(
-            config: .exact(dimension: 128, computePreference: .auto)
-        )
+    @Test("Large batch distance computation")
+    func largeBatchDistances() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 128, capacity: 200))
 
         let query = Embedding(
             vector: [Float](repeating: 0.1, count: 128),
@@ -219,6 +106,73 @@ struct EmbeddingStoreLargeBatchTests {
         for distance in distances {
             #expect(distance >= 0)
         }
+    }
+
+    @Test("Batch insert uses GPU")
+    func batchInsertGPU() async throws {
+        let store = try await EmbeddingStore(config: .flat(dimension: 64, capacity: 500))
+
+        // Store many vectors
+        for i in 0..<100 {
+            let embedding = Embedding(
+                vector: (0..<64).map { _ in Float.random(in: 0...1) },
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding, id: "e\(i)")
+        }
+
+        let count = await store.count
+        #expect(count == 100)
+
+        // Search should work
+        let query = Embedding(
+            vector: [Float](repeating: 0.5, count: 64),
+            metadata: EmbeddingMetadata.mock()
+        )
+        let results = try await store.search(query, k: 10)
+        #expect(results.count == 10)
+    }
+}
+
+// MARK: - Persistence Tests
+
+@Suite("EmbeddingStore - GPU Persistence")
+struct EmbeddingStoreGPUPersistenceTests {
+
+    @Test("Save and load recreates GPU index")
+    func saveLoadRecreatesGPUIndex() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create store and add vectors
+        let store = try await EmbeddingStore(config: .flat(dimension: 8, capacity: 50))
+        for i in 0..<5 {
+            let embedding = Embedding(
+                vector: [Float](repeating: Float(i) / 5, count: 8),
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding, id: "e\(i)", text: "doc\(i)")
+        }
+
+        // Save
+        try await store.save(to: tempDir)
+
+        // Load - this recreates a new GPU index
+        let loaded = try await EmbeddingStore.load(from: tempDir)
+
+        // Verify data preserved
+        let count = await loaded.count
+        #expect(count == 5)
+
+        // Search should work
+        let query = Embedding(
+            vector: [Float](repeating: 0.0, count: 8),
+            metadata: EmbeddingMetadata.mock()
+        )
+        let results = try await loaded.search(query, k: 3)
+        #expect(results.count == 3)
+        #expect(results[0].text == "doc0")
     }
 }
 

@@ -3,7 +3,6 @@
 
 import Foundation
 import VectorCore
-import VectorIndex
 
 // MARK: - Embedding Search Result
 
@@ -51,36 +50,40 @@ public struct EmbeddingSearchResult: Sendable, Identifiable {
         self.embedding = embedding
     }
 
-    /// Create from VectorIndex SearchResult
+    /// Create with distance and metric.
+    ///
+    /// Automatically computes similarity from distance based on the metric.
     internal init(
-        from searchResult: VectorIndex.SearchResult,
+        id: String,
+        distance: Float,
         text: String? = nil,
         metadata: [String: String]? = nil,
         embedding: Embedding? = nil,
-        metric: SupportedDistanceMetric = .cosine
+        metric: SupportedDistanceMetric
     ) {
-        self.id = searchResult.id
-        self.distance = searchResult.score
+        self.id = id
+        self.distance = distance
         self.text = text
         self.metadata = metadata
         self.embedding = embedding
 
-        // Convert score to similarity based on metric
+        // Convert distance to similarity based on metric
         switch metric {
         case .cosine:
             // Cosine distance: 0 = identical, 2 = opposite
-            self.similarity = max(0, 1 - searchResult.score)
+            self.similarity = max(0, 1 - distance)
         case .euclidean:
             // Euclidean: 0 = identical, larger = more different
-            // Use exponential decay for bounded similarity
-            self.similarity = exp(-searchResult.score)
+            // GPU returns L2² (squared distance), take sqrt then apply decay
+            let euclideanDist = sqrt(distance)
+            self.similarity = exp(-euclideanDist)
         case .dotProduct:
             // Dot product: higher = more similar (already a similarity)
             // Normalize to 0-1 range (assuming normalized vectors)
-            self.similarity = (searchResult.score + 1) / 2
+            self.similarity = (distance + 1) / 2
         case .manhattan, .chebyshev:
             // Similar treatment to euclidean
-            self.similarity = exp(-searchResult.score)
+            self.similarity = exp(-distance)
         }
     }
 }

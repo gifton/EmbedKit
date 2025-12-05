@@ -28,9 +28,11 @@ struct QuantizationFormatTests {
     func allFormatsEnumerable() {
         let formats = QuantizationFormat.allCases
 
-        #expect(formats.count == 2)
+        #expect(formats.count == 4)  // int8, int4, float16, binary
         #expect(formats.contains(.int8))
+        #expect(formats.contains(.int4))
         #expect(formats.contains(.float16))
+        #expect(formats.contains(.binary))
     }
 }
 
@@ -40,28 +42,28 @@ struct QuantizationFormatTests {
 struct Int8QuantizationTests {
 
     @Test("Int8 quantization roundtrips with acceptable error")
-    func int8Roundtrip() throws {
+    func int8Roundtrip() async throws {
         let original: [Float] = (0..<128).map { Float($0) / 128.0 - 0.5 }
 
-        let quantized = try Quantizer.quantize(original, format: .int8)
-        let restored = Quantizer.dequantize(quantized)
+        let quantized = try await Quantizer.quantize(original, format: .int8)
+        let restored = try await Quantizer.dequantize(quantized)
 
         #expect(quantized.format == .int8)
         #expect(quantized.dimensions == original.count)
         #expect(quantized.data.count == original.count)  // 1 byte per element
 
         // Check roundtrip error is small
-        let stats = Quantizer.computeStats(original: original, quantized: quantized)
+        let stats = try await Quantizer.computeStats(original: original, quantized: quantized)
         #expect(stats.maxError < 0.01, "Max error \(stats.maxError) exceeds threshold")
         #expect(stats.cosineSimilarity > 0.999, "Cosine similarity \(stats.cosineSimilarity) too low")
     }
 
     @Test("Int8 achieves 4x compression")
-    func int8Compression() throws {
+    func int8Compression() async throws {
         let dimensions = 384
         let original: [Float] = (0..<dimensions).map { _ in Float.random(in: -1...1) }
 
-        let quantized = try Quantizer.quantize(original, format: .int8)
+        let quantized = try await Quantizer.quantize(original, format: .int8)
 
         #expect(quantized.compressionRatio >= 3.9)
         #expect(quantized.compressionRatio <= 4.1)
@@ -71,11 +73,11 @@ struct Int8QuantizationTests {
     }
 
     @Test("Int8 handles constant vector")
-    func int8ConstantVector() throws {
+    func int8ConstantVector() async throws {
         let original: [Float] = [Float](repeating: 0.5, count: 64)
 
-        let quantized = try Quantizer.quantize(original, format: .int8)
-        let restored = Quantizer.dequantize(quantized)
+        let quantized = try await Quantizer.quantize(original, format: .int8)
+        let restored = try await Quantizer.dequantize(quantized)
 
         // Constant vectors should roundtrip well
         for (orig, rest) in zip(original, restored) {
@@ -84,11 +86,11 @@ struct Int8QuantizationTests {
     }
 
     @Test("Int8 handles extreme values")
-    func int8ExtremeValues() throws {
+    func int8ExtremeValues() async throws {
         let original: [Float] = [-1000.0, -100.0, -1.0, 0.0, 1.0, 100.0, 1000.0]
 
-        let quantized = try Quantizer.quantize(original, format: .int8)
-        let restored = Quantizer.dequantize(quantized)
+        let quantized = try await Quantizer.quantize(original, format: .int8)
+        let restored = try await Quantizer.dequantize(quantized)
 
         // Values should be in roughly correct order and relative magnitude
         #expect(restored[0] < restored[1])  // Most negative
@@ -104,28 +106,28 @@ struct Int8QuantizationTests {
 struct Float16QuantizationTests {
 
     @Test("Float16 quantization roundtrips with minimal error")
-    func float16Roundtrip() throws {
+    func float16Roundtrip() async throws {
         let original: [Float] = (0..<128).map { Float($0) / 128.0 - 0.5 }
 
-        let quantized = try Quantizer.quantize(original, format: .float16)
-        let restored = Quantizer.dequantize(quantized)
+        let quantized = try await Quantizer.quantize(original, format: .float16)
+        let restored = try await Quantizer.dequantize(quantized)
 
         #expect(quantized.format == .float16)
         #expect(quantized.dimensions == original.count)
         #expect(quantized.data.count == original.count * 2)  // 2 bytes per element
 
         // Float16 should have very high precision for normal values
-        let stats = Quantizer.computeStats(original: original, quantized: quantized)
+        let stats = try await Quantizer.computeStats(original: original, quantized: quantized)
         #expect(stats.maxError < 0.001, "Max error \(stats.maxError) exceeds threshold")
         #expect(stats.cosineSimilarity > 0.9999, "Cosine similarity \(stats.cosineSimilarity) too low")
     }
 
     @Test("Float16 achieves 2x compression")
-    func float16Compression() throws {
+    func float16Compression() async throws {
         let dimensions = 384
         let original: [Float] = (0..<dimensions).map { _ in Float.random(in: -1...1) }
 
-        let quantized = try Quantizer.quantize(original, format: .float16)
+        let quantized = try await Quantizer.quantize(original, format: .float16)
 
         #expect(quantized.compressionRatio >= 1.9)
         #expect(quantized.compressionRatio <= 2.1)
@@ -135,12 +137,12 @@ struct Float16QuantizationTests {
     }
 
     @Test("Float16 preserves small differences")
-    func float16SmallDifferences() throws {
+    func float16SmallDifferences() async throws {
         // Values very close together
         let original: [Float] = [0.1, 0.10001, 0.10002, 0.10003, 0.10004]
 
-        let quantized = try Quantizer.quantize(original, format: .float16)
-        let restored = Quantizer.dequantize(quantized)
+        let quantized = try await Quantizer.quantize(original, format: .float16)
+        let restored = try await Quantizer.dequantize(quantized)
 
         // Float16 has ~3 decimal digits of precision, so very small diffs may not be preserved
         // But order should be maintained
@@ -156,7 +158,7 @@ struct Float16QuantizationTests {
 struct EmbeddingQuantizationTests {
 
     @Test("Embedding quantizes and dequantizes correctly")
-    func embeddingRoundtrip() throws {
+    func embeddingRoundtrip() async throws {
         let vector: [Float] = (0..<256).map { Float($0) / 256.0 }
         let modelID = ModelID(provider: "test", name: "model", version: "1.0")
         let embedding = Embedding(
@@ -169,8 +171,8 @@ struct EmbeddingQuantizationTests {
             )
         )
 
-        let quantized = try embedding.quantized(to: .int8)
-        let restored = quantized.dequantize()
+        let quantized = try await embedding.quantized(to: .int8)
+        let restored = try await quantized.dequantize()
 
         // Metadata should be preserved
         #expect(restored.metadata.modelID == modelID)
@@ -186,7 +188,7 @@ struct EmbeddingQuantizationTests {
     }
 
     @Test("QuantizedEmbedding reports correct properties")
-    func quantizedEmbeddingProperties() throws {
+    func quantizedEmbeddingProperties() async throws {
         let vector: [Float] = (0..<384).map { _ in Float.random(in: -1...1) }
         let embedding = Embedding(
             vector: vector,
@@ -198,7 +200,7 @@ struct EmbeddingQuantizationTests {
             )
         )
 
-        let quantized = try Quantizer.quantize(embedding, format: .int8)
+        let quantized = try await Quantizer.quantize(embedding, format: .int8)
 
         #expect(quantized.dimensions == 384)
         #expect(quantized.sizeInBytes == 384)  // 1 byte per element for int8
@@ -212,7 +214,7 @@ struct EmbeddingQuantizationTests {
 struct BatchQuantizationTests {
 
     @Test("Batch quantization processes all embeddings")
-    func batchQuantization() throws {
+    func batchQuantization() async throws {
         let modelID = ModelID(provider: "test", name: "model", version: "1.0")
 
         let embeddings: [Embedding] = (0..<10).map { i in
@@ -228,8 +230,8 @@ struct BatchQuantizationTests {
             )
         }
 
-        let quantized = try Quantizer.quantizeBatch(embeddings, format: .int8)
-        let restored = Quantizer.dequantizeBatch(quantized)
+        let quantized = try await Quantizer.quantizeBatch(embeddings, format: .int8)
+        let restored = try await Quantizer.dequantizeBatch(quantized)
 
         #expect(quantized.count == 10)
         #expect(restored.count == 10)
@@ -241,7 +243,7 @@ struct BatchQuantizationTests {
     }
 
     @Test("Array extension quantizes embeddings")
-    func arrayExtension() throws {
+    func arrayExtension() async throws {
         let modelID = ModelID(provider: "test", name: "model", version: "1.0")
 
         let embeddings: [Embedding] = (0..<5).map { _ in
@@ -257,7 +259,7 @@ struct BatchQuantizationTests {
             )
         }
 
-        let quantized = try embeddings.quantized(to: .float16)
+        let quantized = try await embeddings.quantized(to: .float16)
 
         #expect(quantized.count == 5)
         for q in quantized {
@@ -272,19 +274,19 @@ struct BatchQuantizationTests {
 struct QuantizationStatsTests {
 
     @Test("Statistics accurately report compression")
-    func statsCompression() throws {
+    func statsCompression() async throws {
         let dimensions = 256
         let original: [Float] = (0..<dimensions).map { _ in Float.random(in: -1...1) }
 
-        let quantizedInt8 = try Quantizer.quantize(original, format: .int8)
-        let statsInt8 = Quantizer.computeStats(original: original, quantized: quantizedInt8)
+        let quantizedInt8 = try await Quantizer.quantize(original, format: .int8)
+        let statsInt8 = try await Quantizer.computeStats(original: original, quantized: quantizedInt8)
 
         #expect(statsInt8.originalSizeBytes == dimensions * 4)  // Float32
         #expect(statsInt8.quantizedSizeBytes == dimensions * 1)  // Int8
         #expect(abs(statsInt8.compressionRatio - 4.0) < 0.1)
 
-        let quantizedF16 = try Quantizer.quantize(original, format: .float16)
-        let statsF16 = Quantizer.computeStats(original: original, quantized: quantizedF16)
+        let quantizedF16 = try await Quantizer.quantize(original, format: .float16)
+        let statsF16 = try await Quantizer.computeStats(original: original, quantized: quantizedF16)
 
         #expect(statsF16.originalSizeBytes == dimensions * 4)  // Float32
         #expect(statsF16.quantizedSizeBytes == dimensions * 2)  // Float16
@@ -292,11 +294,11 @@ struct QuantizationStatsTests {
     }
 
     @Test("Statistics report error metrics")
-    func statsErrors() throws {
+    func statsErrors() async throws {
         let original: [Float] = (0..<128).map { Float($0) / 128.0 }
 
-        let quantized = try Quantizer.quantize(original, format: .int8)
-        let stats = Quantizer.computeStats(original: original, quantized: quantized)
+        let quantized = try await Quantizer.quantize(original, format: .int8)
+        let stats = try await Quantizer.computeStats(original: original, quantized: quantized)
 
         // Error metrics should be non-negative
         #expect(stats.maxError >= 0)
@@ -317,11 +319,11 @@ struct QuantizationStatsTests {
 struct QuantizationErrorTests {
 
     @Test("Empty vector throws error")
-    func emptyVectorError() throws {
+    func emptyVectorError() async throws {
         let empty: [Float] = []
 
-        #expect(throws: QuantizationError.self) {
-            try Quantizer.quantize(empty, format: .int8)
+        await #expect(throws: QuantizationError.self) {
+            try await Quantizer.quantize(empty, format: .int8)
         }
     }
 

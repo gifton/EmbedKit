@@ -128,7 +128,7 @@ public actor EmbeddingRateLimiter {
             }
 
             // Wait a small interval before retrying
-            let status = await getStatus(identifier: identifier)
+            let status = getStatus(identifier: identifier)
             let waitTime = min(status.timeUntilReset, timeout - elapsed, 0.1)
             if waitTime > 0 {
                 try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))

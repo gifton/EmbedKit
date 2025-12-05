@@ -1,11 +1,10 @@
 // EmbedKit - VSK Integration Tests
-// Tests for VectorCore 0.1.5, VectorIndex 0.1.2, VectorAccelerate 0.1.2 integration
+// Tests for VectorCore and VectorAccelerate integration
 
 import Testing
 import Foundation
 @testable import EmbedKit
 import VectorCore
-import VectorIndex
 
 // MARK: - Vector384Optimized Auto-Optimization Tests
 
@@ -279,131 +278,6 @@ struct TopKSelectionTests {
         )
 
         #expect(result.isEmpty)
-    }
-}
-
-// MARK: - AccelerableIndex Integration Tests
-
-@Suite("AccelerableIndex Integration")
-struct AccelerableIndexIntegrationTests {
-
-    @Test("acceleratedSearch with FlatIndex")
-    func acceleratedSearchFlat() async throws {
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        // Create a flat index with some vectors
-        let index = FlatIndex(dimension: 3, metric: .euclidean)
-
-        try await index.insert(id: "a", vector: [0, 0, 0], metadata: nil)
-        try await index.insert(id: "b", vector: [1, 0, 0], metadata: nil)
-        try await index.insert(id: "c", vector: [0, 1, 0], metadata: nil)
-        try await index.insert(id: "d", vector: [0, 0, 1], metadata: nil)
-
-        let results = try await manager.acceleratedSearch(
-            index: index,
-            query: [0, 0, 0],
-            k: 2,
-            filter: nil
-        )
-
-        #expect(results.count == 2)
-        // First result should be "a" (exact match)
-        #expect(results[0].id == "a")
-        #expect(results[0].score < 0.001) // Distance ~0
-    }
-
-    @Test("acceleratedBatchSearch with FlatIndex")
-    func acceleratedBatchSearchFlat() async throws {
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        let index = FlatIndex(dimension: 3, metric: .euclidean)
-
-        try await index.insert(id: "origin", vector: [0, 0, 0], metadata: nil)
-        try await index.insert(id: "x", vector: [1, 0, 0], metadata: nil)
-        try await index.insert(id: "y", vector: [0, 1, 0], metadata: nil)
-        try await index.insert(id: "z", vector: [0, 0, 1], metadata: nil)
-
-        let queries: [[Float]] = [
-            [0, 0, 0],  // Should find "origin" first
-            [1, 0, 0],  // Should find "x" first
-            [0, 1, 0]   // Should find "y" first
-        ]
-
-        let results = try await manager.acceleratedBatchSearch(
-            index: index,
-            queries: queries,
-            k: 1,
-            filter: nil
-        )
-
-        #expect(results.count == 3)
-        #expect(results[0][0].id == "origin")
-        #expect(results[1][0].id == "x")
-        #expect(results[2][0].id == "y")
-    }
-
-    @Test("acceleratedSearch falls back to native search for small indices")
-    func acceleratedSearchFallback() async throws {
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        // Small index - should fall back to native search
-        let index = FlatIndex(dimension: 3, metric: .cosine)
-
-        try await index.insert(id: "a", vector: [1, 0, 0], metadata: nil)
-        try await index.insert(id: "b", vector: [0, 1, 0], metadata: nil)
-
-        let results = try await manager.acceleratedSearch(
-            index: index,
-            query: [1, 0, 0],
-            k: 1,
-            filter: nil
-        )
-
-        #expect(results.count == 1)
-        #expect(results[0].id == "a")
-    }
-
-    @Test("acceleratedSearch respects filter")
-    func acceleratedSearchWithFilter() async throws {
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        let index = FlatIndex(dimension: 3, metric: .euclidean)
-
-        try await index.insert(id: "a", vector: [0, 0, 0], metadata: ["category": "red"])
-        try await index.insert(id: "b", vector: [0.1, 0, 0], metadata: ["category": "blue"])
-        try await index.insert(id: "c", vector: [0.2, 0, 0], metadata: ["category": "red"])
-
-        let filter: @Sendable ([String: String]?) -> Bool = { metadata in
-            metadata?["category"] == "blue"
-        }
-
-        let results = try await manager.acceleratedSearch(
-            index: index,
-            query: [0, 0, 0],
-            k: 2,
-            filter: filter
-        )
-
-        // Should only return "b" (the only blue one)
-        #expect(results.count == 1)
-        #expect(results[0].id == "b")
-    }
-
-    @Test("acceleratedSearch empty queries returns empty")
-    func acceleratedBatchSearchEmpty() async throws {
-        let manager = await AccelerationManager(preference: .cpuOnly)
-
-        let index = FlatIndex(dimension: 3, metric: .euclidean)
-        try await index.insert(id: "a", vector: [0, 0, 0], metadata: nil)
-
-        let results = try await manager.acceleratedBatchSearch(
-            index: index,
-            queries: [],
-            k: 1,
-            filter: nil
-        )
-
-        #expect(results.isEmpty)
     }
 }
 

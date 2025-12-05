@@ -3,7 +3,7 @@
 
 import Foundation
 import VectorCore
-import VectorIndex
+import VectorAccelerate
 
 // MARK: - Embedding + Storage
 
@@ -42,7 +42,7 @@ public extension Embedding {
 
 public extension EmbeddingModel {
     /// Create an embedding store backed by this model.
-    /// - Parameter config: Index configuration (defaults to HNSW with model's dimensions)
+    /// - Parameter config: Index configuration (defaults to flat with model's dimensions)
     /// - Returns: Configured embedding store
     func createStore(
         config: IndexConfiguration? = nil
@@ -51,21 +51,33 @@ public extension EmbeddingModel {
         return try await EmbeddingStore(config: storeConfig, model: self)
     }
 
-    /// Create a flat (exact search) embedding store.
-    func createFlatStore() async throws -> EmbeddingStore {
-        try await EmbeddingStore(config: .exact(dimension: dimensions), model: self)
+    /// Create a flat (exact search) GPU embedding store.
+    func createFlatStore(capacity: Int = 10_000) async throws -> EmbeddingStore {
+        try await EmbeddingStore(
+            config: .flat(dimension: dimensions, capacity: capacity),
+            model: self
+        )
     }
 
-    /// Create an HNSW (fast approximate) embedding store.
-    func createHNSWStore(config: HNSWConfiguration = .default) async throws -> EmbeddingStore {
-        let storeConfig = IndexConfiguration(
-            indexType: .hnsw,
-            dimension: dimensions,
-            metric: .cosine,
-            storeText: true,
-            hnswConfig: config
+    /// Create an IVF (approximate search) GPU embedding store for large datasets.
+    /// - Parameters:
+    ///   - nlist: Number of clusters (default: 256)
+    ///   - nprobe: Clusters to search (default: 16)
+    ///   - capacity: Initial capacity
+    func createIVFStore(
+        nlist: Int = 256,
+        nprobe: Int = 16,
+        capacity: Int = 100_000
+    ) async throws -> EmbeddingStore {
+        try await EmbeddingStore(
+            config: .ivf(
+                dimension: dimensions,
+                nlist: nlist,
+                nprobe: nprobe,
+                capacity: capacity
+            ),
+            model: self
         )
-        return try await EmbeddingStore(config: storeConfig, model: self)
     }
 }
 
@@ -99,7 +111,24 @@ public extension Array where Element == Embedding {
         texts: [String]? = nil,
         metadata: [[String: String]?]? = nil
     ) async throws -> [StoredEmbedding] {
-        try await store.storeBatch(self, texts: texts, metadata: metadata)
+        var results: [StoredEmbedding] = []
+        results.reserveCapacity(count)
+
+        for (index, embedding) in enumerated() {
+            let text = texts?[safe: index]
+            let meta = metadata?[safe: index] ?? nil
+            let stored = try await store.store(embedding, text: text, metadata: meta)
+            results.append(stored)
+        }
+
+        return results
+    }
+}
+
+// Safe array subscript
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 
@@ -157,31 +186,44 @@ public extension EmbeddingStore {
 
 // MARK: - Quick Store Factory
 
-/// Quick factory for creating embedding stores.
+/// Quick factory for creating GPU-accelerated embedding stores.
 public enum EmbeddingStores {
-    /// Create an in-memory store with flat index.
-    public static func inMemory(
+    /// Create a flat GPU store for exact search.
+    /// Best for datasets < 50K vectors.
+    public static func flat(
         dimension: Int,
+        capacity: Int = 10_000,
         model: (any EmbeddingModel)? = nil
     ) async throws -> EmbeddingStore {
         try await EmbeddingStore(
-            config: .exact(dimension: dimension),
+            config: .flat(dimension: dimension, capacity: capacity),
             model: model
         )
     }
 
-    /// Create a fast HNSW-backed store.
-    public static func fast(
+    /// Create an IVF GPU store for approximate search.
+    /// Best for large datasets (50K+ vectors).
+    /// Remember to call `train()` after inserting vectors.
+    public static func ivf(
         dimension: Int,
+        nlist: Int = 256,
+        nprobe: Int = 16,
+        capacity: Int = 100_000,
         model: (any EmbeddingModel)? = nil
     ) async throws -> EmbeddingStore {
         try await EmbeddingStore(
-            config: .fast(dimension: dimension),
+            config: .ivf(
+                dimension: dimension,
+                nlist: nlist,
+                nprobe: nprobe,
+                capacity: capacity
+            ),
             model: model
         )
     }
 
-    /// Create a scalable IVF-backed store for large datasets.
+    /// Create a scalable IVF store with auto-tuned parameters.
+    /// Parameters are computed based on expected dataset size.
     public static func scalable(
         dimension: Int,
         expectedSize: Int = 100_000,
