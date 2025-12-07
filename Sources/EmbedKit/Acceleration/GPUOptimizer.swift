@@ -174,7 +174,11 @@ public struct GPUDeviceCapabilities: Sendable {
         } else if name.contains("apple") {
             self.family = .aSeriesOlder
         } else if name.contains("intel") {
+            #if os(macOS)
             self.family = device.isLowPower ? .intelIntegrated : .intelDiscrete
+            #else
+            self.family = .intelIntegrated  // Intel GPUs don't exist on iOS anyway
+            #endif
         } else if name.contains("amd") || name.contains("radeon") {
             self.family = .amdDiscrete
         } else {
