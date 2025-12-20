@@ -385,24 +385,11 @@ public actor EmbeddingStore: EmbeddingStorable {
 
     /// Compact the index to reclaim space from deleted vectors.
     ///
-    /// Compaction may remap VectorHandles. This method updates all internal
-    /// mappings to use the new handles.
-    ///
-    /// Returns the number of handles that were remapped.
-    @discardableResult
-    public func compact() async throws -> Int {
-        let remapping = try await index.compact()
-
-        // Update handle mappings with new handles
-        for (oldHandle, newHandle) in remapping {
-            if let id = handleToID[oldHandle] {
-                handleToID.removeValue(forKey: oldHandle)
-                handleToID[newHandle] = id
-                idToHandle[id] = newHandle
-            }
-        }
-
-        return remapping.count
+    /// With VectorAccelerate 0.3.2+ stable handles, `VectorHandle` values remain
+    /// valid across compaction. No handle remapping is needed - the underlying
+    /// index maintains an internal indirection table.
+    public func compact() async throws {
+        try await index.compact()
     }
 
     // MARK: - Statistics

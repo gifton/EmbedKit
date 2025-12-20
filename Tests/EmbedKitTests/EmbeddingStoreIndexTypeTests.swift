@@ -261,11 +261,8 @@ struct EmbeddingStoreCompactionTests {
         let countBefore = await store.count
         #expect(countBefore == 10)
 
-        // Compact
-        let remapped = try await store.compact()
-
-        // Some handles may have been remapped
-        #expect(remapped >= 0)
+        // Compact (stable handles - no remapping needed)
+        try await store.compact()
 
         // Count should still be correct
         let countAfter = await store.count
