@@ -1,34 +1,30 @@
 {
-  "version": 1,
-  "defaultOptions": {
-    "testTimeoutsEnabled": false,
-    "maximumTestRepetitions": 1,
-    "targetForVariableExpansion": {
-      "containerPath": "container:EmbedKit",
-      "identifier": "EmbedKit",
-      "name": "EmbedKit"
-    }
-  },
-  "configurations": [
+  "configurations" : [
     {
-      "name": "Default",
-      "options": {
-        "codeCoverage": false,
-        "systemAttachmentLifetime": "keepNever",
-        "enableAddressSanitizer": false,
-        "enableThreadSanitizer": false,
-        "enableUndefinedBehaviorSanitizer": false
+      "id" : "7B8AB317-F199-4459-B7B1-8253CB939C69",
+      "name" : "Default",
+      "options" : {
+        "codeCoverage" : false
       }
     }
   ],
-  "testTargets": [
+  "defaultOptions" : {
+    "maximumTestRepetitions" : 1,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:EmbedKit",
+      "identifier" : "EmbedKit",
+      "name" : "EmbedKit"
+    },
+    "testTimeoutsEnabled" : false
+  },
+  "testTargets" : [
     {
-      "target": {
-        "containerPath": "container:EmbedKit",
-        "identifier": "EmbedKitTests",
-        "name": "EmbedKitTests"
+      "target" : {
+        "containerPath" : "container:EmbedKit",
+        "identifier" : "EmbedKitTests",
+        "name" : "EmbedKitTests"
       }
     }
-  ]
+  ],
+  "version" : 1
 }
-

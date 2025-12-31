@@ -5,6 +5,23 @@ import Logging
 
 import NaturalLanguage
 
+/// Known embedding dimensions for NLContextualEmbedding by language.
+/// All currently supported languages use 512 dimensions.
+public enum NLContextualDimensions {
+    /// Returns the embedding dimension for a given language code.
+    /// - Parameter language: Language code (e.g., "en", "de", "fr")
+    /// - Returns: The embedding dimension (512 for all supported languages)
+    public static func dimension(for language: String) -> Int {
+        // All currently supported NLContextualEmbedding languages use 512
+        switch language.lowercased() {
+        case "en", "de", "fr", "es", "ja", "zh", "it", "pt", "ko", "ru":
+            return 512
+        default:
+            return 512  // Safe default based on Apple's current implementation
+        }
+    }
+}
+
 /// Adapter around Apple's NLContextualEmbedding that conforms to the EmbedKit EmbeddingModel API.
 /// Provides simple, dependency‑light sentence embeddings with mean pooling over token vectors.
 public actor AppleNLContextualModel: EmbeddingModel {
@@ -33,7 +50,7 @@ public actor AppleNLContextualModel: EmbeddingModel {
         self.language = language
         self.configuration = configuration
         self.id = id ?? ModelID(provider: "apple", name: "nl-contextual", version: "system")
-        self.dimensions = dimensions // 0 means unknown until first call
+        self.dimensions = dimensions > 0 ? dimensions : NLContextualDimensions.dimension(for: language)
         self.profiler = profiler
 
         let lang = NLLanguage(rawValue: language)
