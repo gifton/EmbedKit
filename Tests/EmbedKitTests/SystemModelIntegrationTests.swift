@@ -246,4 +246,69 @@ struct SystemModelIntegrationTests {
         let vector = try await manager.quickEmbed("test again")
         #expect(vector.count == 512)
     }
+
+    // MARK: - Dimension Reporting Tests (Issue: VectorProducer contract)
+
+    @Test("AppleNLContextualModel reports correct dimensions")
+    func appleNLContextualModelReportsDimensions() async throws {
+        let manager = ModelManager()
+        let model = try await manager.loadNLContextualEmbedding(language: "en")
+
+        // Should report 512, not 0
+        #expect(model.dimensions == 512, "AppleNLContextualModel should report 512 dimensions for English")
+    }
+
+    @Test("EmbeddingGenerator reports correct dimensions via VectorProducer")
+    func embeddingGeneratorReportsDimensions() async throws {
+        let manager = ModelManager()
+        let generator = try await manager.createSystemGenerator(language: "en")
+
+        // VectorProducer.dimensions should be 512
+        #expect(generator.dimensions == 512, "Generator should report 512 dimensions")
+    }
+
+    @Test("Generated embedding matches reported dimensions")
+    func generatedEmbeddingMatchesReportedDimensions() async throws {
+        let manager = ModelManager()
+        let generator = try await manager.createSystemGenerator(language: "en")
+
+        let vector = try await generator.produce("test text")
+
+        // Vector length should match the reported dimensions
+        #expect(vector.count == generator.dimensions, "Vector length should match reported dimensions")
+    }
+
+    @Test("Dimension override works when explicitly specified")
+    func dimensionOverrideWorks() throws {
+        // When dimensions is explicitly passed, it should be used instead of lookup
+        let model = try AppleNLContextualModel(
+            language: "en",
+            dimensions: 1024
+        )
+
+        #expect(model.dimensions == 1024, "Explicit dimension should override lookup")
+    }
+
+    @Test("NLContextualDimensions lookup returns correct values")
+    func nlContextualDimensionsLookup() {
+        // All supported languages should return 512
+        #expect(NLContextualDimensions.dimension(for: "en") == 512)
+        #expect(NLContextualDimensions.dimension(for: "de") == 512)
+        #expect(NLContextualDimensions.dimension(for: "fr") == 512)
+        #expect(NLContextualDimensions.dimension(for: "es") == 512)
+        #expect(NLContextualDimensions.dimension(for: "ja") == 512)
+        #expect(NLContextualDimensions.dimension(for: "zh") == 512)
+
+        // Unknown languages should also return 512 (safe default)
+        #expect(NLContextualDimensions.dimension(for: "unknown") == 512)
+    }
+
+    @Test("Different languages report correct dimensions")
+    func differentLanguagesReportDimensions() async throws {
+        // Test a few different language codes
+        for language in ["en", "de", "fr"] {
+            let model = try AppleNLContextualModel(language: language)
+            #expect(model.dimensions == 512, "Language '\(language)' should report 512 dimensions")
+        }
+    }
 }

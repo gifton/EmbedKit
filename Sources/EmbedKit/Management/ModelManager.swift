@@ -41,12 +41,14 @@ public actor ModelManager {
     public func loadAppleModel(
         language: String = "en",
         configuration: EmbeddingConfiguration = EmbeddingConfiguration(),
+        dimensions: Int = 0,
         preload: Bool = false
     ) async throws -> any EmbeddingModel {
         logger.debug("loadAppleModel() -> NLContextualEmbedding")
         return try await loadNLContextualEmbedding(
             language: language,
             configuration: configuration,
+            dimensions: dimensions,
             preload: preload
         )
     }
@@ -278,12 +280,14 @@ public actor ModelManager {
         language: String = "en",
         id: ModelID? = nil,
         configuration: EmbeddingConfiguration = EmbeddingConfiguration(),
+        dimensions: Int = 0,
         preload: Bool = false
     ) async throws -> any EmbeddingModel {
         let model = try AppleNLContextualModel(
             language: language,
             configuration: configuration,
             id: id ?? ModelID(provider: "apple", name: "nl-contextual", version: "system"),
+            dimensions: dimensions,
             profiler: profiler
         )
         loadedModels[model.id] = model
@@ -451,11 +455,13 @@ public actor ModelManager {
     public func createSystemGenerator(
         language: String = "en",
         config: GeneratorConfiguration = .default,
+        dimensions: Int = 0,
         preload: Bool = false
     ) async throws -> EmbeddingGenerator {
         let model = try await loadNLContextualEmbedding(
             language: language,
             configuration: config.embedding,
+            dimensions: dimensions,
             preload: preload
         )
 
