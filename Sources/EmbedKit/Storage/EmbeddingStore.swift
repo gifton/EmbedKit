@@ -124,6 +124,16 @@ public actor EmbeddingStore: EmbeddingStorable {
             )
         }
 
+        // Remove existing entry if ID already exists (overwrite semantics)
+        if let existingHandle = idToHandle[vectorId] {
+            try await index.remove(existingHandle)
+            handleToID.removeValue(forKey: existingHandle)
+            idToHandle.removeValue(forKey: vectorId)
+            textStore.removeValue(forKey: vectorId)
+            embeddingStore.removeValue(forKey: vectorId)
+            metadataStore.removeValue(forKey: vectorId)
+        }
+
         // Convert metadata to VectorAccelerate format
         let vaMetadata: VectorMetadata? = metadata
 

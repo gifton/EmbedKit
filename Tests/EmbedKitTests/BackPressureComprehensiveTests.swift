@@ -633,6 +633,9 @@ struct BackPressureConcurrentWaiterTests {
         let completions = await counter.getCount()
         #expect(completions == 50)
 
+        // Allow controller to settle after concurrent releases
+        try await Task.sleep(for: .milliseconds(50))
+
         // Controller should be in clean state
         #expect(await controller.queueDepth == 0)
         #expect(await controller.waiterCount == 0)

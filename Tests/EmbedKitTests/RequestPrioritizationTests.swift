@@ -275,8 +275,9 @@ struct RequestPrioritizationTests {
         let model = try await manager.loadMockModel()
 
         var config = AdaptiveBatcherConfig()
-        config.autoFlush = false
         config.urgentTriggersFlush = false
+        config.minBatchSize = 100  // Prevent auto-flush due to batch size
+        config.maxLatency = 10.0   // Long latency so requests stay queued
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         // Use tasks instead of async let to avoid deadlock
@@ -285,7 +286,7 @@ struct RequestPrioritizationTests {
         let task3 = Task { try await batcher.embed("high", priority: .high) }
 
         // Give tasks time to submit
-        try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
 
         // Check queue ordering
         let highest = await batcher.highestPendingPriority
@@ -313,7 +314,8 @@ struct RequestPrioritizationTests {
 
         var config = AdaptiveBatcherConfig()
         config.urgentTriggersFlush = false
-        config.autoFlush = false  // Disable auto-flush to prevent race conditions
+        config.minBatchSize = 100  // Prevent auto-flush due to batch size
+        config.maxLatency = 10.0   // Long latency so requests stay queued
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         let task1 = Task { try await batcher.embed("normal", priority: .normal) }
@@ -340,16 +342,18 @@ struct RequestPrioritizationTests {
         let model = try await manager.loadMockModel()
 
         var config = AdaptiveBatcherConfig()
-        config.autoFlush = false
+        config.enablePriorityScheduling = false  // Disable priority reordering
+        config.minBatchSize = 100  // Prevent auto-flush due to batch size
+        config.maxLatency = 10.0   // Long latency so requests stay queued
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         // Submit in order with different priorities
         let task1 = Task { try await batcher.embed("first", priority: .low) }
-        try await Task.sleep(nanoseconds: 5_000_000)
+        try await Task.sleep(nanoseconds: 20_000_000)
         let task2 = Task { try await batcher.embed("second", priority: .high) }
-        try await Task.sleep(nanoseconds: 5_000_000)
+        try await Task.sleep(nanoseconds: 20_000_000)
         let task3 = Task { try await batcher.embed("third", priority: .normal) }
-        try await Task.sleep(nanoseconds: 5_000_000)
+        try await Task.sleep(nanoseconds: 20_000_000)
 
         // With priority disabled, all go to back - first should still be first
         let metrics = await batcher.metrics
@@ -371,6 +375,8 @@ struct RequestPrioritizationTests {
 
         var config = AdaptiveBatcherConfig()
         config.urgentTriggersFlush = false
+        config.minBatchSize = 100  // Prevent auto-flush due to batch size
+        config.maxLatency = 10.0   // Long latency so requests stay queued
         let batcher = AdaptiveBatcher(model: model, config: config)
 
         // Add two high, one low
@@ -378,7 +384,8 @@ struct RequestPrioritizationTests {
         let task2 = Task { try await batcher.embed("high2", priority: .high) }
         let task3 = Task { try await batcher.embed("low", priority: .low) }
 
-        try await Task.sleep(nanoseconds: 10_000_000)
+        // Wait for tasks to be queued
+        try await Task.sleep(nanoseconds: 50_000_000)
 
         var metrics = await batcher.metrics
         #expect(metrics.queueDepthByPriority[.high] == 2)

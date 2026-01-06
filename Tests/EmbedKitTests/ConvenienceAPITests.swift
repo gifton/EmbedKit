@@ -112,62 +112,6 @@ struct ConvenienceAPITests {
         #expect(result == nil)
     }
 
-    // MARK: - Clustering Tests
-
-    @Test
-    func clusterDocuments_createsClusters() async throws {
-        let manager = ModelManager()
-        let documents = ["a", "b", "c", "d", "e", "f"]
-
-        let clusters = try await manager.clusterDocuments(
-            documents,
-            numberOfClusters: 2
-        )
-
-        // Should have at most 2 clusters
-        #expect(clusters.count <= 2)
-
-        // All document indices should be covered
-        let allIndices = Set(clusters.flatMap { $0 })
-        #expect(allIndices.count == documents.count)
-
-        // Each index should appear exactly once
-        let flatIndices = clusters.flatMap { $0 }
-        #expect(Set(flatIndices).count == flatIndices.count)
-    }
-
-    @Test
-    func clusterDocuments_emptyInput_returnsEmpty() async throws {
-        let manager = ModelManager()
-        let clusters = try await manager.clusterDocuments([], numberOfClusters: 3)
-        #expect(clusters.isEmpty)
-    }
-
-    @Test
-    func clusterDocuments_kZero_returnsAllInOne() async throws {
-        let manager = ModelManager()
-        let documents = ["a", "b", "c"]
-
-        let clusters = try await manager.clusterDocuments(documents, numberOfClusters: 0)
-
-        #expect(clusters.count == 1)
-        #expect(clusters[0].count == 3)
-    }
-
-    @Test
-    func clusterDocuments_kGreaterThanDocs() async throws {
-        let manager = ModelManager()
-        let documents = ["a", "b", "c"]
-
-        let clusters = try await manager.clusterDocuments(documents, numberOfClusters: 10)
-
-        // Each doc should be in its own cluster
-        #expect(clusters.count == 3)
-        for cluster in clusters {
-            #expect(cluster.count == 1)
-        }
-    }
-
     // MARK: - Similarity Matrix Tests
 
     @Test

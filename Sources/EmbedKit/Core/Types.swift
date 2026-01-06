@@ -578,33 +578,6 @@ extension EmbeddingConfiguration {
         )
     }
 
-    /// Configuration optimized for clustering and classification tasks.
-    ///
-    /// Uses shorter sequences and batch padding for efficient processing of labeled data.
-    /// Suitable for k-means clustering, hierarchical clustering, and classification.
-    ///
-    /// - Parameter maxLength: Maximum token length for inputs (default: 128)
-    /// - Returns: Configuration optimized for clustering/classification
-    ///
-    /// ## Example
-    /// ```swift
-    /// let config = EmbeddingConfiguration.forClustering()
-    /// let embeddings = try await model.embed(labels, config: config)
-    /// let clusters = kMeans(embeddings, k: 10)
-    /// ```
-    public static func forClustering(
-        maxLength: Int = 128
-    ) -> EmbeddingConfiguration {
-        EmbeddingConfiguration(
-            maxTokens: maxLength,
-            truncationStrategy: .end,
-            paddingStrategy: .batch,
-            includeSpecialTokens: true,
-            poolingStrategy: .mean,
-            normalizeOutput: true
-        )
-    }
-
     /// Configuration optimized for similarity comparison between text pairs.
     ///
     /// Designed for computing semantic similarity between question-answer pairs,
@@ -712,8 +685,6 @@ extension EmbeddingConfiguration {
             return .forSemanticSearch(maxLength: 256)
         case .rag:
             return .forRAG(chunkSize: 256)
-        case .clustering:
-            return .forClustering(maxLength: 128)
         case .similarity:
             return .forSimilarity(maxLength: 256)
         }
@@ -743,8 +714,6 @@ extension EmbeddingConfiguration {
             return .forSemanticSearch(maxLength: 512)
         case .rag:
             return .forRAG(chunkSize: 384)
-        case .clustering:
-            return .forClustering(maxLength: 256)
         case .similarity:
             return .forSimilarity(maxLength: 512)
         }
@@ -760,9 +729,6 @@ extension EmbeddingConfiguration {
 
         /// Retrieval-Augmented Generation (RAG) pipelines
         case rag
-
-        /// Clustering and classification tasks
-        case clustering
 
         /// Pairwise similarity comparisons
         case similarity
