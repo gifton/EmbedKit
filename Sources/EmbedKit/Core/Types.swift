@@ -687,6 +687,8 @@ extension EmbeddingConfiguration {
             return .forRAG(chunkSize: 256)
         case .similarity:
             return .forSimilarity(maxLength: 256)
+        case .visualization:
+            return .forVisualization(maxLength: 128)
         }
     }
 
@@ -716,7 +718,36 @@ extension EmbeddingConfiguration {
             return .forRAG(chunkSize: 384)
         case .similarity:
             return .forSimilarity(maxLength: 512)
+        case .visualization:
+            return .forVisualization(maxLength: 128)
         }
+    }
+
+    /// Configuration optimized for visualization via UMAP dimensionality reduction.
+    ///
+    /// For visualization, shorter sequences are preferred since UMAP focuses on
+    /// relative relationships between embeddings rather than capturing full semantic detail.
+    ///
+    /// - Parameter maxLength: Maximum sequence length (default: 128)
+    /// - Returns: Configuration tuned for visualization workloads
+    ///
+    /// ## Example
+    /// ```swift
+    /// let config = EmbeddingConfiguration.forVisualization()
+    /// let embeddings = try await model.embedBatch(documents, config: config)
+    /// let points = try await manager.projectEmbeddings(embeddings, dimensions: 2)
+    /// ```
+    public static func forVisualization(
+        maxLength: Int = 128
+    ) -> EmbeddingConfiguration {
+        EmbeddingConfiguration(
+            maxTokens: maxLength,
+            truncationStrategy: .end,
+            paddingStrategy: .batch,
+            includeSpecialTokens: true,
+            poolingStrategy: .mean,
+            normalizeOutput: true
+        )
     }
 
     /// Common use cases for factory method selection.
@@ -732,6 +763,9 @@ extension EmbeddingConfiguration {
 
         /// Pairwise similarity comparisons
         case similarity
+
+        /// Dimensionality reduction for visualization (UMAP projection)
+        case visualization
     }
 }
 

@@ -129,6 +129,102 @@ public extension ModelManager {
         }
         return matrix
     }
+
+    // MARK: - Dimensionality Reduction
+
+    /// Project documents to lower dimensions for visualization using UMAP.
+    ///
+    /// Uses Apple's NLContextualEmbedding to generate semantically meaningful embeddings,
+    /// then projects them to 2D or 3D space using GPU-accelerated UMAP
+    /// (Uniform Manifold Approximation and Projection).
+    ///
+    /// UMAP preserves local neighborhood structure while reducing dimensionality,
+    /// making it ideal for visualizing embedding spaces in scatter plots.
+    ///
+    /// - Parameters:
+    ///   - documents: Array of documents to project.
+    ///   - dimensions: Target dimensionality (2 for scatter plots, 3 for 3D visualization).
+    /// - Returns: Array of projected points. Each point is `[x, y]` for 2D or `[x, y, z]` for 3D.
+    /// - Throws: `EmbedKitError` if embedding fails, `AccelerationError` if projection fails.
+    ///
+    /// Example:
+    /// ```swift
+    /// let manager = ModelManager()
+    /// let points = try await manager.projectToVisualize(documents, dimensions: 2)
+    ///
+    /// // Use with Swift Charts
+    /// Chart(points.indices, id: \.self) { i in
+    ///     PointMark(
+    ///         x: .value("X", points[i][0]),
+    ///         y: .value("Y", points[i][1])
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// - Note: Requires iOS 17+/macOS 14+ for NLContextualEmbedding support.
+    ///   GPU acceleration requires Metal 4 (Apple Silicon).
+    func projectToVisualize(
+        _ documents: [String],
+        dimensions: Int = 2
+    ) async throws -> [[Float]] {
+        guard !documents.isEmpty else { return [] }
+
+        // Embed documents
+        let model = try await getOrCreateSystemModel()
+        let embeddings = try await model.embedBatch(documents, options: BatchOptions())
+
+        // Project embeddings
+        return try await projectEmbeddings(embeddings, dimensions: dimensions)
+    }
+
+    /// Project pre-computed embeddings to lower dimensions for visualization using UMAP.
+    ///
+    /// Uses GPU-accelerated UMAP (Uniform Manifold Approximation and Projection)
+    /// to project embeddings to 2D or 3D space while preserving neighborhood structure.
+    ///
+    /// - Parameters:
+    ///   - embeddings: Array of pre-computed embeddings.
+    ///   - dimensions: Target dimensionality (2 for scatter plots, 3 for 3D visualization).
+    /// - Returns: Array of projected points. Each point is `[x, y]` for 2D or `[x, y, z]` for 3D.
+    /// - Throws: `AccelerationError` if projection fails.
+    ///
+    /// Example:
+    /// ```swift
+    /// let manager = ModelManager()
+    ///
+    /// // Get embeddings from a batch operation
+    /// let embeddings = try await manager.model.embedBatch(documents)
+    ///
+    /// // Project to 3D for visualization
+    /// let points = try await manager.projectEmbeddings(embeddings, dimensions: 3)
+    /// // points[i] = [x, y, z]
+    /// ```
+    ///
+    /// - Note: GPU acceleration requires Metal 4 (Apple Silicon).
+    func projectEmbeddings(
+        _ embeddings: [Embedding],
+        dimensions: Int = 2
+    ) async throws -> [[Float]] {
+        guard !embeddings.isEmpty else { return [] }
+
+        // Extract vectors
+        let vectors = embeddings.map { $0.vector }
+
+        // Choose configuration based on dimensions
+        let config: UMAPConfiguration
+        switch dimensions {
+        case 2:
+            config = .visualization2D()
+        case 3:
+            config = .visualization3D()
+        default:
+            config = UMAPConfiguration(targetDimension: dimensions)
+        }
+
+        // Project using GPU-accelerated UMAP
+        let acceleration = try await AccelerationManager.shared()
+        return try await acceleration.umapProject(embeddings: vectors, config: config)
+    }
 }
 
 // MARK: - Async Sequence Support

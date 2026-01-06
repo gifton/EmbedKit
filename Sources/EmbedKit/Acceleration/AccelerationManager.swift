@@ -46,6 +46,9 @@ public actor AccelerationManager {
     /// Normalization kernel.
     private let normalizationKernel: L2NormalizationKernel
 
+    /// UMAP gradient kernel for dimensionality reduction.
+    private let umapKernel: UMAPGradientKernel
+
     /// Statistics tracking.
     private var stats: MutableStatistics
 
@@ -56,6 +59,7 @@ public actor AccelerationManager {
         self.context = try await Metal4ContextManager.shared()
         self.distanceProvider = try await UniversalKernelDistanceProvider(context: context)
         self.normalizationKernel = try await L2NormalizationKernel(context: context)
+        self.umapKernel = try await UMAPGradientKernel(context: context)
         self.stats = MutableStatistics()
     }
 
@@ -64,6 +68,7 @@ public actor AccelerationManager {
         self.context = context
         self.distanceProvider = try await UniversalKernelDistanceProvider(context: context)
         self.normalizationKernel = try await L2NormalizationKernel(context: context)
+        self.umapKernel = try await UMAPGradientKernel(context: context)
         self.stats = MutableStatistics()
     }
 
@@ -169,6 +174,236 @@ public actor AccelerationManager {
     /// For single vectors, uses CPU (GPU overhead not worth it).
     public nonisolated func normalize(_ vector: [Float]) -> [Float] {
         AccelerateBLAS.normalize(vector)
+    }
+
+    // MARK: - UMAP Projection
+
+    /// Project high-dimensional embeddings to lower dimensions using UMAP.
+    ///
+    /// UMAP (Uniform Manifold Approximation and Projection) preserves local
+    /// neighborhood structure while reducing dimensionality, making it ideal
+    /// for visualizing embedding spaces.
+    ///
+    /// - Parameters:
+    ///   - embeddings: Array of high-dimensional vectors (all same dimension)
+    ///   - config: UMAP configuration parameters
+    /// - Returns: Array of low-dimensional projections
+    /// - Throws: `AccelerationError` if projection fails
+    ///
+    /// ## Example
+    /// ```swift
+    /// let points = try await accelerationManager.umapProject(
+    ///     embeddings: vectors,
+    ///     config: .visualization2D()
+    /// )
+    /// // points[i] = [x, y] for 2D projection
+    /// ```
+    public func umapProject(
+        embeddings: [[Float]],
+        config: UMAPConfiguration
+    ) async throws -> [[Float]] {
+        guard !embeddings.isEmpty else { return [] }
+
+        let n = embeddings.count
+        let sourceDim = embeddings[0].count
+
+        // Validate dimensions
+        for (i, emb) in embeddings.enumerated() {
+            guard emb.count == sourceDim else {
+                throw AccelerationError.dimensionMismatch(expected: sourceDim, got: emb.count)
+            }
+            // Check for NaN/Inf
+            if emb.contains(where: { $0.isNaN || $0.isInfinite }) {
+                throw AccelerationError.invalidInput("Embedding at index \(i) contains NaN or Inf values")
+            }
+        }
+
+        // Validate config
+        try config.validate()
+
+        // Need at least k+1 points for k neighbors
+        guard n > config.neighbors else {
+            throw AccelerationError.invalidInput(
+                "Need at least \(config.neighbors + 1) points for \(config.neighbors) neighbors, got \(n)"
+            )
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let targetDim = config.targetDimension
+
+        // Step 1: Build k-NN graph using L2 distance
+        let edges = try await buildKNNGraph(
+            embeddings: embeddings,
+            k: config.neighbors
+        )
+
+        // Step 2: Sort edges by source for UMAP kernel
+        let sortedEdges = umapKernel.sortEdgesBySource(edges)
+
+        // Step 3: Initialize random low-dimensional embedding
+        var lowDimEmbedding = initializeRandomEmbedding(n: n, d: targetDim)
+
+        // Step 4: Run optimization epochs
+        for epoch in 0..<config.iterations {
+            let params = config.toKernelParameters(epoch: epoch, totalEpochs: config.iterations)
+            try await umapKernel.optimizeEpoch(
+                embedding: &lowDimEmbedding,
+                edges: sortedEdges,
+                params: params
+            )
+        }
+
+        stats.gpuOperations += 1
+        stats.gpuTimeTotal += CFAbsoluteTimeGetCurrent() - start
+
+        return lowDimEmbedding
+    }
+
+    /// Compute UMAP gradients for custom optimization loops.
+    ///
+    /// This lower-level API provides gradients without applying them,
+    /// useful for custom optimizers or when you need to inspect gradients.
+    ///
+    /// - Parameters:
+    ///   - embeddings: High-dimensional embeddings [N, D]
+    ///   - lowDimEmbeddings: Current low-dimensional embedding [N, targetDim]
+    ///   - neighbors: Number of nearest neighbors for graph
+    /// - Returns: Gradients for each point in low-dimensional space
+    public func umapGradient(
+        embeddings: [[Float]],
+        lowDimEmbeddings: [[Float]],
+        neighbors: Int = 15
+    ) async throws -> [[Float]] {
+        guard !embeddings.isEmpty else { return [] }
+        guard embeddings.count == lowDimEmbeddings.count else {
+            throw AccelerationError.dimensionMismatch(
+                expected: embeddings.count,
+                got: lowDimEmbeddings.count
+            )
+        }
+
+        let n = embeddings.count
+        let d = lowDimEmbeddings[0].count
+
+        // Build k-NN graph
+        let edges = try await buildKNNGraph(embeddings: embeddings, k: neighbors)
+        let sortedEdges = umapKernel.sortEdgesBySource(edges)
+
+        // Compute segment info
+        let (starts, counts) = umapKernel.computeSegments(edges: sortedEdges, n: n)
+
+        // Create GPU buffers
+        let device = context.device.rawDevice
+        let flatLowDim = lowDimEmbeddings.flatMap { $0 }
+
+        guard let embeddingBuffer = device.makeBuffer(
+            bytes: flatLowDim,
+            length: flatLowDim.count * MemoryLayout<Float>.size,
+            options: .storageModeShared
+        ) else {
+            throw AccelerationError.gpuOperationFailed("Failed to allocate embedding buffer")
+        }
+
+        guard let edgeBuffer = device.makeBuffer(
+            bytes: sortedEdges,
+            length: sortedEdges.count * MemoryLayout<UMAPEdge>.size,
+            options: .storageModeShared
+        ) else {
+            throw AccelerationError.gpuOperationFailed("Failed to allocate edge buffer")
+        }
+
+        guard let startsBuffer = device.makeBuffer(
+            bytes: starts,
+            length: starts.count * MemoryLayout<UInt32>.size,
+            options: .storageModeShared
+        ),
+        let countsBuffer = device.makeBuffer(
+            bytes: counts,
+            length: counts.count * MemoryLayout<UInt32>.size,
+            options: .storageModeShared
+        ) else {
+            throw AccelerationError.gpuOperationFailed("Failed to allocate segment buffers")
+        }
+
+        // Compute gradients
+        let gradientBuffer = try await umapKernel.computeGradients(
+            embedding: embeddingBuffer,
+            edges: edgeBuffer,
+            segmentStarts: startsBuffer,
+            segmentCounts: countsBuffer,
+            n: n,
+            d: d,
+            edgeCount: sortedEdges.count,
+            params: .default
+        )
+
+        // Read back gradients
+        let gradPtr = gradientBuffer.contents().bindMemory(to: Float.self, capacity: n * d)
+        var gradients: [[Float]] = []
+        for i in 0..<n {
+            var row = [Float](repeating: 0, count: d)
+            for j in 0..<d {
+                row[j] = gradPtr[i * d + j]
+            }
+            gradients.append(row)
+        }
+
+        return gradients
+    }
+
+    // MARK: - Private UMAP Helpers
+
+    /// Build k-NN graph from embeddings using L2 distance.
+    private func buildKNNGraph(
+        embeddings: [[Float]],
+        k: Int
+    ) async throws -> [UMAPEdge] {
+        let n = embeddings.count
+        var edges: [UMAPEdge] = []
+        edges.reserveCapacity(n * k)
+
+        // For each point, find k nearest neighbors using GPU distance
+        for i in 0..<n {
+            let query = embeddings[i]
+            let distances = try await batchDistance(
+                from: query,
+                to: embeddings,
+                metric: .euclidean
+            )
+
+            // Get k nearest (excluding self)
+            let indexed = distances.enumerated()
+                .filter { $0.offset != i }
+                .sorted { $0.element < $1.element }
+                .prefix(k)
+
+            // Convert distances to weights (similarity)
+            // Using exponential decay: w = exp(-d / sigma) where sigma is median distance
+            let neighborDistances = indexed.map { $0.element }
+            let sigma = max(neighborDistances.sorted()[neighborDistances.count / 2], 1e-6)
+
+            for (targetIdx, dist) in indexed {
+                let weight = exp(-dist / sigma)
+                edges.append(UMAPEdge(source: i, target: targetIdx, weight: weight))
+            }
+        }
+
+        return edges
+    }
+
+    /// Initialize random low-dimensional embedding.
+    private nonisolated func initializeRandomEmbedding(n: Int, d: Int) -> [[Float]] {
+        // Initialize with small random values (scaled by 1e-4 for stability)
+        var embedding: [[Float]] = []
+        embedding.reserveCapacity(n)
+        for _ in 0..<n {
+            var row = [Float](repeating: 0, count: d)
+            for j in 0..<d {
+                row[j] = Float.random(in: -1e-4...1e-4)
+            }
+            embedding.append(row)
+        }
+        return embedding
     }
 
     // MARK: - Statistics
