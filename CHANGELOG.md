@@ -103,6 +103,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance profiling tools
 - Example applications
 
+## [0.2.3] - 2026-01
+
+### Added
+
+#### UMAP Dimensionality Reduction (VectorAccelerate 0.3.3)
+- `UMAPConfiguration` - Configuration for GPU-accelerated UMAP projection
+  - Factory presets: `.visualization2D()`, `.visualization3D()`, `.quickPreview()`, `.highQuality()`, `.clusterEmphasis()`, `.globalStructure()`
+  - Configurable parameters: targetDimension, neighbors, minDistance, iterations, learningRate, negativeSampleRate, spread
+  - Full validation with descriptive errors
+- `AccelerationManager.umapProject(embeddings:config:)` - GPU-accelerated UMAP projection
+- `AccelerationManager.umapGradient(embeddings:lowDimEmbeddings:neighbors:)` - Compute gradients for custom optimization
+- `ModelManager.projectToVisualize(_:dimensions:)` - Embed documents and project to 2D/3D
+- `ModelManager.projectEmbeddings(_:dimensions:)` - Project pre-computed embeddings
+- `EmbeddingConfiguration.forVisualization(maxLength:)` - Configuration preset for visualization
+- `UseCase.visualization` - New use case for dimensionality reduction
+
+### Removed
+
+#### Clustering APIs (Migrated to SwiftTopics)
+- **BREAKING**: `ModelManager.clusterDocuments(_:numberOfClusters:maxIterations:)` - Use SwiftTopics for clustering
+- **BREAKING**: `ClusteringViewModel` - Use SwiftTopics for clustering UI
+- **BREAKING**: `EmbeddingConfiguration.forClustering()` - Use `.forVisualization()` or custom config
+- **BREAKING**: `UseCase.clustering` - Use `.visualization` for dimensionality reduction
+
+### Dependencies
+- VectorAccelerate 0.3.3+ (UMAP gradient kernel)
+
+---
+
 ## [0.2.2] - 2024-12
 
 ### Added
