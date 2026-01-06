@@ -305,18 +305,18 @@ struct EndToEndPipelineTests {
 
         // Create stores with different index types
         let flatStore = try await EmbeddingStore(config: .exact(dimension: dim))
-        // Use IVF config with storeText: true for this test
+        // Use IVF config with small nlist for testing (requires at least nlist vectors)
         let ivfConfig = IndexConfiguration.ivf(
             dimension: dim,
-            nlist: 16,
-            nprobe: 4,
+            nlist: 4,  // Small cluster count for test
+            nprobe: 2,
             capacity: 1000,
             storeText: true
         )
         let ivfStore = try await EmbeddingStore(config: ivfConfig)
 
-        // Generate embeddings once
-        let documents = ["doc1", "doc2", "doc3"]
+        // Generate enough embeddings for IVF (need at least nlist vectors)
+        let documents = ["doc1", "doc2", "doc3", "doc4", "doc5"]
         let vectors = try await generator.produce(documents)
 
         // Store in all indexes

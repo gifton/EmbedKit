@@ -333,67 +333,6 @@ public final class SimilarityViewModel {
     }
 }
 
-// MARK: - Clustering View Model
-
-/// A view model for clustering documents using semantic embeddings.
-///
-/// Uses Apple's NLContextualEmbedding via `ModelManager.clusterDocuments()` for
-/// semantically meaningful document clustering using k-means.
-@MainActor
-@Observable
-public final class ClusteringViewModel {
-    /// Cluster result with document indices.
-    public struct Cluster: Identifiable {
-        public let id = UUID()
-        public let index: Int
-        public let documentIndices: [Int]
-    }
-
-    /// The computed clusters.
-    public private(set) var clusters: [Cluster] = []
-
-    /// Whether clustering is in progress.
-    public private(set) var isLoading = false
-
-    /// Any error that occurred.
-    public private(set) var error: Error?
-
-    private let manager = ModelManager()
-
-    public init() {}
-
-    /// Cluster documents into groups using semantic embeddings.
-    ///
-    /// Uses the ModelManager's clusterDocuments() which generates real semantic
-    /// embeddings via NLContextualEmbedding and applies k-means clustering.
-    ///
-    /// - Parameters:
-    ///   - documents: Documents to cluster.
-    ///   - k: Number of clusters.
-    /// - Returns: Array of clusters.
-    @discardableResult
-    public func cluster(_ documents: [String], into k: Int) async -> [Cluster] {
-        isLoading = true
-        error = nil
-        clusters = []
-
-        do {
-            let result = try await manager.clusterDocuments(documents, numberOfClusters: k)
-
-            clusters = result.enumerated().map { index, indices in
-                Cluster(index: index, documentIndices: indices)
-            }
-            isLoading = false
-            return clusters
-
-        } catch {
-            self.error = error
-            isLoading = false
-            return []
-        }
-    }
-}
-
 // MARK: - Preview Helpers
 
 #if DEBUG

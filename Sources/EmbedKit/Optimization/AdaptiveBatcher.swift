@@ -274,7 +274,13 @@ public actor AdaptiveBatcher {
     // MARK: - Private Implementation
 
     private func scheduleFlushIfNeeded(urgentAdded: Bool = false) {
-        guard config.autoFlush else { return }
+        // When autoFlush is disabled, process immediately to avoid hanging
+        guard config.autoFlush else {
+            flushTask = Task {
+                try? await self.processPendingBatch()
+            }
+            return
+        }
 
         // Cancel existing flush task if we're scheduling a new one
         flushTask?.cancel()

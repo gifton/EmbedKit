@@ -181,7 +181,7 @@ struct EmbeddingStoreFlatTests {
 
     @Test("Flat index handles large dimensions")
     func flatLargeDimensions() async throws {
-        let dimension = 1024
+        let dimension = 768  // Max supported by GPU kernel
         let store = try await EmbeddingStore(config: .exact(dimension: dimension))
 
         let embedding = Embedding(

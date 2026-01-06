@@ -54,15 +54,22 @@ struct EmbeddingStorePersistenceTests {
             .appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let store = try await EmbeddingStore(config: .scalable(dimension: 3, expectedSize: 100))
-        let embedding = Embedding(vector: [0.3, 0.3, 0.4], metadata: EmbeddingMetadata.mock())
-        _ = try await store.store(embedding, id: "ivf-test")
+        // Use IVF with small nlist (4 clusters requires at least 4 vectors)
+        let ivfConfig = IndexConfiguration.ivf(dimension: 3, nlist: 4, nprobe: 2)
+        let store = try await EmbeddingStore(config: ivfConfig)
+
+        // Insert enough vectors for IVF training
+        for i in 0..<5 {
+            let vec: [Float] = [Float(i) * 0.2, 0.3, 0.4]
+            let embedding = Embedding(vector: vec, metadata: EmbeddingMetadata.mock())
+            _ = try await store.store(embedding, id: "ivf-test-\(i)")
+        }
 
         try await store.save(to: tempDir)
         let loaded = try await EmbeddingStore.load(from: tempDir)
 
         let count = await loaded.count
-        #expect(count == 1)
+        #expect(count == 5)
     }
 
     @Test("Loaded store preserves text")

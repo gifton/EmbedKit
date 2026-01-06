@@ -396,7 +396,7 @@ struct EmbeddingStoreConfigTests {
 
         #expect(config.indexType == .flat)
         #expect(config.dimension == 384)
-        #expect(config.metric == .cosine)
+        #expect(config.metric == .euclidean)  // GPU-accelerated default
         #expect(config.storeText == true)
     }
 

@@ -101,13 +101,13 @@ public struct IndexConfiguration: Sendable {
     ///
     /// - Parameters:
     ///   - dimension: Vector dimension (e.g., 384 for MiniLM, 768 for BERT)
-    ///   - metric: Distance metric (default: cosine)
+    ///   - metric: Distance metric (default: euclidean - GPU-accelerated)
     ///   - capacity: Initial capacity (default: 10,000)
     ///   - storeText: Whether to store original text (default: true)
     /// - Returns: Configuration for flat GPU index
     public static func flat(
         dimension: Int,
-        metric: DistanceMetric = .cosine,
+        metric: DistanceMetric = .euclidean,
         capacity: Int = 10_000,
         storeText: Bool = true
     ) -> IndexConfiguration {
@@ -134,7 +134,7 @@ public struct IndexConfiguration: Sendable {
     ///   - dimension: Vector dimension
     ///   - nlist: Number of clusters (default: 256)
     ///   - nprobe: Clusters to search (default: 16)
-    ///   - metric: Distance metric (default: cosine)
+    ///   - metric: Distance metric (default: euclidean - GPU-accelerated)
     ///   - capacity: Initial capacity (default: 100,000)
     ///   - storeText: Whether to store original text (default: false for large datasets)
     /// - Returns: Configuration for IVF GPU index
@@ -142,7 +142,7 @@ public struct IndexConfiguration: Sendable {
         dimension: Int,
         nlist: Int = 256,
         nprobe: Int = 16,
-        metric: DistanceMetric = .cosine,
+        metric: DistanceMetric = .euclidean,
         capacity: Int = 100_000,
         storeText: Bool = false
     ) -> IndexConfiguration {

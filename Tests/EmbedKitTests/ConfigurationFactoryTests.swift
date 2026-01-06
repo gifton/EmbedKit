@@ -42,21 +42,6 @@ struct ConfigurationFactoryTests {
         #expect(config.includeSpecialTokens == true)
     }
 
-    @Test("forClustering creates valid config")
-    func clusteringConfig() {
-        let config = EmbeddingConfiguration.forClustering()
-        #expect(config.maxTokens == 128)
-        #expect(config.normalizeOutput == true)
-        #expect(config.poolingStrategy == .mean)
-    }
-
-    @Test("forClustering with custom length")
-    func clusteringConfigCustom() {
-        let config = EmbeddingConfiguration.forClustering(maxLength: 256)
-        #expect(config.maxTokens == 256)
-        #expect(config.paddingStrategy == .batch)
-    }
-
     @Test("forSimilarity creates valid config")
     func similarityConfig() {
         let config = EmbeddingConfiguration.forSimilarity()
@@ -106,18 +91,15 @@ struct ConfigurationFactoryTests {
     func miniLMConfigs() {
         let search = EmbeddingConfiguration.forMiniLM(useCase: .semanticSearch)
         let rag = EmbeddingConfiguration.forMiniLM(useCase: .rag)
-        let cluster = EmbeddingConfiguration.forMiniLM(useCase: .clustering)
         let similarity = EmbeddingConfiguration.forMiniLM(useCase: .similarity)
 
         #expect(search.maxTokens == 256)
         #expect(rag.maxTokens == 256)
-        #expect(cluster.maxTokens == 128)
         #expect(similarity.maxTokens == 256)
 
         // All should normalize
         #expect(search.normalizeOutput == true)
         #expect(rag.normalizeOutput == true)
-        #expect(cluster.normalizeOutput == true)
         #expect(similarity.normalizeOutput == true)
     }
 
@@ -132,18 +114,15 @@ struct ConfigurationFactoryTests {
     func bertConfigs() {
         let search = EmbeddingConfiguration.forBERT(useCase: .semanticSearch)
         let rag = EmbeddingConfiguration.forBERT(useCase: .rag)
-        let cluster = EmbeddingConfiguration.forBERT(useCase: .clustering)
         let similarity = EmbeddingConfiguration.forBERT(useCase: .similarity)
 
         #expect(search.maxTokens == 512)
         #expect(rag.maxTokens == 384)
-        #expect(cluster.maxTokens == 256)
         #expect(similarity.maxTokens == 512)
 
         // All should normalize
         #expect(search.normalizeOutput == true)
         #expect(rag.normalizeOutput == true)
-        #expect(cluster.normalizeOutput == true)
         #expect(similarity.normalizeOutput == true)
     }
 
@@ -157,10 +136,9 @@ struct ConfigurationFactoryTests {
     @Test("UseCase is CaseIterable")
     func useCaseIterable() {
         let cases = EmbeddingConfiguration.UseCase.allCases
-        #expect(cases.count == 4)
+        #expect(cases.count == 3)
         #expect(cases.contains(.semanticSearch))
         #expect(cases.contains(.rag))
-        #expect(cases.contains(.clustering))
         #expect(cases.contains(.similarity))
     }
 
@@ -177,7 +155,6 @@ struct ConfigurationFactoryTests {
     func useCaseRawValues() {
         #expect(EmbeddingConfiguration.UseCase.semanticSearch.rawValue == "semanticSearch")
         #expect(EmbeddingConfiguration.UseCase.rag.rawValue == "rag")
-        #expect(EmbeddingConfiguration.UseCase.clustering.rawValue == "clustering")
         #expect(EmbeddingConfiguration.UseCase.similarity.rawValue == "similarity")
     }
 
@@ -186,7 +163,6 @@ struct ConfigurationFactoryTests {
         let configs: [EmbeddingConfiguration] = [
             .forSemanticSearch(),
             .forRAG(),
-            .forClustering(),
             .forSimilarity(),
             .forDocuments(),
             .forShortText(),
@@ -204,7 +180,6 @@ struct ConfigurationFactoryTests {
         let configs: [EmbeddingConfiguration] = [
             .forSemanticSearch(),
             .forRAG(),
-            .forClustering(),
             .forSimilarity(),
             .forDocuments(),
             .forShortText(),
@@ -222,7 +197,6 @@ struct ConfigurationFactoryTests {
         let configs: [EmbeddingConfiguration] = [
             .forSemanticSearch(),
             .forRAG(),
-            .forClustering(),
             .forSimilarity(),
             .forDocuments(),
             .forShortText(),
@@ -240,7 +214,6 @@ struct ConfigurationFactoryTests {
         // Batch padding for most cases
         #expect(EmbeddingConfiguration.forSemanticSearch().paddingStrategy == .batch)
         #expect(EmbeddingConfiguration.forRAG().paddingStrategy == .batch)
-        #expect(EmbeddingConfiguration.forClustering().paddingStrategy == .batch)
         #expect(EmbeddingConfiguration.forSimilarity().paddingStrategy == .batch)
 
         // No padding for documents
@@ -255,7 +228,6 @@ struct ConfigurationFactoryTests {
         let configs: [EmbeddingConfiguration] = [
             .forSemanticSearch(),
             .forRAG(),
-            .forClustering(),
             .forSimilarity(),
             .forDocuments(),
             .forShortText(),
@@ -580,11 +552,11 @@ struct ConfigurationFactoryPresetsTests {
     func forMiniLMUseCases() {
         let search = ConfigurationFactory.forMiniLM(useCase: .semanticSearch)
         let rag = ConfigurationFactory.forMiniLM(useCase: .rag)
-        let cluster = ConfigurationFactory.forMiniLM(useCase: .clustering)
+        let similarity = ConfigurationFactory.forMiniLM(useCase: .similarity)
 
         #expect(search.embedding.maxTokens == 256)
         #expect(rag.embedding.maxTokens == 256)
-        #expect(cluster.embedding.maxTokens == 128)
+        #expect(similarity.embedding.maxTokens == 256)
     }
 
     @Test("forBERT optimizes for 768-dim models")
@@ -601,11 +573,11 @@ struct ConfigurationFactoryPresetsTests {
     func forBERTUseCases() {
         let search = ConfigurationFactory.forBERT(useCase: .semanticSearch)
         let rag = ConfigurationFactory.forBERT(useCase: .rag)
-        let cluster = ConfigurationFactory.forBERT(useCase: .clustering)
+        let similarity = ConfigurationFactory.forBERT(useCase: .similarity)
 
         #expect(search.embedding.maxTokens == 512)
         #expect(rag.embedding.maxTokens == 384)
-        #expect(cluster.embedding.maxTokens == 256)
+        #expect(similarity.embedding.maxTokens == 512)
     }
 
     @Test("forLargeModel handles high-dimensional embeddings")

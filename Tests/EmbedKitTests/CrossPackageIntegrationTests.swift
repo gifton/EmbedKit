@@ -123,31 +123,8 @@ struct VectorProducerIntegrationTests {
     }
 
     // MARK: - VectorProducer with VectorIndex Integration
-
-    @Test("VectorProducer with FlatIndex integration")
-    func vectorProducerWithFlatIndex() async throws {
-        let manager = ModelManager()
-        let model = try await manager.loadMockModel()
-        let generator = EmbeddingGenerator(model: model)
-
-        // Create index with matching dimensions
-        let index = FlatIndex(dimension: generator.dimensions, metric: .cosine)
-
-        // Generate and store embeddings
-        let texts = ["apple", "banana", "car", "truck"]
-        let vectors = try await generator.produce(texts)
-
-        for (text, vector) in zip(texts, vectors) {
-            try await index.insert(id: text, vector: vector, metadata: nil)
-        }
-
-        // Search using producer-generated query
-        let query = try await generator.produce("fruit")
-        let results = try await index.search(query: query, k: 2, filter: nil)
-
-        #expect(results.count == 2)
-        #expect(results[0].id == "apple" || results[0].id == "banana")
-    }
+    // Note: FlatIndex tests removed - VectorIndex support was dropped in favor of
+    // GPU-accelerated AcceleratedVectorIndex via VectorAccelerate
 
     @Test("VectorProducer with EmbeddingStore integration")
     func vectorProducerWithEmbeddingStore() async throws {
@@ -252,25 +229,7 @@ struct VectorProducerIntegrationTests {
     }
 
     // MARK: - Error Handling Across Packages
-
-    @Test("VSKError propagation from EmbedKit to VectorCore")
-    func vskErrorPropagation() async throws {
-        let manager = ModelManager()
-        let model = try await manager.loadMockModel()
-        let generator = EmbeddingGenerator(model: model)
-
-        // Create index with wrong dimension
-        let index = FlatIndex(dimension: 128, metric: .cosine)
-
-        // Generate vector with correct dimension
-        let vector = try await generator.produce("test")
-        #expect(vector.count == 384)
-
-        // Attempting to insert should fail with dimension mismatch
-        await #expect(throws: Error.self) {
-            try await index.insert(id: "test", vector: vector, metadata: nil)
-        }
-    }
+    // Note: FlatIndex dimension mismatch test removed - VectorIndex support was dropped
 
     @Test("EmbedKitError conforms to VSKError")
     func embedKitErrorVSKConformance() {

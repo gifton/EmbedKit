@@ -1,5 +1,5 @@
 {
-  "originHash" : "dc489a4983e7ee5714f15268b30bbf8791a0ce4258dd40c10075b2f5177def05",
+  "originHash" : "bf8bbf7e01fa6b27e8570076ae25517131c3bbcd8a55ed7207408b69754d770b",
   "pins" : [
     {
       "identity" : "onnxruntime-swift-package-manager",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorAccelerate.git",
       "state" : {
-        "revision" : "620bfb17ac2e95c456ed6a3ac355271726e21980",
-        "version" : "0.3.2"
+        "revision" : "b0cafb4de2f9e28f85df0bbea37b9726d5b50cab",
+        "version" : "0.3.3"
       }
     },
     {

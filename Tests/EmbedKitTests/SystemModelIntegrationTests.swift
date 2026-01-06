@@ -125,29 +125,6 @@ struct SystemModelIntegrationTests {
         #expect(vector1 == vector2)
     }
 
-    @Test("clusterDocuments groups semantically similar documents")
-    func clusterDocumentsGroupsSimilarDocs() async throws {
-        let manager = ModelManager()
-
-        let documents = [
-            "Apple iPhone 15 review",
-            "Samsung Galaxy S24 specs",
-            "Best chocolate cake recipe",
-            "How to make pasta from scratch",
-            "Google Pixel 8 camera test",
-            "Homemade bread baking tips"
-        ]
-
-        let clusters = try await manager.clusterDocuments(documents, numberOfClusters: 2)
-
-        // Should create 2 clusters
-        #expect(clusters.count == 2)
-
-        // All documents should be assigned
-        let totalAssigned = clusters.reduce(0) { $0 + $1.count }
-        #expect(totalAssigned == documents.count)
-    }
-
     // MARK: - SwiftUI ViewModel Tests
 
     @Test("EmbeddingViewModel defaults to system model")

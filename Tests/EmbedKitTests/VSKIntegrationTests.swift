@@ -356,39 +356,6 @@ struct VSKIntegrationCorrectnessTests {
         #expect(blasResult.indices.contains(1))
     }
 
-    @Test("Parallel batch search returns same results as sequential")
-    func parallelBatchSearchCorrectness() async throws {
-        let index = FlatIndex(dimension: 4, metric: .euclidean)
-
-        // Insert test vectors
-        for i in 0..<20 {
-            let vector: [Float] = [Float(i), Float(i * 2), Float(i * 3), Float(i * 4)]
-            try await index.insert(id: "v\(i)", vector: vector, metadata: nil)
-        }
-
-        let queries: [[Float]] = [
-            [0, 0, 0, 0],
-            [5, 10, 15, 20],
-            [10, 20, 30, 40]
-        ]
-
-        // Batch search (parallel)
-        let batchResults = try await index.batchSearch(queries: queries, k: 3, filter: nil)
-
-        // Sequential search for comparison
-        var sequentialResults: [[VectorIndex.SearchResult]] = []
-        for query in queries {
-            let result = try await index.search(query: query, k: 3, filter: nil)
-            sequentialResults.append(result)
-        }
-
-        // Results should match
-        #expect(batchResults.count == sequentialResults.count)
-        for i in 0..<batchResults.count {
-            #expect(batchResults[i].count == sequentialResults[i].count)
-            for j in 0..<batchResults[i].count {
-                #expect(batchResults[i][j].id == sequentialResults[i][j].id)
-            }
-        }
-    }
+    // Note: FlatIndex parallel batch search test removed - VectorIndex support was dropped
+    // in favor of GPU-accelerated AcceleratedVectorIndex via VectorAccelerate
 }

@@ -99,7 +99,6 @@ struct ConfigurationFactoryGeneratorTests {
         let configs: [EmbeddingConfiguration] = [
             .forSemanticSearch(),
             .forRAG(),
-            .forClustering(),
             .forSimilarity(),
             .forDocuments(),
             .forShortText()
@@ -389,7 +388,7 @@ struct PipelineConfigurationIntegrationTests {
         #expect(result.vector.count == 384)
     }
 
-    @Test("Factory presets create working pipeline configs")
+    @Test("Factory presets create working pipeline configs", .timeLimit(.minutes(1)))
     func testFactoryPresetsCreateWorkingConfigs() async throws {
         let presets: [PipelineConfiguration] = [
             ConfigurationFactory.default(),

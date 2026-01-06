@@ -1,8 +1,61 @@
+.build
+.claude
+/devdocs
+.swiftpm
+/.DS_Store
+
+# Additional exclusions
+/docs/migration-history/
+workflow.md
+test_failures_summary.md
+*.swiftdeps~
+*.tmp
+*.cache
+*.log
+*.bak
+*~
+
+# OS generated files
 .DS_Store
-/.build
-/Packages
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Xcode
 xcuserdata/
-DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+Packages/
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code coverage
+*.profraw
+*.profdata
+.coverage/
+.bench/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
