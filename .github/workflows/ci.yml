@@ -7,6 +7,14 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# ============================================================================
+# REQUIRES macOS 26 / Xcode 26 / iOS 26 SDK
+# ============================================================================
+# EmbedKit uses VectorAccelerate 0.3.4+ which is Metal 4 ONLY and requires the
+# macos-26 runner with Xcode 26. MetalCompilerPlugin generates debug.metallib
+# for shader debugging in DEBUG builds.
+# ============================================================================
+
 env:
   XCODE_VERSION: '26'  # Swift 6.2 - required for swift-tools-version 6.2
   # Note: DEVELOPER_DIR is set automatically by setup-xcode action
@@ -26,6 +34,12 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
+      - name: Download Metal Toolchain
+        run: |
+          # MetalCompilerPlugin requires the Metal Toolchain which may not be
+          # pre-installed on GitHub runners. Download it before building.
+          xcodebuild -downloadComponent MetalToolchain
+
       - name: System Info
         run: |
           echo "## System Info" >> $GITHUB_STEP_SUMMARY
@@ -35,7 +49,7 @@ jobs:
           echo "- CPU: $(sysctl -n machdep.cpu.brand_string)" >> $GITHUB_STEP_SUMMARY
 
       - name: Cache SPM (commit-specific)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -54,9 +68,30 @@ jobs:
           echo "## Build (macOS Debug)" >> $GITHUB_STEP_SUMMARY
           echo "Build succeeded" >> $GITHUB_STEP_SUMMARY
 
+      - name: Verify MetalCompilerPlugin Output
+        run: |
+          echo "## MetalCompilerPlugin Verification" >> $GITHUB_STEP_SUMMARY
+
+          # Check for debug.metallib created by MetalCompilerPlugin
+          DEBUG_LIB=$(find .build -name "debug.metallib" -type f 2>/dev/null | head -1)
+
+          if [ -n "$DEBUG_LIB" ]; then
+            SIZE=$(du -h "$DEBUG_LIB" | cut -f1)
+            echo "- ✅ debug.metallib found ($SIZE) - shader debugging enabled" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚠️ debug.metallib not found - MetalCompilerPlugin may not have run" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for EmbedKit's bundled release metallib
+          EMBEDKIT_LIB=$(find .build -name "EmbedKitShaders.metallib" -type f 2>/dev/null | head -1)
+          if [ -n "$EMBEDKIT_LIB" ]; then
+            SIZE=$(du -h "$EMBEDKIT_LIB" | cut -f1)
+            echo "- ✅ EmbedKitShaders.metallib found ($SIZE)" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Upload Build Log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-log
           path: build.log
@@ -80,13 +115,16 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: List Available iOS Simulators
         run: |
           echo "Available iOS Simulators:"
           xcrun simctl list devices available | grep -i iphone | head -10
 
       - name: Cache SPM (iOS)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData
@@ -111,7 +149,7 @@ jobs:
 
       - name: Upload Build Log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-ios-log
           path: build-ios.log
@@ -137,7 +175,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -160,7 +198,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-tokenizer-log
           path: test.log
@@ -182,7 +220,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -205,7 +243,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-batch-log
           path: test.log
@@ -226,8 +264,11 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -250,7 +291,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-metal-log
           path: test.log
@@ -272,7 +313,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -295,7 +336,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-embedding-log
           path: test.log
@@ -317,7 +358,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -340,7 +381,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-config-log
           path: test.log
@@ -362,7 +403,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -388,7 +429,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-coreml-log
           path: test.log
@@ -410,7 +451,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -433,7 +474,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-streaming-log
           path: test.log
@@ -455,7 +496,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -478,7 +519,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-error-log
           path: test.log
@@ -500,7 +541,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -523,7 +564,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-integration-log
           path: test.log
@@ -548,7 +589,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -578,7 +619,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-stress-log
           path: test.log
@@ -601,7 +642,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -624,7 +665,7 @@ jobs:
 
       - name: Upload Test Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-benchmarks-log
           path: test.log
@@ -649,8 +690,11 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Restore SPM Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build
@@ -668,7 +712,7 @@ jobs:
 
       - name: Upload Build Log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-release-log
           path: build-release.log
@@ -715,7 +759,7 @@ jobs:
 
       - name: Upload SwiftLint Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: swiftlint-log
           path: swiftlint.log
