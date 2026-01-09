@@ -1,0 +1,11 @@
+{
+  "output": "debug.metallib",
+  "flags": [
+    "-gline-tables-only",
+    "-frecord-sources",
+    "-std=metal4.0",
+    "-O0"
+  ],
+  "include-paths": ["Shaders/Common"],
+  "plugin-logging": true
+}

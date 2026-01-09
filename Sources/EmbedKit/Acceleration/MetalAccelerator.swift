@@ -3315,9 +3315,19 @@ public actor MetalAccelerator {
                 return
             }
         }
-        // 2) Try Bundle.module metallib
-        // The resource is named EmbedKitShaders.metallib in Sources/EmbedKit/Resources/
+
         #if SWIFT_PACKAGE
+        // 2) In DEBUG builds, try debug.metallib (has embedded source for Xcode Metal Debugger)
+        #if DEBUG
+        if let url = Bundle.module.url(forResource: "debug", withExtension: "metallib"),
+           let lib = try? dev.makeLibrary(URL: url) {
+            library = lib
+            await buildPipelines(from: lib)
+            return
+        }
+        #endif
+
+        // 3) Try release metallib (EmbedKitShaders.metallib)
         if let url = Bundle.module.url(forResource: "EmbedKitShaders", withExtension: "metallib"),
            let lib = try? dev.makeLibrary(URL: url) {
             library = lib

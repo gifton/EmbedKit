@@ -46,10 +46,15 @@ let package = Package(
     dependencies: [
         // VSK dependencies - VectorAccelerate provides GPU-first indexing (v0.3.0+)
         .package(url: "https://github.com/gifton/VectorCore.git", from: "0.1.6"),
-        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.3.3"),
+        // Using branch:main to get v0.3.4+ features with MetalCompilerPlugin support
+        // (SPM doesn't allow stable versions to depend on branch-based packages)
+        .package(url: "https://github.com/gifton/VectorAccelerate.git", branch: "main"),
 
         // System dependencies
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+
+        // MetalCompilerPlugin - generates debug.metallib with source for Xcode Metal Debugger
+        .package(url: "https://github.com/schwa/MetalCompilerPlugin", branch: "main"),
 
         // ONNX Runtime - only used by EmbedKitONNX target
         .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", from: "1.19.0"),
@@ -65,7 +70,10 @@ let package = Package(
             ],
             path: "Sources/EmbedKit",
             exclude: [
-                "Shaders"  // Metal sources compiled separately via Scripts/CompileMetalShaders.sh
+                // Metal sources: release via Scripts/CompileMetalShaders.sh, debug via MetalCompilerPlugin
+                "Shaders",
+                // Plugin config file not a resource
+                "metal-compiler-plugin.json"
             ],
             resources: [
                 .copy("Resources/vocab.txt"),
@@ -81,6 +89,10 @@ let package = Package(
                 .linkedFramework("MetalPerformancePrimitives"),
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalPerformanceShaders")
+            ],
+            plugins: [
+                // Generates debug.metallib with embedded source for Xcode Metal Debugger
+                .plugin(name: "MetalCompilerPlugin", package: "MetalCompilerPlugin")
             ]
         ),
 
