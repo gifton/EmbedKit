@@ -251,3 +251,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 - VectorAccelerate 0.3.3+ (UMAP gradient kernel)
+
+---
+
+## [0.2.10] - 2026-01
+
+### Added
+
+#### GPU Health Monitoring (VectorAccelerate 0.3.5 - Phase 1)
+- `GPUHealthPreset` enum - Configurable health monitoring profiles
+  - `.default` - Balanced settings (3 failures, 5 min disable)
+  - `.aggressive` - Fail fast (2 failures, 10 min disable)
+  - `.lenient` - Tolerant (5 failures, 3 min disable)
+- `AccelerationManager(healthPreset:)` - Initialize with health monitoring
+- `AccelerationManager.gpuHealthStatus()` - Get current GPU health status
+- `AccelerationManager.isGPUHealthy()` - Quick health check
+- `AccelerationManager.resetHealthTracking()` - Reset health state
+- Automatic CPU fallback when GPU health degrades
+- Health tracking for all GPU operations (batch_distance, normalize, umap_project)
+
+#### Adaptive GPU/CPU Routing (VectorAccelerate 0.3.5 - Phase 2)
+- `GPUDecisionProfile` enum - Adaptive routing profiles
+  - `.balanced` - Default thresholds for most workloads
+  - `.batchOptimized` - Lower thresholds for batch processing
+  - `.realTimeOptimized` - Higher thresholds for latency-sensitive operations
+  - `.alwaysGPU` - Force GPU (default, backward compatible)
+  - `.alwaysCPU` - Force CPU
+- `AccelerationManager(healthPreset:decisionProfile:)` - Full configuration
+- `AccelerationManager.gpuPerformanceStats()` - Get performance statistics
+- `AccelerationManager.updateDecisionProfile(_:)` - Update profile at runtime
+- `AccelerationManager.currentActivationThresholds()` - Get activation thresholds
+- `AccelerationManager.resetDecisionEngineHistory()` - Reset performance history
+- Adaptive learning from GPU vs CPU execution times
+- Automatic GPU/CPU routing based on workload characteristics
+
+#### Write-Ahead Log Durability (VectorAccelerate 0.3.5 - Phase 3)
+- `WALConfiguration` enum - Crash recovery configuration
+  - `.disabled` - No WAL (default, best performance)
+  - `.durable(directory:)` - Sync after every write
+  - `.balanced(directory:checkpointThreshold:)` - Periodic sync with auto-checkpoint
+  - `.performant(directory:)` - Batch sync for high throughput
+- `IndexConfiguration.flat(walConfiguration:)` - Flat index with WAL
+- `IndexConfiguration.ivf(walConfiguration:)` - IVF index with WAL
+- `EmbeddingStore.open(config:walDirectory:)` - Open with WAL recovery
+- `EmbeddingStore.checkpoint()` - Create consistent recovery point
+- `EmbeddingStore.walStatistics()` - Get WAL segment count, size, entries
+- `EmbeddingStore.flushWAL()` - Flush pending writes to disk
+- `EmbeddingStore.compactWAL()` - Remove obsolete WAL entries
+- `EmbeddingStore.recover()` - Replay uncommitted operations
+- `EmbeddingStore.isWALEnabled` - Check if WAL is active
+- `EmbeddingStoreWALStats` - WAL statistics with human-readable summary
+
+#### Batch Operations
+- `EmbeddingStore.storeBatch(_:texts:ids:metadata:)` - Store pre-computed embeddings in batch
+- `EmbeddingStore.removeBatch(_:)` - Remove multiple embeddings by ID
+
+### Changed
+- `AccelerationManager` now includes health monitoring by default
+- GPU operations automatically fall back to CPU on repeated failures
+- All GPU operations record success/failure for health tracking
+
+### Dependencies
+- VectorAccelerate 0.3.5+ (GPUHealthMonitor, GPUDecisionEngine, WAL)
+
+### Testing
+- 42 AccelerationManager tests (health monitoring + decision engine)
+- 115 EmbeddingStore tests (including 14 WAL configuration tests)
+- All tests passing

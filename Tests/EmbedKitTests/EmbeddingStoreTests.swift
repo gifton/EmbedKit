@@ -499,6 +499,201 @@ struct EmbeddingSearchResultTests {
     }
 }
 
+// MARK: - WAL Configuration Tests
+
+@Suite("EmbeddingStore - WAL Configuration")
+struct EmbeddingStoreWALTests {
+
+    @Test("WAL disabled by default")
+    func walDisabledByDefault() async throws {
+        let config = IndexConfiguration.flat(dimension: 3)
+
+        #expect(config.walConfiguration == .disabled)
+        #expect(config.walConfiguration.isEnabled == false)
+        #expect(config.walConfiguration.directory == nil)
+    }
+
+    @Test("WAL durable configuration")
+    func walDurableConfiguration() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-durable-\(UUID().uuidString)")
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .durable(directory: walDir)
+        )
+
+        #expect(config.walConfiguration.isEnabled == true)
+        #expect(config.walConfiguration.directory == walDir)
+    }
+
+    @Test("WAL balanced configuration")
+    func walBalancedConfiguration() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-balanced-\(UUID().uuidString)")
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir, checkpointThreshold: 250)
+        )
+
+        #expect(config.walConfiguration.isEnabled == true)
+        #expect(config.walConfiguration.directory == walDir)
+    }
+
+    @Test("WAL performant configuration")
+    func walPerformantConfiguration() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-performant-\(UUID().uuidString)")
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .performant(directory: walDir)
+        )
+
+        #expect(config.walConfiguration.isEnabled == true)
+        #expect(config.walConfiguration.directory == walDir)
+    }
+
+    @Test("Store with WAL enabled reports isWALEnabled true")
+    func storeWithWALEnabled() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir)
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        #expect(store.isWALEnabled == true)
+    }
+
+    @Test("Store with WAL disabled reports isWALEnabled false")
+    func storeWithWALDisabled() async throws {
+        let config = IndexConfiguration.flat(dimension: 3)
+        let store = try await EmbeddingStore(config: config)
+
+        #expect(store.isWALEnabled == false)
+    }
+
+    @Test("WAL statistics available when enabled")
+    func walStatisticsAvailable() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-stats-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir)
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        let stats = await store.walStatistics()
+        #expect(stats != nil)
+    }
+
+    @Test("WAL statistics nil when disabled")
+    func walStatisticsNilWhenDisabled() async throws {
+        let config = IndexConfiguration.flat(dimension: 3)
+        let store = try await EmbeddingStore(config: config)
+
+        let stats = await store.walStatistics()
+        #expect(stats == nil)
+    }
+
+    @Test("Checkpoint succeeds when WAL enabled")
+    func checkpointSucceeds() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-checkpoint-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir)
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        // Store some data
+        let embedding = Embedding(vector: [1.0, 0.0, 0.0], metadata: EmbeddingMetadata.mock())
+        _ = try await store.store(embedding)
+
+        // Checkpoint should succeed
+        let seq = try await store.checkpoint()
+        #expect(seq != nil)
+    }
+
+    @Test("Checkpoint returns nil when WAL disabled")
+    func checkpointReturnsNilWhenDisabled() async throws {
+        let config = IndexConfiguration.flat(dimension: 3)
+        let store = try await EmbeddingStore(config: config)
+
+        let seq = try await store.checkpoint()
+        #expect(seq == nil)
+    }
+
+    @Test("FlushWAL succeeds when WAL enabled")
+    func flushWALSucceeds() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-flush-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir)
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        // Store some data
+        let embedding = Embedding(vector: [1.0, 0.0, 0.0], metadata: EmbeddingMetadata.mock())
+        _ = try await store.store(embedding)
+
+        // Flush should succeed (no exception)
+        try await store.flushWAL()
+    }
+
+    @Test("IVF index with WAL configuration")
+    func ivfWithWALConfiguration() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-ivf-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.ivf(
+            dimension: 64,
+            nlist: 8,
+            nprobe: 2,
+            walConfiguration: .balanced(directory: walDir)
+        )
+
+        #expect(config.walConfiguration.isEnabled == true)
+        #expect(config.indexType == .ivf)
+
+        let store = try await EmbeddingStore(config: config)
+        #expect(store.isWALEnabled == true)
+    }
+
+    @Test("WAL statistics summary is readable")
+    func walStatisticsSummary() async throws {
+        let walDir = FileManager.default.temporaryDirectory.appendingPathComponent("wal-test-summary-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: walDir) }
+
+        let config = IndexConfiguration.flat(
+            dimension: 3,
+            walConfiguration: .balanced(directory: walDir)
+        )
+        let store = try await EmbeddingStore(config: config)
+
+        // Store some data to generate WAL entries
+        for i in 0..<5 {
+            let embedding = Embedding(
+                vector: [Float(i), Float(i + 1), Float(i + 2)],
+                metadata: EmbeddingMetadata.mock()
+            )
+            _ = try await store.store(embedding)
+        }
+
+        let stats = await store.walStatistics()
+        #expect(stats != nil)
+
+        if let stats = stats {
+            let summary = stats.summary
+            #expect(summary.contains("WAL Statistics"))
+            #expect(summary.contains("Segments"))
+            #expect(summary.contains("Entry Count"))
+        }
+    }
+}
+
 // MARK: - Mock Metadata Extension
 
 private extension EmbeddingMetadata {

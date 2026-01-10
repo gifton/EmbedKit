@@ -5,6 +5,121 @@ import Foundation
 import VectorCore
 import VectorAccelerate
 
+// MARK: - WAL Configuration
+
+/// Write-Ahead Log configuration for crash recovery.
+///
+/// The WAL provides durability guarantees by logging operations before they are applied.
+/// In case of a crash, the WAL can be replayed to restore the index to a consistent state.
+///
+/// ## Usage
+/// ```swift
+/// // Disabled (default) - no WAL overhead
+/// let config = IndexConfiguration.flat(dimension: 384)
+///
+/// // Durable mode - sync after every write
+/// let config = IndexConfiguration.flat(
+///     dimension: 384,
+///     walConfiguration: .durable(directory: walDir)
+/// )
+///
+/// // Balanced mode - periodic sync with auto-checkpoint
+/// let config = IndexConfiguration.flat(
+///     dimension: 384,
+///     walConfiguration: .balanced(directory: walDir, checkpointThreshold: 500)
+/// )
+///
+/// // Performant mode - batch sync for high throughput
+/// let config = IndexConfiguration.flat(
+///     dimension: 384,
+///     walConfiguration: .performant(directory: walDir)
+/// )
+/// ```
+public enum WALConfiguration: Sendable, Equatable {
+    /// No WAL - best performance, no durability guarantees.
+    ///
+    /// Use when:
+    /// - Data can be regenerated (e.g., embeddings from source text)
+    /// - Performance is critical and durability is not required
+    case disabled
+
+    /// Durable mode - sync after every write.
+    ///
+    /// Provides strongest durability guarantee but has highest I/O overhead.
+    /// Use for critical data where no loss is acceptable.
+    ///
+    /// - Parameter directory: Directory for WAL segment files
+    case durable(directory: URL)
+
+    /// Balanced mode - periodic sync with auto-checkpoint.
+    ///
+    /// Good balance between performance and durability. Creates automatic
+    /// checkpoints after a configurable number of operations.
+    ///
+    /// - Parameters:
+    ///   - directory: Directory for WAL segment files
+    ///   - checkpointThreshold: Operations before auto-checkpoint (default: 500)
+    case balanced(directory: URL, checkpointThreshold: Int = 500)
+
+    /// Performant mode - batch sync for high throughput.
+    ///
+    /// Best performance with some durability. Syncs in batches to minimize
+    /// I/O overhead. May lose recent operations on crash.
+    ///
+    /// - Parameter directory: Directory for WAL segment files
+    case performant(directory: URL)
+
+    /// Convert to VectorAccelerate's WALConfiguration.
+    internal func toVectorAccelerate() -> VectorAccelerate.WALConfiguration {
+        switch self {
+        case .disabled:
+            return .disabled
+
+        case .durable(let directory):
+            return .enabled(
+                directory: directory,
+                syncMode: .immediate,
+                autoCheckpointThreshold: 0,
+                autoCompactThreshold: 0
+            )
+
+        case .balanced(let directory, let threshold):
+            return .enabled(
+                directory: directory,
+                syncMode: .periodic,
+                autoCheckpointThreshold: threshold,
+                autoCompactThreshold: 5_000_000  // 5MB auto-compact threshold
+            )
+
+        case .performant(let directory):
+            return .enabled(
+                directory: directory,
+                syncMode: .batch,
+                autoCheckpointThreshold: 1000,
+                autoCompactThreshold: 10_000_000  // 10MB auto-compact threshold
+            )
+        }
+    }
+
+    /// Whether WAL is enabled.
+    public var isEnabled: Bool {
+        switch self {
+        case .disabled: return false
+        default: return true
+        }
+    }
+
+    /// The WAL directory, if enabled.
+    public var directory: URL? {
+        switch self {
+        case .disabled: return nil
+        case .durable(let dir): return dir
+        case .balanced(let dir, _): return dir
+        case .performant(let dir): return dir
+        }
+    }
+}
+
 // MARK: - Index Type
 
 /// Type of GPU vector index to use.
@@ -95,6 +210,13 @@ public struct IndexConfiguration: Sendable {
     /// Recommended: 1-20% of nlist.
     public let nprobe: Int?
 
+    // MARK: - WAL Configuration
+
+    /// Write-Ahead Log configuration for crash recovery.
+    ///
+    /// Default is `.disabled` (no WAL). Enable for durability guarantees.
+    public let walConfiguration: WALConfiguration
+
     // MARK: - Factory Methods
 
     /// Create a flat index configuration for exact search.
@@ -104,12 +226,14 @@ public struct IndexConfiguration: Sendable {
     ///   - metric: Distance metric (default: euclidean - GPU-accelerated)
     ///   - capacity: Initial capacity (default: 10,000)
     ///   - storeText: Whether to store original text (default: true)
+    ///   - walConfiguration: WAL configuration for crash recovery (default: disabled)
     /// - Returns: Configuration for flat GPU index
     public static func flat(
         dimension: Int,
         metric: DistanceMetric = .euclidean,
         capacity: Int = 10_000,
-        storeText: Bool = true
+        storeText: Bool = true,
+        walConfiguration: WALConfiguration = .disabled
     ) -> IndexConfiguration {
         IndexConfiguration(
             indexType: .flat,
@@ -118,7 +242,8 @@ public struct IndexConfiguration: Sendable {
             capacity: capacity,
             storeText: storeText,
             nlist: nil,
-            nprobe: nil
+            nprobe: nil,
+            walConfiguration: walConfiguration
         )
     }
 
@@ -137,6 +262,7 @@ public struct IndexConfiguration: Sendable {
     ///   - metric: Distance metric (default: euclidean - GPU-accelerated)
     ///   - capacity: Initial capacity (default: 100,000)
     ///   - storeText: Whether to store original text (default: false for large datasets)
+    ///   - walConfiguration: WAL configuration for crash recovery (default: disabled)
     /// - Returns: Configuration for IVF GPU index
     public static func ivf(
         dimension: Int,
@@ -144,7 +270,8 @@ public struct IndexConfiguration: Sendable {
         nprobe: Int = 16,
         metric: DistanceMetric = .euclidean,
         capacity: Int = 100_000,
-        storeText: Bool = false
+        storeText: Bool = false,
+        walConfiguration: WALConfiguration = .disabled
     ) -> IndexConfiguration {
         IndexConfiguration(
             indexType: .ivf,
@@ -153,7 +280,8 @@ public struct IndexConfiguration: Sendable {
             capacity: capacity,
             storeText: storeText,
             nlist: nlist,
-            nprobe: nprobe
+            nprobe: nprobe,
+            walConfiguration: walConfiguration
         )
     }
 
@@ -196,7 +324,8 @@ public struct IndexConfiguration: Sendable {
         capacity: Int = 10_000,
         storeText: Bool = true,
         nlist: Int? = nil,
-        nprobe: Int? = nil
+        nprobe: Int? = nil,
+        walConfiguration: WALConfiguration = .disabled
     ) {
         self.indexType = indexType
         self.dimension = dimension
@@ -205,26 +334,31 @@ public struct IndexConfiguration: Sendable {
         self.storeText = storeText
         self.nlist = nlist
         self.nprobe = nprobe
+        self.walConfiguration = walConfiguration
     }
 
     // MARK: - VectorAccelerate Conversion
 
     /// Convert to VectorAccelerate's IndexConfiguration.
     internal func toVectorAccelerate() -> VectorAccelerate.IndexConfiguration {
+        let vaWalConfig = walConfiguration.toVectorAccelerate()
+
         switch indexType {
         case .flat:
-            return .flat(
+            return VectorAccelerate.IndexConfiguration(
                 dimension: dimension,
                 metric: metric,
-                capacity: capacity
+                capacity: capacity,
+                indexType: .flat,
+                walConfiguration: vaWalConfig
             )
         case .ivf:
-            return .ivf(
+            return VectorAccelerate.IndexConfiguration(
                 dimension: dimension,
-                nlist: nlist ?? 256,
-                nprobe: nprobe ?? 16,
                 metric: metric,
-                capacity: capacity
+                capacity: capacity,
+                indexType: .ivf(nlist: nlist ?? 256, nprobe: nprobe ?? 16),
+                walConfiguration: vaWalConfig
             )
         }
     }

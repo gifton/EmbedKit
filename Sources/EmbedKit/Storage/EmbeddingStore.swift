@@ -280,6 +280,34 @@ public actor EmbeddingStore: EmbeddingStorable {
 
     // MARK: - Batch Operations
 
+    /// Store multiple pre-computed embeddings in batch.
+    ///
+    /// - Parameters:
+    ///   - embeddings: Array of embeddings to store
+    ///   - texts: Optional array of text associated with each embedding
+    ///   - ids: Optional array of IDs (auto-generated if not provided)
+    ///   - metadata: Optional array of metadata dictionaries
+    /// - Returns: Array of stored embeddings
+    public func storeBatch(
+        _ embeddings: [Embedding],
+        texts: [String]? = nil,
+        ids: [String]? = nil,
+        metadata: [[String: String]?]? = nil
+    ) async throws -> [StoredEmbedding] {
+        var results: [StoredEmbedding] = []
+        results.reserveCapacity(embeddings.count)
+
+        for (index, embedding) in embeddings.enumerated() {
+            let id = ids?[safe: index]
+            let text = texts?[safe: index]
+            let meta = metadata?[safe: index] ?? nil
+            let stored = try await store(embedding, id: id, text: text, metadata: meta)
+            results.append(stored)
+        }
+
+        return results
+    }
+
     /// Store multiple texts in batch.
     public func storeBatch(
         texts: [String],
@@ -305,6 +333,15 @@ public actor EmbeddingStore: EmbeddingStorable {
         }
 
         return results
+    }
+
+    /// Remove multiple embeddings by ID.
+    ///
+    /// - Parameter ids: Array of IDs to remove
+    public func removeBatch(_ ids: [String]) async throws {
+        for id in ids {
+            try await remove(id: id)
+        }
     }
 
     /// Batch search with multiple queries.
@@ -563,6 +600,168 @@ public actor EmbeddingStore: EmbeddingStorable {
             to: candidates.map { $0.vector },
             metric: config.metric
         )
+    }
+
+    // MARK: - WAL Recovery APIs
+
+    /// Open an existing store with WAL recovery.
+    ///
+    /// This is the recommended way to open a store that may have crashed during
+    /// operation. Any uncommitted operations from the WAL will be replayed.
+    ///
+    /// ## Example Usage
+    /// ```swift
+    /// // Open store with automatic recovery
+    /// let store = try await EmbeddingStore.open(
+    ///     config: .flat(dimension: 384, walConfiguration: .balanced(directory: walDir)),
+    ///     walDirectory: walDir
+    /// )
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - config: Index configuration (must have WAL enabled)
+    ///   - walDirectory: Directory containing WAL files
+    ///   - model: Optional embedding model
+    /// - Returns: Recovered embedding store
+    /// - Throws: If recovery fails
+    public static func open(
+        config: IndexConfiguration,
+        walDirectory: URL,
+        model: (any EmbeddingModel)? = nil
+    ) async throws -> EmbeddingStore {
+        // Create config with WAL pointing to the specified directory
+        let walConfig = WALConfiguration.balanced(directory: walDirectory)
+        let recoveryConfig = IndexConfiguration(
+            indexType: config.indexType,
+            dimension: config.dimension,
+            metric: config.metric,
+            capacity: config.capacity,
+            storeText: config.storeText,
+            nlist: config.nlist,
+            nprobe: config.nprobe,
+            walConfiguration: walConfig
+        )
+
+        // Create store which will automatically recover from WAL
+        let store = try await EmbeddingStore(config: recoveryConfig, model: model)
+
+        // Trigger recovery on the underlying index
+        let recoveredCount = try await store.recover()
+
+        if recoveredCount > 0 {
+            // Checkpoint after successful recovery
+            _ = try await store.checkpoint()
+        }
+
+        return store
+    }
+
+    /// Recover operations from the WAL.
+    ///
+    /// This replays any uncommitted operations from the WAL. Normally called
+    /// automatically during `open()`, but can be called manually if needed.
+    ///
+    /// - Returns: Number of operations recovered
+    /// - Throws: If recovery fails
+    @discardableResult
+    public func recover() async throws -> Int {
+        try await index.recover()
+    }
+
+    /// Create a checkpoint (mark current position as consistent).
+    ///
+    /// Checkpoints mark a point where the index is in a consistent state.
+    /// During recovery, replay starts from the last checkpoint. This reduces
+    /// recovery time and limits data loss window.
+    ///
+    /// ## When to Call
+    /// - After batch inserts complete
+    /// - Before shutting down gracefully
+    /// - Periodically for long-running applications
+    ///
+    /// - Returns: Sequence number of the checkpoint, or nil if WAL is disabled
+    @discardableResult
+    public func checkpoint() async throws -> UInt64? {
+        try await index.checkpoint()
+    }
+
+    /// Get WAL statistics if WAL is enabled.
+    ///
+    /// Returns statistics about the WAL including segment count, size,
+    /// current sequence number, and checkpoint status.
+    ///
+    /// - Returns: WAL statistics, or nil if WAL is disabled
+    public func walStatistics() async -> EmbeddingStoreWALStats? {
+        guard let stats = await index.walStatistics() else { return nil }
+        return EmbeddingStoreWALStats(
+            segmentCount: stats.segmentCount,
+            totalSize: stats.totalSizeBytes,
+            entryCount: stats.entryCount,
+            currentSequence: stats.currentSequence,
+            lastCheckpoint: stats.lastCheckpointSequence,
+            isDirty: stats.isDirty
+        )
+    }
+
+    /// Flush pending WAL writes to disk.
+    ///
+    /// This ensures all logged operations are persisted but does not
+    /// create a checkpoint. Use `checkpoint()` for a full recovery point.
+    ///
+    /// - Throws: If flush fails
+    public func flushWAL() async throws {
+        try await index.flushWAL()
+    }
+
+    /// Compact the WAL by removing obsolete entries.
+    ///
+    /// This removes WAL segments that are older than the last checkpoint.
+    /// Should be called periodically to prevent unbounded WAL growth.
+    ///
+    /// - Throws: If compaction fails
+    public func compactWAL() async throws {
+        try await index.compactWAL()
+    }
+
+    /// Whether WAL is enabled for this store.
+    public nonisolated var isWALEnabled: Bool {
+        config.walConfiguration.isEnabled
+    }
+}
+
+// MARK: - WAL Statistics
+
+/// WAL statistics for EmbeddingStore.
+public struct EmbeddingStoreWALStats: Sendable {
+    /// Number of active segments
+    public let segmentCount: Int
+
+    /// Total size in bytes
+    public let totalSize: Int
+
+    /// Total entry count across all segments
+    public let entryCount: Int
+
+    /// Current sequence number
+    public let currentSequence: UInt64
+
+    /// Last checkpoint sequence number
+    public let lastCheckpoint: UInt64
+
+    /// Whether there are unflushed writes
+    public let isDirty: Bool
+
+    /// Human-readable summary
+    public var summary: String {
+        """
+        WAL Statistics:
+          Segments: \(segmentCount)
+          Total Size: \(ByteCountFormatter.string(fromByteCount: Int64(totalSize), countStyle: .file))
+          Entry Count: \(entryCount)
+          Current Sequence: \(currentSequence)
+          Last Checkpoint: \(lastCheckpoint)
+          Dirty: \(isDirty)
+        """
     }
 }
 
