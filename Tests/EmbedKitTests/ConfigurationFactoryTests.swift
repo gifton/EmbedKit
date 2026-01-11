@@ -136,10 +136,11 @@ struct ConfigurationFactoryTests {
     @Test("UseCase is CaseIterable")
     func useCaseIterable() {
         let cases = EmbeddingConfiguration.UseCase.allCases
-        #expect(cases.count == 3)
+        #expect(cases.count == 4)
         #expect(cases.contains(.semanticSearch))
         #expect(cases.contains(.rag))
         #expect(cases.contains(.similarity))
+        #expect(cases.contains(.visualization))
     }
 
     @Test("UseCase is Sendable")
