@@ -5,6 +5,19 @@ All notable changes to EmbedKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-03
+
+### Fixed
+
+#### NLContextualEmbedding Asset Validation
+- **Critical**: `AppleNLContextualModel.ensureAssets()` now checks the return value of `NLContextualEmbedding.requestAssets()` — previously the result was discarded with `_ =`, silently continuing when assets were unavailable. This caused `enumerateTokenVectors()` to yield zero vectors, producing an opaque `inferenceFailed("No token vectors")` error instead of a clear `modelLoadFailed` error at load time.
+- Added post-download verification: confirms `hasAvailableAssets` after a successful `requestAssets()` call to catch corrupted or incomplete downloads.
+- `embed()` now validates that input text is not whitespace-only before processing (previously only checked for empty string).
+- `embedBatch()` now calls `ensureAssets()` before spawning the concurrent task group, failing fast on the first call instead of spawning N tasks that all fail identically.
+- Improved zero-vectors error diagnostic to include asset availability status, language, and input length for easier debugging.
+
+---
+
 ## [0.1.0-alpha] - 2024-11-24
 
 ### Added
