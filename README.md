@@ -212,6 +212,9 @@ Sources/EmbedKitONNX/  # Optional ONNX Runtime support
 | MiniLM-L12-v2 | 384 | 85MB | Better quality |
 | all-mpnet-base-v2 | 768 | 180MB | High quality |
 | BERT-base | 768 | 220MB | General purpose |
+| Apple NLContextual | 512 | System | Built-in, no download needed\* |
+
+\* NLContextualEmbedding requires a physical device (not Simulator) and network connectivity for the initial asset download. Available on iOS 17+/macOS 14+.
 
 ## Performance
 
@@ -264,6 +267,11 @@ swift test --filter EmbedKitONNXTests
 - Swift 6.0+
 - Xcode 16.0+
 - Metal-capable device (optional, CPU fallback available)
+
+## Known Limitations
+
+- **NLContextualEmbedding** requires a physical Apple device — it is not available on the iOS Simulator. The framework will throw `modelLoadFailed` if assets cannot be downloaded.
+- **Asset Downloads**: First-time use of `AppleNLContextualModel` requires network connectivity to download model assets (~50-200MB depending on language). Subsequent uses work offline.
 
 ## VSK Ecosystem
 

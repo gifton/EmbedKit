@@ -62,6 +62,10 @@ public actor AppleNLContextualModel: EmbeddingModel {
 
     // MARK: - EmbeddingModel
     public func embed(_ text: String) async throws -> Embedding {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EmbedKitError.tokenizationFailed("Input text is empty or contains only whitespace")
+        }
+
         let t0 = CFAbsoluteTimeGetCurrent()
 
         try await ensureAssets()
@@ -79,7 +83,11 @@ public actor AppleNLContextualModel: EmbeddingModel {
             return true
         }
         guard var sum = pooled, count > 0 else {
-            throw EmbedKitError.inferenceFailed("No token vectors from NLContextualEmbedding")
+            throw EmbedKitError.inferenceFailed(
+                "NLContextualEmbedding produced zero token vectors. "
+                + "Assets available: \(embedding.hasAvailableAssets), "
+                + "language: \(language), input length: \(text.count)"
+            )
         }
         let denom = Double(count)
         for i in 0..<sum.count { sum[i] /= denom }
@@ -109,7 +117,9 @@ public actor AppleNLContextualModel: EmbeddingModel {
     }
 
     public func embedBatch(_ texts: [String], options: BatchOptions) async throws -> [Embedding] {
-        // Parallelize embedding across texts; ignore padding/batching knobs
+        // Fail fast: check asset availability once before spawning concurrent tasks
+        try await ensureAssets()
+
         var concurrency = options.tokenizationConcurrency
         if concurrency <= 0 { concurrency = min(8, max(1, ProcessInfo.processInfo.activeProcessorCount)) }
 
@@ -146,9 +156,33 @@ public actor AppleNLContextualModel: EmbeddingModel {
 
     // MARK: - Helpers
     private func ensureAssets() async throws {
-        if !embedding.hasAvailableAssets {
-            _ = try await embedding.requestAssets()
+        if embedding.hasAvailableAssets { return }
+
+        let result = try await embedding.requestAssets()
+        switch result {
+        case .available:
             logger.info("Downloaded NLContextualEmbedding assets", metadata: ["language": .string(language)])
+        case .notAvailable:
+            throw EmbedKitError.modelLoadFailed(
+                "NLContextualEmbedding assets not available for language '\(language)'. "
+                + "Ensure the device has network connectivity for the initial model download."
+            )
+        case .error:
+            throw EmbedKitError.modelLoadFailed(
+                "NLContextualEmbedding asset download failed for language '\(language)'"
+            )
+        @unknown default:
+            throw EmbedKitError.modelLoadFailed(
+                "NLContextualEmbedding assets returned unknown status for language '\(language)'"
+            )
+        }
+
+        // Post-download verification: confirm assets are actually usable
+        guard embedding.hasAvailableAssets else {
+            throw EmbedKitError.modelLoadFailed(
+                "NLContextualEmbedding assets were requested successfully but are not available. "
+                + "This may indicate a corrupted download — try restarting the device."
+            )
         }
     }
 }
