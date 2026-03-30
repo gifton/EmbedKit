@@ -152,8 +152,18 @@ public protocol ModelBackend: Actor {
 public protocol CoreMLProcessingBackend: Actor {
     func process(_ input: CoreMLInput) async throws -> CoreMLOutput
     func processBatch(_ inputs: [CoreMLInput]) async throws -> [CoreMLOutput]
+    /// Process a batch using a single packed tensor of shape [batchSize, seqLen].
+    /// Default implementation falls back to `processBatch`.
+    func processSingleTensorBatch(_ inputs: [CoreMLInput], seqLen: Int) async throws -> [CoreMLOutput]
     func load() async throws
     func unload() async throws
     var isLoaded: Bool { get }
     var memoryUsage: Int64 { get }
+}
+
+extension CoreMLProcessingBackend {
+    /// Default: falls back to standard per-item batch processing.
+    public func processSingleTensorBatch(_ inputs: [CoreMLInput], seqLen: Int) async throws -> [CoreMLOutput] {
+        try await processBatch(inputs)
+    }
 }

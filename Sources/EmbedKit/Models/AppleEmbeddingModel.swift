@@ -318,7 +318,8 @@ public actor AppleEmbeddingModel: EmbeddingModel {
                     providers.append(CoreMLInput(tokenIDs: ids, attentionMask: mask))
                 }
                 let tInf0 = CFAbsoluteTimeGetCurrent()
-                let outs = try await backend.processBatch(providers)
+                // Use single-tensor batch packing when all items are uniformly padded
+                let outs = try await backend.processSingleTensorBatch(providers, seqLen: targetLen)
                 let tInf1 = CFAbsoluteTimeGetCurrent()
                 infTotal += (tInf1 - tInf0)
 

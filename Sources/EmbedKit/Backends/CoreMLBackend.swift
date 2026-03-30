@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import Accelerate
 #if canImport(CoreML)
 import CoreML
 #endif
@@ -521,6 +522,150 @@ public actor CoreMLBackend: ModelBackend {
         #endif
     }
 
+    // MARK: - Single-Tensor Batch Packing
+
+    /// Whether the model supports batched input (flexible first dimension).
+    /// Call after `load()`.
+    public var supportsBatchedInput: Bool {
+        #if canImport(CoreML)
+        guard let keys = cachedKeys else { return false }
+        guard let constraints = inputShapeConstraintsCache[keys.token] else { return false }
+        guard constraints.dimensions.count >= 2 else { return false }
+        // First dimension must be flexible (batch dim)
+        switch constraints.dimensions[0] {
+        case .fixed(let v): return v != 1  // Fixed to >1 is still batchable
+        case .flexible: return true
+        case .enumerated(let vals): return vals.contains(where: { $0 > 1 })
+        }
+        #else
+        return false
+        #endif
+    }
+
+    /// Process a batch using a single packed tensor of shape [batchSize, seqLen] instead of
+    /// N separate [1, seqLen] arrays. This maximizes ANE/GPU utilization.
+    ///
+    /// Falls back to `processBatch` if the model doesn't support batched input.
+    ///
+    /// - Parameters:
+    ///   - inputs: Array of inputs (all must have the same token count, i.e. pre-padded).
+    ///   - seqLen: The uniform sequence length for all inputs.
+    /// - Returns: Array of outputs, one per input.
+    public func processSingleTensorBatch(_ inputs: [Input], seqLen: Int) async throws -> [Output] {
+        #if canImport(CoreML)
+        guard supportsBatchedInput else {
+            return try await processBatch(inputs)
+        }
+        guard let model = mlModel else {
+            throw EmbedKitError.modelLoadFailed("CoreML model not loaded")
+        }
+        guard !inputs.isEmpty else { return [] }
+
+        let batchSize = inputs.count
+        guard let keys = cachedKeys else {
+            throw EmbedKitError.modelLoadFailed("Input keys not resolved")
+        }
+
+        // Build packed token IDs array: [batchSize, seqLen]
+        let tokenShape: [NSNumber] = [NSNumber(value: batchSize), NSNumber(value: seqLen)]
+        let tokenArray = try MLMultiArray(shape: tokenShape, dataType: .int32)
+        let tokenPtr = UnsafeMutablePointer<Int32>(OpaquePointer(tokenArray.dataPointer))
+        for (i, inp) in inputs.enumerated() {
+            for (j, id) in inp.tokenIDs.enumerated() where j < seqLen {
+                tokenPtr[i * seqLen + j] = Int32(id)
+            }
+        }
+
+        var dict: [String: MLFeatureValue] = [keys.token: MLFeatureValue(multiArray: tokenArray)]
+
+        // Build packed attention mask: [batchSize, seqLen]
+        if let mk = keys.mask {
+            let maskArray = try MLMultiArray(shape: tokenShape, dataType: .int32)
+            let maskPtr = UnsafeMutablePointer<Int32>(OpaquePointer(maskArray.dataPointer))
+            for (i, inp) in inputs.enumerated() {
+                for (j, m) in inp.attentionMask.enumerated() where j < seqLen {
+                    maskPtr[i * seqLen + j] = Int32(m)
+                }
+            }
+            dict[mk] = MLFeatureValue(multiArray: maskArray)
+        }
+
+        // Build packed token type IDs: [batchSize, seqLen] (all zeros)
+        if let tk = keys.type {
+            let typeArray = try MLMultiArray(shape: tokenShape, dataType: .int32)
+            // Already zero-initialized by MLMultiArray
+            dict[tk] = MLFeatureValue(multiArray: typeArray)
+        }
+
+        // Build packed position IDs: [batchSize, seqLen]
+        if let pk = keys.pos {
+            let posArray = try MLMultiArray(shape: tokenShape, dataType: .int32)
+            let posPtr = UnsafeMutablePointer<Int32>(OpaquePointer(posArray.dataPointer))
+            for i in 0..<batchSize {
+                for j in 0..<seqLen {
+                    posPtr[i * seqLen + j] = Int32(j)
+                }
+            }
+            dict[pk] = MLFeatureValue(multiArray: posArray)
+        }
+
+        let provider = try MLDictionaryFeatureProvider(dictionary: dict)
+        let prediction = try predictWithOptions(model, provider: provider, options: MLPredictionOptions())
+
+        // Extract and split the batched output
+        // Expected output shape: [batchSize, seqLen, hiddenDim] or [batchSize, seqLen * hiddenDim]
+        var outputs: [Output] = []
+        outputs.reserveCapacity(batchSize)
+
+        // Find the float output array
+        var outputArray: MLMultiArray?
+        if let preferred = overrides.output, let val = prediction.featureValue(for: preferred),
+           val.type == .multiArray, let ma = val.multiArrayValue,
+           (ma.dataType == .float32 || ma.dataType == .double) {
+            outputArray = ma
+        }
+        if outputArray == nil {
+            for name in prediction.featureNames {
+                guard let val = prediction.featureValue(for: name) else { continue }
+                if val.type == .multiArray, let ma = val.multiArrayValue,
+                   (ma.dataType == .float32 || ma.dataType == .double) {
+                    outputArray = ma
+                    break
+                }
+            }
+        }
+
+        guard let ma = outputArray else {
+            throw EmbedKitError.modelLoadFailed("No float multiarray output found for batched prediction")
+        }
+
+        let fullShape = ma.shape.map { $0.intValue }
+        let totalCount = ma.count
+
+        // Determine per-item element count
+        let perItemCount = totalCount / batchSize
+        guard perItemCount > 0 && totalCount == batchSize * perItemCount else {
+            throw EmbedKitError.modelLoadFailed("Cannot split batched output: total=\(totalCount), batch=\(batchSize)")
+        }
+
+        // Compute per-item shape (drop batch dimension)
+        let itemShape = fullShape.count > 1 ? Array(fullShape.dropFirst()) : [perItemCount]
+
+        // Extract per-item values using direct pointer access
+        let floats = try flattenFloatArray(ma)
+        for i in 0..<batchSize {
+            let start = i * perItemCount
+            let end = start + perItemCount
+            let itemValues = Array(floats[start..<end])
+            outputs.append(Output(values: itemValues, shape: itemShape))
+        }
+
+        return outputs
+        #else
+        throw EmbedKitError.modelLoadFailed("CoreML not available on this platform")
+        #endif
+    }
+
     // MARK: - Helpers
 
     private func resolveModelURL() throws -> URL {
@@ -624,11 +769,15 @@ public actor CoreMLBackend: ModelBackend {
         let count = array.count
         switch array.dataType {
         case .float32:
-            let ptr = UnsafeMutablePointer<Float32>(OpaquePointer(array.dataPointer))
-            return (0..<count).map { Float(ptr[$0]) }
+            let ptr = UnsafePointer<Float>(OpaquePointer(array.dataPointer))
+            return Array(UnsafeBufferPointer(start: ptr, count: count))
         case .double:
-            let ptr = UnsafeMutablePointer<Double>(OpaquePointer(array.dataPointer))
-            return (0..<count).map { Float(ptr[$0]) }
+            let src = UnsafePointer<Double>(OpaquePointer(array.dataPointer))
+            let result = [Float](unsafeUninitializedCapacity: count) { buf, initializedCount in
+                vDSP_vdpsp(src, 1, buf.baseAddress!, 1, vDSP_Length(count))
+                initializedCount = count
+            }
+            return result
         default:
             throw EmbedKitError.modelLoadFailed("Unsupported output data type \(array.dataType)")
         }
