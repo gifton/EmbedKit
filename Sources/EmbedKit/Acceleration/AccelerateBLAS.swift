@@ -420,6 +420,108 @@ public enum AccelerateBLAS {
         return acc
     }
 
+    // MARK: - Pointer-Based Pooling
+
+    /// Mean-pools using a raw buffer pointer (avoids [Float] materialization).
+    ///
+    /// - Parameters:
+    ///   - sequence: Pointer to flattened token embeddings in row-major order
+    ///   - tokens: Number of tokens (rows)
+    ///   - dim: Embedding dimension (columns)
+    ///   - mask: Optional attention mask (1 = keep, 0 = ignore)
+    /// - Returns: Pooled vector of length `dim`
+    public static func meanPool(
+        sequencePointer sequence: UnsafeBufferPointer<Float>,
+        tokens: Int,
+        dim: Int,
+        mask: [Int]? = nil
+    ) -> [Float] {
+        precondition(tokens >= 1 && dim >= 1)
+        precondition(sequence.count >= tokens * dim, "buffer too small for shape")
+
+        var acc = [Float](repeating: 0, count: dim)
+        var count: Int = 0
+        let base = sequence.baseAddress!
+
+        if let mask = mask {
+            precondition(mask.count == tokens, "mask length mismatch")
+            for t in 0..<tokens where mask[t] != 0 {
+                vDSP_vadd(acc, 1, base + t * dim, 1, &acc, 1, vDSP_Length(dim))
+                count += 1
+            }
+        } else {
+            for t in 0..<tokens {
+                vDSP_vadd(acc, 1, base + t * dim, 1, &acc, 1, vDSP_Length(dim))
+            }
+            count = tokens
+        }
+
+        if count == 0 {
+            for t in 0..<tokens {
+                vDSP_vadd(acc, 1, base + t * dim, 1, &acc, 1, vDSP_Length(dim))
+            }
+            count = tokens
+        }
+
+        var invCount = 1.0 / Float(count)
+        vDSP_vsmul(acc, 1, &invCount, &acc, 1, vDSP_Length(dim))
+        return acc
+    }
+
+    /// Max-pools using a raw buffer pointer (avoids [Float] materialization).
+    public static func maxPool(
+        sequencePointer sequence: UnsafeBufferPointer<Float>,
+        tokens: Int,
+        dim: Int,
+        mask: [Int]? = nil
+    ) -> [Float] {
+        precondition(tokens >= 1 && dim >= 1)
+        precondition(sequence.count >= tokens * dim, "buffer too small for shape")
+
+        var acc = [Float](repeating: -.greatestFiniteMagnitude, count: dim)
+        var selected = 0
+        let base = sequence.baseAddress!
+
+        if let mask = mask {
+            precondition(mask.count == tokens, "mask length mismatch")
+            for t in 0..<tokens where mask[t] != 0 {
+                vDSP_vmax(acc, 1, base + t * dim, 1, &acc, 1, vDSP_Length(dim))
+                selected += 1
+            }
+        }
+
+        if selected == 0 {
+            for t in 0..<tokens {
+                vDSP_vmax(acc, 1, base + t * dim, 1, &acc, 1, vDSP_Length(dim))
+            }
+        }
+
+        return acc
+    }
+
+    /// CLS pooling using a raw buffer pointer: returns the first token vector.
+    public static func clsPool(
+        sequencePointer sequence: UnsafeBufferPointer<Float>,
+        tokens: Int,
+        dim: Int
+    ) -> [Float] {
+        precondition(tokens >= 1 && dim >= 1)
+        precondition(sequence.count >= tokens * dim, "buffer too small for shape")
+        return Array(sequence[0..<dim])
+    }
+
+    /// L2-normalizes using a raw buffer pointer.
+    public static func normalize(pointer v: UnsafeBufferPointer<Float>) -> [Float] {
+        let count = v.count
+        guard count > 0 else { return [] }
+        let mag = magnitude(v.baseAddress!, count: count)
+        guard mag > 1e-12 else { return Array(v) }
+        var result = [Float](repeating: 0, count: count)
+        var divisor = mag
+        vDSP_vsdiv(v.baseAddress!, 1, &divisor, &result, 1, vDSP_Length(count))
+        return result
+    }
+
     // MARK: - Batch Distance Computation
 
     /// Computes cosine distances from a query to multiple candidates.

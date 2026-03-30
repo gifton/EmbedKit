@@ -21,8 +21,18 @@ public struct Vocabulary: Sendable {
         self.idToToken = i2t
     }
 
+    /// Initialize from a dictionary mapping tokens to explicit IDs.
+    /// Used by HuggingFace `tokenizer.json` format where IDs are not index-derived.
+    public init(tokenToID: [String: Int]) {
+        self.tokenToID = tokenToID
+        self.idToToken = Dictionary(uniqueKeysWithValues: tokenToID.map { ($0.value, $0.key) })
+    }
+
     public subscript(_ token: String) -> Int? { tokenToID[token] }
     public subscript(id id: Int) -> String? { idToToken[id] }
+
+    /// Returns all tokens in the vocabulary.
+    public var allTokens: [String: Int] { tokenToID }
 
     // Optional convenience loader; simple line-by-line reader.
     public static func load(from url: URL) throws -> Vocabulary {

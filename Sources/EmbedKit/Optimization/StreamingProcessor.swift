@@ -14,6 +14,12 @@ public enum ChunkingStrategy: Sendable {
     /// Uses a heuristic of ~4 characters per token for English text.
     case tokens(count: Int)
 
+    /// Split by exact token count using an actual tokenizer.
+    /// Requires a tokenizer to be provided to `StreamingProcessor`.
+    /// Each chunk will contain exactly `count` tokens (except possibly the last).
+    /// Overlap is specified in tokens (via `StreamingConfig.overlapTokens`).
+    case tokensBoundary(count: Int)
+
     /// Split by sentences, grouping up to N sentences per chunk.
     case sentences(count: Int)
 
@@ -120,9 +126,13 @@ public struct StreamingConfig: Sendable {
     /// How to split the document into chunks.
     public var chunkingStrategy: ChunkingStrategy = .tokens(count: 256)
 
-    /// Number of characters/tokens to overlap between adjacent chunks.
+    /// Number of characters to overlap between adjacent chunks (for character-based strategies).
     /// Helps preserve context at chunk boundaries.
     public var overlap: Int = 50
+
+    /// Number of tokens to overlap between adjacent chunks (for `.tokensBoundary` strategy).
+    /// Defaults to 0 (no overlap). Typical values: 20-50 tokens.
+    public var overlapTokens: Int = 0
 
     /// Minimum chunk size (chunks smaller than this are merged with neighbors).
     public var minChunkSize: Int = 50
@@ -228,6 +238,7 @@ public struct StreamingResult: Sendable {
 public struct StreamingProcessor: Sendable {
     private let model: any EmbeddingModel
     private let config: StreamingConfig
+    private let tokenizer: (any Tokenizer)?
 
     /// Creates a new streaming processor.
     ///
@@ -237,6 +248,19 @@ public struct StreamingProcessor: Sendable {
     public init(model: any EmbeddingModel, config: StreamingConfig = StreamingConfig()) {
         self.model = model
         self.config = config
+        self.tokenizer = nil
+    }
+
+    /// Creates a new streaming processor with tokenizer-aware chunking.
+    ///
+    /// - Parameters:
+    ///   - model: The embedding model to use.
+    ///   - tokenizer: Tokenizer for token-boundary-respecting chunking.
+    ///   - config: Configuration for chunking and processing.
+    public init(model: any EmbeddingModel, tokenizer: any Tokenizer, config: StreamingConfig = StreamingConfig()) {
+        self.model = model
+        self.config = config
+        self.tokenizer = tokenizer
     }
 
     // MARK: - Public API
@@ -246,12 +270,13 @@ public struct StreamingProcessor: Sendable {
     /// - Parameter text: The document text to process.
     /// - Returns: An async stream of chunk embeddings.
     public func embedStream(_ text: String) -> AsyncThrowingStream<ChunkEmbedding, Error> {
-        AsyncThrowingStream { continuation in
+        let processor = self
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let chunks = createChunks(from: text)
+                    let chunks = await processor.createChunksAsync(from: text)
                     for chunk in chunks {
-                        let embedding = try await model.embed(chunk.text)
+                        let embedding = try await processor.model.embed(chunk.text)
                         let chunkEmbedding = ChunkEmbedding(chunk: chunk, embedding: embedding)
                         continuation.yield(chunkEmbedding)
                     }
@@ -268,21 +293,22 @@ public struct StreamingProcessor: Sendable {
     /// - Parameter text: The document text to process.
     /// - Returns: An async stream of chunk embeddings (may arrive out of order).
     public func embedStreamConcurrent(_ text: String) -> AsyncThrowingStream<ChunkEmbedding, Error> {
-        AsyncThrowingStream { continuation in
+        let processor = self
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let chunks = createChunks(from: text)
+                    let chunks = await processor.createChunksAsync(from: text)
                     try await withThrowingTaskGroup(of: ChunkEmbedding.self) { group in
                         var pending = 0
                         var nextIndex = 0
 
                         // Seed initial concurrent tasks
-                        while nextIndex < chunks.count && pending < config.concurrency {
+                        while nextIndex < chunks.count && pending < processor.config.concurrency {
                             let chunk = chunks[nextIndex]
                             nextIndex += 1
                             pending += 1
                             group.addTask {
-                                let embedding = try await self.model.embed(chunk.text)
+                                let embedding = try await processor.model.embed(chunk.text)
                                 return ChunkEmbedding(chunk: chunk, embedding: embedding)
                             }
                         }
@@ -297,7 +323,7 @@ public struct StreamingProcessor: Sendable {
                                 nextIndex += 1
                                 pending += 1
                                 group.addTask {
-                                    let embedding = try await self.model.embed(chunk.text)
+                                    let embedding = try await processor.model.embed(chunk.text)
                                     return ChunkEmbedding(chunk: chunk, embedding: embedding)
                                 }
                             }
@@ -317,7 +343,7 @@ public struct StreamingProcessor: Sendable {
     /// - Returns: A result containing all chunk embeddings and metadata.
     public func embedDocument(_ text: String) async throws -> StreamingResult {
         let startTime = CFAbsoluteTimeGetCurrent()
-        let chunks = createChunks(from: text)
+        let chunks = await createChunksAsync(from: text)
 
         // Use batch embedding for efficiency
         let texts = chunks.map { $0.text }
@@ -343,7 +369,7 @@ public struct StreamingProcessor: Sendable {
         _ text: String,
         aggregation: AggregationStrategy = .weightedByLength
     ) async throws -> Embedding {
-        let result = try await embedDocument(text)
+        let result: StreamingResult = try await embedDocument(text)
         let aggregated = result.aggregate(strategy: aggregation, dimensions: model.dimensions)
 
         // Normalize the aggregated vector
@@ -364,6 +390,70 @@ public struct StreamingProcessor: Sendable {
         )
     }
 
+    // MARK: - Multi-Document AsyncStream Pipeline
+
+    /// Process multiple documents from an async sequence, batching chunks across documents.
+    ///
+    /// Chunks are accumulated across documents and flushed as batches when the buffer
+    /// reaches the optimal batch size. Results are yielded with their document index.
+    ///
+    /// - Parameter documents: An async sequence of document strings.
+    /// - Returns: An async stream of (documentIndex, ChunkEmbedding) pairs.
+    public func embedDocuments<S: AsyncSequence & Sendable>(
+        _ documents: S
+    ) -> AsyncThrowingStream<(documentIndex: Int, chunkEmbedding: ChunkEmbedding), Error>
+    where S.Element == String {
+        let processor = self
+        return AsyncThrowingStream(bufferingPolicy: .bufferingNewest(config.batchOptions.maxBatchSize * 2)) { continuation in
+            Task {
+                do {
+                    var buffer: [(docIndex: Int, chunk: Chunk)] = []
+                    let batchSize = processor.config.batchOptions.maxBatchSize
+
+                    var docIndex = 0
+                    for try await document in documents {
+                        let chunks = await processor.createChunksAsync(from: document)
+
+                        for chunk in chunks {
+                            buffer.append((docIndex: docIndex, chunk: chunk))
+
+                            if buffer.count >= batchSize {
+                                try await processor.flushBuffer(&buffer, continuation: continuation)
+                            }
+                        }
+                        docIndex += 1
+                    }
+
+                    // Flush remaining
+                    if !buffer.isEmpty {
+                        try await processor.flushBuffer(&buffer, continuation: continuation)
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Flush a buffer of chunks as a batch, yielding results to the continuation.
+    private func flushBuffer(
+        _ buffer: inout [(docIndex: Int, chunk: Chunk)],
+        continuation: AsyncThrowingStream<(documentIndex: Int, chunkEmbedding: ChunkEmbedding), Error>.Continuation
+    ) async throws {
+        let batch = buffer
+        buffer.removeAll(keepingCapacity: true)
+
+        let texts = batch.map { $0.chunk.text }
+        let embeddings = try await model.embedBatch(texts, options: config.batchOptions)
+
+        for (item, embedding) in zip(batch, embeddings) {
+            let ce = ChunkEmbedding(chunk: item.chunk, embedding: embedding)
+            continuation.yield((documentIndex: item.docIndex, chunkEmbedding: ce))
+        }
+    }
+
     /// Get chunks without embedding them (useful for previewing chunking).
     ///
     /// - Parameter text: The document text to chunk.
@@ -381,7 +471,9 @@ public struct StreamingProcessor: Sendable {
         case .characters(let size):
             rawChunks = chunkByCharacters(text, size: size)
         case .tokens(let count):
-            // Estimate ~4 chars per token for English
+            rawChunks = chunkByCharacters(text, size: count * 4)
+        case .tokensBoundary(let count):
+            // tokensBoundary requires async; sync path falls back to estimation
             rawChunks = chunkByCharacters(text, size: count * 4)
         case .sentences(let count):
             rawChunks = chunkBySentences(text, count: count)
@@ -391,8 +483,91 @@ public struct StreamingProcessor: Sendable {
             rawChunks = fn(text)
         }
 
-        // Build chunk objects with offset information
         return buildChunksWithMetadata(rawChunks: rawChunks, originalText: text)
+    }
+
+    /// Async version of createChunks that supports token-boundary chunking.
+    private func createChunksAsync(from text: String) async -> [Chunk] {
+        if case .tokensBoundary(let count) = config.chunkingStrategy, let tokenizer = tokenizer {
+            return await chunkByTokenBoundaryAsync(text, tokenCount: count, tokenizer: tokenizer)
+        }
+        return createChunks(from: text)
+    }
+
+    /// Chunk text using actual tokenizer for precise token-boundary splitting.
+    private func chunkByTokenBoundaryAsync(_ text: String, tokenCount: Int, tokenizer: any Tokenizer) async -> [Chunk] {
+        guard !text.isEmpty && tokenCount > 0 else { return [] }
+
+        let tokConfig = TokenizerConfig(
+            maxLength: 0,
+            truncation: .none,
+            padding: .none,
+            addSpecialTokens: false
+        )
+
+        let tokenized: TokenizedText
+        do {
+            tokenized = try await tokenizer.encode(text, config: tokConfig)
+        } catch {
+            let rawChunks = chunkByCharacters(text, size: tokenCount * 4)
+            return buildChunksWithMetadata(rawChunks: rawChunks, originalText: text)
+        }
+
+        let allTokens = tokenized.tokens
+        guard !allTokens.isEmpty else { return [] }
+
+        let overlapTokens = min(config.overlapTokens, tokenCount / 2)
+        let stride = max(1, tokenCount - overlapTokens)
+
+        var chunks: [Chunk] = []
+        var tokenStart = 0
+
+        while tokenStart < allTokens.count {
+            let tokenEnd = min(tokenStart + tokenCount, allTokens.count)
+            let chunkTokens = Array(allTokens[tokenStart..<tokenEnd])
+            let chunkText = chunkTokens.joined()
+
+            let startOffset = estimateCharOffset(tokenIndex: tokenStart, tokens: allTokens, originalText: text)
+            let endOffset = estimateCharOffset(tokenIndex: tokenEnd, tokens: allTokens, originalText: text)
+
+            let overlapPrev = tokenStart > 0 ? overlapTokens : 0
+            let overlapNext = tokenEnd < allTokens.count ? overlapTokens : 0
+
+            chunks.append(Chunk(
+                text: chunkText.isEmpty ? String(text.prefix(100)) : chunkText,
+                startOffset: startOffset,
+                endOffset: endOffset,
+                index: chunks.count,
+                totalChunks: 0,
+                overlapWithPrevious: overlapPrev,
+                overlapWithNext: overlapNext
+            ))
+
+            if tokenEnd >= allTokens.count { break }
+            tokenStart += stride
+        }
+
+        let total = chunks.count
+        return chunks.map { chunk in
+            Chunk(
+                text: chunk.text,
+                startOffset: chunk.startOffset,
+                endOffset: chunk.endOffset,
+                index: chunk.index,
+                totalChunks: total,
+                overlapWithPrevious: chunk.overlapWithPrevious,
+                overlapWithNext: chunk.overlapWithNext
+            )
+        }
+    }
+
+    /// Estimate the character offset for a given token index.
+    private func estimateCharOffset(tokenIndex: Int, tokens: [String], originalText: String) -> Int {
+        var offset = 0
+        for i in 0..<min(tokenIndex, tokens.count) {
+            offset += tokens[i].count
+        }
+        return min(offset, originalText.count)
     }
 
     private func chunkByCharacters(_ text: String, size: Int) -> [String] {

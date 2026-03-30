@@ -41,6 +41,28 @@ public enum PoolingHelpers {
         AccelerateBLAS.normalize(v)
     }
 
+    // MARK: - Pointer-Based Overloads
+
+    /// Mean-pool using a raw buffer pointer (avoids [Float] materialization).
+    public static func mean(sequencePointer: UnsafeBufferPointer<Float>, tokens: Int, dim: Int, mask: [Int]? = nil) -> [Float] {
+        AccelerateBLAS.meanPool(sequencePointer: sequencePointer, tokens: tokens, dim: dim, mask: mask)
+    }
+
+    /// Max-pool using a raw buffer pointer.
+    public static func max(sequencePointer: UnsafeBufferPointer<Float>, tokens: Int, dim: Int, mask: [Int]? = nil) -> [Float] {
+        AccelerateBLAS.maxPool(sequencePointer: sequencePointer, tokens: tokens, dim: dim, mask: mask)
+    }
+
+    /// CLS pooling using a raw buffer pointer.
+    public static func cls(sequencePointer: UnsafeBufferPointer<Float>, tokens: Int, dim: Int) -> [Float] {
+        AccelerateBLAS.clsPool(sequencePointer: sequencePointer, tokens: tokens, dim: dim)
+    }
+
+    /// L2-normalize using a raw buffer pointer.
+    public static func normalize(pointer: UnsafeBufferPointer<Float>) -> [Float] {
+        AccelerateBLAS.normalize(pointer: pointer)
+    }
+
     /// Attention-weighted pooling.
     ///
     /// Uses Accelerate/vDSP for SIMD-optimized computation.
