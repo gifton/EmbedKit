@@ -198,10 +198,10 @@ public actor EmbeddingStore: EmbeddingStorable {
             )
         }
 
-        let results: [IndexSearchResult]
+        let searchResults: SearchResults<VectorHandle>
         if let filter = filter {
             // Use filtered search with predicate
-            results = try await index.search(query: query.vector, k: k) { [metadataStore, handleToID] handle, vaMetadata in
+            searchResults = try await index.search(query: query.vector, k: k) { [metadataStore, handleToID] handle, vaMetadata in
                 // Get our string ID for this handle
                 guard let id = handleToID[handle] else { return true }
                 // Get metadata from our store (more complete than VA metadata)
@@ -209,11 +209,11 @@ public actor EmbeddingStore: EmbeddingStorable {
                 return filter(metadata)
             }
         } else {
-            results = try await index.search(query: query.vector, k: k)
+            searchResults = try await index.search(query: query.vector, k: k)
         }
 
-        return results.compactMap { result in
-            guard let id = handleToID[result.handle] else { return nil }
+        return searchResults.compactMap { result in
+            guard let id = handleToID[result.id] else { return nil }
             return EmbeddingSearchResult(
                 id: id,
                 distance: result.distance,
