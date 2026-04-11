@@ -1,5 +1,5 @@
 {
-  "originHash" : "2f6f09d6f30e7c50dd4a955385afdb2ac29aef6ddd32d1d44c90425ce16ecfea",
+  "originHash" : "60e19ae44ccab3d68c88736b9cdce7b7c62f3fe004a52d096371f9e38f1e85c5",
   "pins" : [
     {
       "identity" : "metalcompilerplugin",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorAccelerate.git",
       "state" : {
-        "revision" : "e3a3b93507cfdd5d98aa81aed413ee643f31b99d",
-        "version" : "0.4.1"
+        "revision" : "ad5d422437b0df2066acfdda38653e137f8bcf2e",
+        "version" : "0.4.2"
       }
     },
     {

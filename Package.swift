@@ -46,7 +46,7 @@ let package = Package(
     dependencies: [
         // VSK dependencies - VectorAccelerate provides GPU-first vector indexing
         .package(url: "https://github.com/gifton/VectorCore.git", from: "0.2.0"),
-        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.4.1"),
+        .package(url: "https://github.com/gifton/VectorAccelerate.git", from: "0.4.2"),
 
         // System dependencies
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
