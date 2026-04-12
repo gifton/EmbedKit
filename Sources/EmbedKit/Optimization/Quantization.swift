@@ -581,6 +581,78 @@ public enum CPUQuantizer {
         return result
     }
 
+    // MARK: - Int8 Implementation
+
+    public static func quantizeToInt8(_ vector: [Float]) -> QuantizedVector {
+        let count = vector.count
+        var minVal: Float = 0
+        var maxVal: Float = 0
+        vDSP_minv(vector, 1, &minVal, vDSP_Length(count))
+        vDSP_maxv(vector, 1, &maxVal, vDSP_Length(count))
+        
+        let maxAbs = max(abs(minVal), abs(maxVal))
+        let scale = maxAbs > 0 ? maxAbs / 127.0 : 1.0
+        var invScale = 1.0 / scale
+        
+        var scaledValues = [Float](repeating: 0, count: count)
+        vDSP_vsmul(vector, 1, &invScale, &scaledValues, 1, vDSP_Length(count))
+        
+        var int8Data = Data(count: count)
+        int8Data.withUnsafeMutableBytes { buffer in
+            let ptr = buffer.bindMemory(to: Int8.self)
+            for i in 0..<count {
+                let val = round(scaledValues[i])
+                ptr[i] = Int8(max(min(val, 127), -127))
+            }
+        }
+        
+        let params = QuantizationParams(
+            scale: scale,
+            offset: 0.0,
+            minValue: -maxAbs,
+            maxValue: maxAbs
+        )
+        
+        return QuantizedVector(
+            format: .int8,
+            params: params,
+            dimensions: count,
+            data: int8Data
+        )
+    }
+
+    // MARK: - Binary Implementation
+
+    public static func quantizeToBinary(_ vector: [Float]) -> QuantizedVector {
+        let count = vector.count
+        let numWords = (count + 31) / 32
+        var words = [UInt32](repeating: 0, count: numWords)
+        
+        for i in 0..<count {
+            if vector[i] > 0 {
+                let wordIndex = i / 32
+                let bitIndex = i % 32
+                words[wordIndex] |= (1 << bitIndex)
+            }
+        }
+        
+        let data = words.withUnsafeBytes { Data($0) }
+        
+        let params = QuantizationParams(
+            scale: 1.0,
+            offset: 0.0,
+            minValue: -1.0,
+            maxValue: 1.0
+        )
+        
+        return QuantizedVector(
+            format: .binary,
+            params: params,
+            dimensions: count,
+            data: data
+        )
+    }
+
     // MARK: - General Dequantize (for legacy support)
 
     public static func dequantize(_ quantized: QuantizedVector) -> [Float] {

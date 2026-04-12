@@ -138,7 +138,7 @@ public actor AccelerationManager {
 
     /// GPU decision engine for adaptive GPU/CPU routing.
     /// Nil when using `.alwaysGPU` or `.alwaysCPU` profiles.
-    private let decisionEngine: GPUDecisionEngine?
+    public let decisionEngine: GPUDecisionEngine?
 
     /// Current decision profile for GPU/CPU routing.
     private var decisionProfile: GPUDecisionProfile

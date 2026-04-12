@@ -83,7 +83,11 @@ public actor EmbeddingStore: EmbeddingStorable {
 
         // Create GPU-accelerated index
         let vaConfig = config.toVectorAccelerate()
-        self.index = try await AcceleratedVectorIndex(configuration: vaConfig)
+        let manager = try? await AccelerationManager.create()
+        self.index = try await AcceleratedVectorIndex(
+            configuration: vaConfig,
+            decisionEngine: manager?.decisionEngine
+        )
     }
 
     /// Create an embedding store with a custom Metal4Context.
@@ -102,7 +106,12 @@ public actor EmbeddingStore: EmbeddingStorable {
         try config.validate()
 
         let vaConfig = config.toVectorAccelerate()
-        self.index = try await AcceleratedVectorIndex(configuration: vaConfig, context: context)
+        let manager = try? await AccelerationManager.create()
+        self.index = try await AcceleratedVectorIndex(
+            configuration: vaConfig,
+            context: context,
+            decisionEngine: manager?.decisionEngine
+        )
     }
 
     // MARK: - Store Operations
@@ -137,8 +146,9 @@ public actor EmbeddingStore: EmbeddingStorable {
         // Convert metadata to VectorAccelerate format
         let vaMetadata: VectorMetadata? = metadata
 
-        // Insert into GPU index
-        let handle = try await index.insert(embedding.vector, metadata: vaMetadata)
+        // Insert into GPU index (using VectorCore's DynamicVector as an IndexableVector)
+        let dynamicVector = DynamicVector(embedding.vector)
+        let handle = try await index.insert(dynamicVector, metadata: vaMetadata)
 
         // Store mappings
         handleToID[handle] = vectorId
