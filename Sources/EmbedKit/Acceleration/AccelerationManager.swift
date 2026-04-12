@@ -294,6 +294,7 @@ public actor AccelerationManager {
             )
 
             let gpuTime = CFAbsoluteTimeGetCurrent() - start
+            let decisionGPUTime = await decisionEngineGPUTime(wallClockFallback: gpuTime)
 
             await healthMonitor.recordSuccess(operation: healthOperation)
             stats.gpuOperations += 1
@@ -301,7 +302,7 @@ public actor AccelerationManager {
 
             // Step 4: Record performance for adaptive learning
             let estimatedCPU = estimateCPUTime(candidateCount: candidateCount, dimension: dimension)
-            await recordPerformance(operation: gpuOp, cpuTime: estimatedCPU, gpuTime: gpuTime)
+            await recordPerformance(operation: gpuOp, cpuTime: estimatedCPU, gpuTime: decisionGPUTime)
 
             return distances
         } catch {
@@ -376,6 +377,7 @@ public actor AccelerationManager {
             let result = try await distanceProvider.distance(from: vecA, to: vecB, metric: metric)
 
             let gpuTime = CFAbsoluteTimeGetCurrent() - start
+            let decisionGPUTime = await decisionEngineGPUTime(wallClockFallback: gpuTime)
 
             await healthMonitor.recordSuccess(operation: healthOperation)
             stats.gpuOperations += 1
@@ -383,7 +385,7 @@ public actor AccelerationManager {
 
             // Step 4: Record performance for adaptive learning
             let estimatedCPU = estimateCPUTime(candidateCount: 1, dimension: dimension)
-            await recordPerformance(operation: gpuOp, cpuTime: estimatedCPU, gpuTime: gpuTime)
+            await recordPerformance(operation: gpuOp, cpuTime: estimatedCPU, gpuTime: decisionGPUTime)
 
             return result
         } catch {
@@ -754,7 +756,7 @@ public actor AccelerationManager {
         case .manhattan:
             return .manhattanDistance
         case .chebyshev:
-            return .l2Distance // Chebyshev uses same routing as L2
+            return .chebyshevDistance
         }
     }
 
@@ -819,6 +821,24 @@ public actor AccelerationManager {
             cpuTime: cpuTime,
             gpuTime: gpuTime
         )
+    }
+
+    /// Real GPU compute time for the most recent submission, with wall-clock fallback.
+    ///
+    /// Reads `Metal4Context.lastGPUTiming` (populated after `executeAndWait` from
+    /// `MTLCommandBuffer.gpuStartTime`/`gpuEndTime`) which isolates physical GPU work
+    /// from Swift-side submission overhead. Falls back to the caller's wall-clock
+    /// measurement when the timestamp is unavailable (e.g., first call, or `nil`
+    /// when the command buffer did not report valid timestamps).
+    ///
+    /// Safe within this actor: the read happens on the same actor hop as the preceding
+    /// `distanceProvider` call, and other users of the shared `Metal4Context` cannot
+    /// interleave within this method. Still treated as best-effort.
+    private func decisionEngineGPUTime(wallClockFallback: TimeInterval) async -> TimeInterval {
+        if let timing = await context.lastGPUTiming {
+            return timing.duration
+        }
+        return wallClockFallback
     }
 
     // MARK: - Statistics
