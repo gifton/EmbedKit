@@ -66,10 +66,22 @@ final class SQLiteConnection: @unchecked Sendable {
 
     // MARK: - Configuration
 
-    /// Enable or disable Write-Ahead Logging mode.
-    func setWALMode(_ enabled: Bool) throws {
-        let mode = enabled ? "WAL" : "DELETE"
-        try execute("PRAGMA journal_mode = \(mode)")
+    /// Set the Write-Ahead Logging mode.
+    func setWALMode(_ mode: CacheWALMode) throws {
+        switch mode {
+        case .disabled:
+            try execute("PRAGMA journal_mode = DELETE")
+            try execute("PRAGMA synchronous = OFF")
+        case .durable:
+            try execute("PRAGMA journal_mode = WAL")
+            try execute("PRAGMA synchronous = FULL")
+        case .balanced:
+            try execute("PRAGMA journal_mode = WAL")
+            try execute("PRAGMA synchronous = NORMAL")
+        case .performant:
+            try execute("PRAGMA journal_mode = WAL")
+            try execute("PRAGMA synchronous = OFF")
+        }
     }
 
     /// Set the cache size in pages (negative = KB).

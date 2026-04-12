@@ -5,6 +5,21 @@ import Foundation
 
 // MARK: - Cache Configuration
 
+/// Write-Ahead Logging mode for SQLite database connection.
+public enum CacheWALMode: Sendable {
+    case disabled
+    case durable
+    case balanced
+    case performant
+}
+
+/// Storage format for embedding vectors.
+public enum EmbeddingStorageFormat: Sendable {
+    case float32
+    case int8
+    case binary
+}
+
 /// Configuration for persistent embedding cache.
 public struct CacheConfiguration: Sendable {
     /// Maximum number of embeddings to store (0 = unlimited).
@@ -28,7 +43,17 @@ public struct CacheConfiguration: Sendable {
     public var ttlSeconds: TimeInterval
 
     /// Enable write-ahead logging for better crash recovery.
-    public var enableWAL: Bool
+    @available(*, deprecated, message: "Use walMode instead")
+    public var enableWAL: Bool {
+        get { walMode != .disabled }
+        set { walMode = newValue ? .durable : .disabled }
+    }
+
+    /// Write-Ahead Logging mode for better crash recovery and performance tradeoffs.
+    public var walMode: CacheWALMode
+
+    /// Storage format for embedding vectors.
+    public var storageFormat: EmbeddingStorageFormat
 
     /// Default configuration with reasonable limits.
     public static let `default` = CacheConfiguration(
@@ -38,7 +63,8 @@ public struct CacheConfiguration: Sendable {
         deduplicationThreshold: 0.98,
         autoEvict: true,
         ttlSeconds: 0,
-        enableWAL: true
+        walMode: .durable,
+        storageFormat: .float32
     )
 
     /// In-memory only configuration (for testing).
@@ -49,7 +75,8 @@ public struct CacheConfiguration: Sendable {
         deduplicationThreshold: 0.98,
         autoEvict: true,
         ttlSeconds: 0,
-        enableWAL: false
+        walMode: .disabled,
+        storageFormat: .float32
     )
 
     public init(
@@ -59,7 +86,8 @@ public struct CacheConfiguration: Sendable {
         deduplicationThreshold: Float = 0.98,
         autoEvict: Bool = true,
         ttlSeconds: TimeInterval = 0,
-        enableWAL: Bool = true
+        walMode: CacheWALMode = .durable,
+        storageFormat: EmbeddingStorageFormat = .float32
     ) {
         self.maxEntries = maxEntries
         self.maxSizeBytes = maxSizeBytes
@@ -67,7 +95,30 @@ public struct CacheConfiguration: Sendable {
         self.deduplicationThreshold = deduplicationThreshold
         self.autoEvict = autoEvict
         self.ttlSeconds = ttlSeconds
-        self.enableWAL = enableWAL
+        self.walMode = walMode
+        self.storageFormat = storageFormat
+    }
+
+    @available(*, deprecated, message: "Use init with walMode instead")
+    public init(
+        maxEntries: Int = 100_000,
+        maxSizeBytes: Int64 = 500 * 1024 * 1024,
+        enableSemanticDedup: Bool = false,
+        deduplicationThreshold: Float = 0.98,
+        autoEvict: Bool = true,
+        ttlSeconds: TimeInterval = 0,
+        enableWAL: Bool
+    ) {
+        self.init(
+            maxEntries: maxEntries,
+            maxSizeBytes: maxSizeBytes,
+            enableSemanticDedup: enableSemanticDedup,
+            deduplicationThreshold: deduplicationThreshold,
+            autoEvict: autoEvict,
+            ttlSeconds: ttlSeconds,
+            walMode: enableWAL ? .durable : .disabled,
+            storageFormat: .float32
+        )
     }
 }
 
@@ -325,19 +376,68 @@ public enum TextHasher {
 
 /// Utilities for serializing embedding vectors to/from binary data.
 public enum VectorSerializer {
-    /// Serialize a Float array to binary data.
-    public static func serialize(_ vector: [Float]) -> Data {
-        vector.withUnsafeBytes { Data($0) }
+    /// Serialize a Float array to binary data using the specified format.
+    public static func serialize(_ vector: [Float], format: EmbeddingStorageFormat = .float32) -> Data {
+        switch format {
+        case .float32:
+            return vector.withUnsafeBytes { Data($0) }
+        case .int8:
+            let quantized = CPUQuantizer.quantizeToInt8(vector)
+            return serializeQuantized(quantized)
+        case .binary:
+            let quantized = CPUQuantizer.quantizeToBinary(vector)
+            return serializeQuantized(quantized)
+        }
     }
 
-    /// Deserialize binary data to a Float array.
-    public static func deserialize(_ data: Data, dimensions: Int) -> [Float]? {
-        guard data.count == dimensions * MemoryLayout<Float>.size else {
-            return nil
+    /// Deserialize binary data to a Float array using the specified format.
+    public static func deserialize(_ data: Data, dimensions: Int, format: EmbeddingStorageFormat = .float32) -> [Float]? {
+        switch format {
+        case .float32:
+            guard data.count == dimensions * MemoryLayout<Float>.size else {
+                return nil
+            }
+            return data.withUnsafeBytes { buffer in
+                Array(buffer.bindMemory(to: Float.self))
+            }
+        case .int8:
+            guard let quantized = deserializeQuantized(data, format: .int8, dimensions: dimensions) else { return nil }
+            return CPUQuantizer.dequantize(quantized)
+        case .binary:
+            guard let quantized = deserializeQuantized(data, format: .binary, dimensions: dimensions) else { return nil }
+            return CPUQuantizer.dequantize(quantized)
         }
+    }
 
-        return data.withUnsafeBytes { buffer in
-            Array(buffer.bindMemory(to: Float.self))
-        }
+    // MARK: - Private Helpers
+
+    private static func serializeQuantized(_ quantized: QuantizedVector) -> Data {
+        var data = Data()
+        var scale = quantized.params.scale
+        var offset = quantized.params.offset
+        var minValue = quantized.params.minValue
+        var maxValue = quantized.params.maxValue
+        
+        data.append(withUnsafeBytes(of: &scale) { Data($0) })
+        data.append(withUnsafeBytes(of: &offset) { Data($0) })
+        data.append(withUnsafeBytes(of: &minValue) { Data($0) })
+        data.append(withUnsafeBytes(of: &maxValue) { Data($0) })
+        data.append(quantized.data)
+        return data
+    }
+
+    private static func deserializeQuantized(_ data: Data, format: QuantizationFormat, dimensions: Int) -> QuantizedVector? {
+        let paramsSize = 4 * MemoryLayout<Float>.size
+        guard data.count >= paramsSize else { return nil }
+        
+        let scale = data[0..<4].withUnsafeBytes { $0.load(as: Float.self) }
+        let offset = data[4..<8].withUnsafeBytes { $0.load(as: Float.self) }
+        let minValue = data[8..<12].withUnsafeBytes { $0.load(as: Float.self) }
+        let maxValue = data[12..<16].withUnsafeBytes { $0.load(as: Float.self) }
+        
+        let params = QuantizationParams(scale: scale, offset: offset, minValue: minValue, maxValue: maxValue)
+        let vectorData = data.subdata(in: paramsSize..<data.count)
+        
+        return QuantizedVector(format: format, params: params, dimensions: dimensions, data: vectorData)
     }
 }

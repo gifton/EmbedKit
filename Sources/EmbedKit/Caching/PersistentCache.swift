@@ -298,9 +298,7 @@ public actor PersistentCache {
 
     private func setupDatabase() throws {
         // Configure connection
-        if config.enableWAL {
-            try connection.setWALMode(true)
-        }
+        try connection.setWALMode(config.walMode)
 
         // Create schema
         try connection.execute("""
@@ -396,7 +394,7 @@ public actor PersistentCache {
             return nil
         }
 
-        guard let vector = VectorSerializer.deserialize(vectorData, dimensions: Int(dimensions)) else {
+        guard let vector = VectorSerializer.deserialize(vectorData, dimensions: Int(dimensions), format: config.storageFormat) else {
             return nil
         }
 
