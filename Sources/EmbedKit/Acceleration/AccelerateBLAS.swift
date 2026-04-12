@@ -210,17 +210,10 @@ public enum AccelerateBLAS {
     public static func manhattanDistance(_ a: [Float], _ b: [Float]) -> Float {
         precondition(a.count == b.count, "Vectors must have equal length")
         guard !a.isEmpty else { return 0 }
-
-        // Compute a - b, then absolute values, then sum
-        var diff = [Float](repeating: 0, count: a.count)
-        vDSP_vsub(b, 1, a, 1, &diff, 1, vDSP_Length(a.count))  // diff = a - b
-
-        var absDiff = [Float](repeating: 0, count: a.count)
-        vDSP_vabs(diff, 1, &absDiff, 1, vDSP_Length(a.count))
-
-        var result: Float = 0
-        vDSP_sve(absDiff, 1, &result, vDSP_Length(a.count))
-        return result
+        
+        let vecA = DynamicVector(a)
+        let vecB = DynamicVector(b)
+        return ManhattanDistance().distance(vecA, vecB)
     }
 
     // MARK: - Chebyshev Distance
@@ -598,15 +591,9 @@ public enum AccelerateBLAS {
         candidates: [[Float]]
     ) -> [Float] {
         guard !candidates.isEmpty else { return [] }
-
-        var distances = [Float](repeating: 0, count: candidates.count)
-
-        for (i, candidate) in candidates.enumerated() {
-            precondition(candidate.count == query.count, "Dimension mismatch at index \(i)")
-            distances[i] = manhattanDistance(query, candidate)
-        }
-
-        return distances
+        let queryVec = DynamicVector(query)
+        let candidateVecs = candidates.map { DynamicVector($0) }
+        return ManhattanDistance().batchDistance(query: queryVec, candidates: candidateVecs)
     }
 
     /// Computes Chebyshev distances from a query to multiple candidates.
