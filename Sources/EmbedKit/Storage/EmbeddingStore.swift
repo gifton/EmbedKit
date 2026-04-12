@@ -148,7 +148,11 @@ public actor EmbeddingStore: EmbeddingStorable {
 
         // Insert into GPU index (using VectorCore's DynamicVector as an IndexableVector)
         let dynamicVector = DynamicVector(embedding.vector)
-        let handle = try await index.insert(dynamicVector, metadata: vaMetadata)
+        let hintedVector = NormalizationHint(
+            vector: dynamicVector,
+            isNormalized: embedding.metadata.normalized
+        )
+        let handle = try await index.insert(hintedVector, metadata: vaMetadata)
 
         // Store mappings
         handleToID[handle] = vectorId
