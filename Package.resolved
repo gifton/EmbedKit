@@ -1,5 +1,5 @@
 {
-  "originHash" : "60e19ae44ccab3d68c88736b9cdce7b7c62f3fe004a52d096371f9e38f1e85c5",
+  "originHash" : "a06f4d4ee124e3dadb19e7619d7155ebd9626d188f73ad4eb754505d2f0477a3",
   "pins" : [
     {
       "identity" : "metalcompilerplugin",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorAccelerate.git",
       "state" : {
-        "revision" : "ccb80e0abea884a6ae59ebb86fdc6132a010f778",
-        "version" : "0.4.3"
+        "revision" : "31495358626e5ba01cb9f605b779a3939889adb0",
+        "version" : "0.4.4"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorCore.git",
       "state" : {
-        "revision" : "bd6e3ffa61281d56960557f051a5fe746ea6a9e5",
-        "version" : "0.2.0"
+        "revision" : "c602b2e912b2adb053db36300343402862a3f968",
+        "version" : "0.2.1"
       }
     }
   ],
