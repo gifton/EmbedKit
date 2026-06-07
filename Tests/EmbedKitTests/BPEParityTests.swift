@@ -113,6 +113,73 @@ struct BPEParityTests {
         #expect(tok.specialTokens.unk?.text == "<unk>")
     }
 
+    // Builds a minimal byte-level BPE config. `merges` order defines rank
+    // (index = rank), matching HF semantics.
+    private func makeByteLevelConfig(vocab: [String: Int], merges: [String]) -> HFTokenizerJSON {
+        HFTokenizerJSON(
+            model: HFModel(
+                type: "BPE",
+                vocab: vocab,
+                merges: merges,
+                unkToken: "<unk>",
+                continuingSubwordPrefix: nil,
+                endOfWordSuffix: nil,
+                fuseUnk: nil,
+                byteLevel: nil
+            ),
+            addedTokens: [
+                HFAddedToken(id: vocab["<unk>"] ?? 0, content: "<unk>", special: true, singleWord: nil, lstrip: nil, rstrip: nil, normalized: nil)
+            ],
+            normalizer: nil,
+            preTokenizer: HFPreTokenizer(type: "ByteLevel", addPrefixSpace: false, trimOffsets: nil, useRegex: nil, pattern: nil, behavior: nil, pretokenizers: nil),
+            postProcessor: nil
+        )
+    }
+
+    // Regression for audit 1.2: the rewritten priority-queue bpeMerge must keep
+    // the original left-to-right, single-occurrence merge semantics.
+
+    @Test("BPE merge: repeated bigram merges leftmost-first into pairs")
+    func mergeRepeatedBigram() async throws {
+        // "aaaa" with merge "a a" → ["aa","aa"].
+        let config = makeByteLevelConfig(
+            vocab: ["a": 0, "aa": 1, "<unk>": 2],
+            merges: ["a a"]
+        )
+        let tok = try BPETokenizer(hfConfig: config)
+        let out = try await tok.encode("aaaa", config: TokenizerConfig(addSpecialTokens: false))
+        #expect(out.tokens == ["aa", "aa"])
+    }
+
+    @Test("BPE merge: a newly-formed pair with lower rank is applied")
+    func mergeNewlyFormedPair() async throws {
+        // "abc": rank order a b(0) < ab c(1) < b c(2).
+        // Merge "a b" → "ab", which forms "ab c" (rank 1) and collapses to "abc".
+        let config = makeByteLevelConfig(
+            vocab: ["a": 0, "b": 1, "c": 2, "ab": 3, "abc": 4, "<unk>": 5],
+            merges: ["a b", "ab c", "b c"]
+        )
+        let tok = try BPETokenizer(hfConfig: config)
+        let out = try await tok.encode("abc", config: TokenizerConfig(addSpecialTokens: false))
+        #expect(out.tokens == ["abc"])
+    }
+
+    @Test("BPE merge: long repeated input does not crash and merges fully")
+    func mergeLongInput() async throws {
+        // 1024 'a's with merge "a a". Exercises the O(n log n) path on a long
+        // pre-token; result is a power-of-two collapse, here 512 "aa" then more.
+        let config = makeByteLevelConfig(
+            vocab: ["a": 0, "aa": 1, "<unk>": 2],
+            merges: ["a a"]
+        )
+        let tok = try BPETokenizer(hfConfig: config)
+        let input = String(repeating: "a", count: 1024)
+        let out = try await tok.encode(input, config: TokenizerConfig(addSpecialTokens: false))
+        // Only "a a" merges (no "aa aa" rank), so 1024 'a' → 512 "aa".
+        #expect(out.tokens.count == 512)
+        #expect(out.tokens.allSatisfy { $0 == "aa" })
+    }
+
     @Test("BPE special tokens: detects BPE-style <s>/<​/s>")
     func bpeStyleSpecialTokens() throws {
         let config = HFTokenizerJSON(

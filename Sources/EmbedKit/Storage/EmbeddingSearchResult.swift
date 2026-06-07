@@ -16,7 +16,8 @@ public struct EmbeddingSearchResult: Sendable, Identifiable {
     /// Distance/score from the query (interpretation depends on metric)
     /// - For euclidean: lower is more similar
     /// - For cosine: lower is more similar (cosine distance, not similarity)
-    /// - For dot product: higher is more similar
+    /// - For dot product: lower is more similar (stored as -dotProduct so that
+    ///   ascending distance order ranks the highest dot products first)
     public let distance: Float
 
     /// Cosine similarity score (0-1, higher is more similar)
@@ -78,9 +79,11 @@ public struct EmbeddingSearchResult: Sendable, Identifiable {
             let euclideanDist = sqrt(distance)
             self.similarity = exp(-euclideanDist)
         case .dotProduct:
-            // Dot product: higher = more similar (already a similarity)
-            // Normalize to 0-1 range (assuming normalized vectors)
-            self.similarity = (distance + 1) / 2
+            // Producers store distance = -dotProduct (higher dot = closer, so
+            // smaller distance ranks first). Recover the dot product as -distance
+            // and map it into 0-1 (assuming normalized vectors, dot ∈ [-1, 1]):
+            // identical (dot=1) → 1.0, opposite (dot=-1) → 0.0.
+            self.similarity = (1 - distance) / 2
         case .manhattan, .chebyshev:
             // Similar treatment to euclidean
             self.similarity = exp(-distance)

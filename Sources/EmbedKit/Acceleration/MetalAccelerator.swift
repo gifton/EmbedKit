@@ -415,9 +415,12 @@ public actor MetalAccelerator {
     // Combine pooling + normalization in single dispatch to eliminate intermediate writes
     // Each kernel has mask and no-mask variants via function constant specialization
     //
-    // IMPORTANT: V2 fused kernels use threadgroup shared memory sized for FUSED_MAX_DIMS (1024).
-    // Dimensions > 1024 will cause silent kernel early-exit. Always validate before dispatch.
-    private static let fusedV2MaxDimensions = 1024
+    // IMPORTANT: the fused pool kernels (both V1 `fused_*_pool_normalize` and the
+    // V2 variants) use threadgroup shared memory sized for 1024 dims. Dispatching
+    // with dimensions > 1024 overruns that shared memory (V1) or early-exits
+    // leaving output uninitialized (V2), so every fused-pool dispatch site must
+    // validate dimensions <= this bound and fall back to CPU otherwise.
+    private static let fusedPoolMaxDimensions = 1024
 
     private var psoFusedPoolNormalizeV2NoMask: MTLComputePipelineState?
     private var psoFusedPoolNormalizeV2WithMask: MTLComputePipelineState?
@@ -529,6 +532,7 @@ public actor MetalAccelerator {
               let dev = device,
               let pool = commandBufferPool,
               let pso = psoFusedPoolNormalizeUnified,
+              dimensions <= Self.fusedPoolMaxDimensions,
               !batches.isEmpty
         else {
             // Fall back to sequential processing
@@ -1613,7 +1617,8 @@ public actor MetalAccelerator {
               let pso = psoFusedPoolNormalizeUnified,
               batchSize > 0,
               sequenceLength > 0,
-              dimensions > 0
+              dimensions > 0,
+              dimensions <= Self.fusedPoolMaxDimensions
         else { return cpu() }
 
         // For small batches, CPU may be faster
@@ -1769,7 +1774,8 @@ public actor MetalAccelerator {
               let pso = psoFusedAttentionPoolNormalize,
               batchSize > 0,
               sequenceLength > 0,
-              dimensions > 0
+              dimensions > 0,
+              dimensions <= Self.fusedPoolMaxDimensions
         else { return cpu() }
 
         // For small batches, CPU may be faster
@@ -2084,7 +2090,7 @@ public actor MetalAccelerator {
               let queue = commandQueue,
               let pso = psoFusedAttentionPoolNormalizeV2,
               batchSize > 0, sequenceLength > 0, dimensions > 0,
-              dimensions <= Self.fusedV2MaxDimensions,
+              dimensions <= Self.fusedPoolMaxDimensions,
               input.count == batchSize * sequenceLength * dimensions,
               weights.count == batchSize * sequenceLength
         else { return nil }
@@ -2151,7 +2157,7 @@ public actor MetalAccelerator {
               let queue = commandQueue,
               let pso = pso,
               batchSize > 0, sequenceLength > 0, dimensions > 0,
-              dimensions <= Self.fusedV2MaxDimensions,
+              dimensions <= Self.fusedPoolMaxDimensions,
               input.count == batchSize * sequenceLength * dimensions
         else { return nil }
 
@@ -2258,7 +2264,7 @@ public actor MetalAccelerator {
               let dev = device,
               let queue = commandQueue,
               queryBatchSize > 0, keyBatchSize > 0, sequenceLength > 0, dimensions > 0,
-              dimensions <= Self.fusedV2MaxDimensions,
+              dimensions <= Self.fusedPoolMaxDimensions,
               queries.count == queryBatchSize * sequenceLength * dimensions,
               keys.count == keyBatchSize * sequenceLength * dimensions
         else { return nil }
@@ -2434,81 +2440,89 @@ public actor MetalAccelerator {
         normalized: Bool = true,
         metric: Int = 0
     ) async -> [[Float]]? {
-        guard supportsTensorOperations,
-              let dev = device,
-              let queue = commandQueue,
-              queryBatchSize > 0,
+        guard queryBatchSize > 0,
               keyBatchSize > 0,
-              dimensions > 0
+              dimensions > 0,
+              queries.count == queryBatchSize * dimensions,
+              keys.count == keyBatchSize * dimensions
         else { return nil }
 
-        // Select appropriate V2 kernel based on whether inputs are normalized
-        let pso = normalized ? psoTensorSimilarityMatrixV2 : psoTensorSimilarityMatrixFullV2
-        guard let pso = pso else { return nil }
+        // NOTE: The Metal 4 MPP matmul2d kernels (tensor_similarity_matrix_v2 /
+        // _full_v2) declare `tensor<…, tensor_handle>` inputs, which require the
+        // MTLTensor binding API (Xcode 26 SDK). The host can currently only bind
+        // plain MTLBuffers, and the previous implementation dispatched a single
+        // 1×1×1 threadgroup — so it would both misread buffer bytes as tensor
+        // descriptors AND compute only the first output tile, leaving the rest
+        // uninitialized. Until the MTLTensor path is wired up, route to the
+        // proven buffer-based V1 similarity (cosine/dot) and compute euclidean
+        // directly, so callers receive a correct, fully-populated matrix.
+        switch metric {
+        case 2:
+            // Euclidean distance matrix (no V1 equivalent).
+            return Self.euclideanDistanceMatrix(
+                queries: queries, keys: keys,
+                queryBatchSize: queryBatchSize, keyBatchSize: keyBatchSize,
+                dimensions: dimensions)
+        case 1:
+            // Dot product (assumes normalized inputs).
+            return await tensorSimilarityMatrix(
+                queries: queries, keys: keys,
+                queryBatchSize: queryBatchSize, keyBatchSize: keyBatchSize,
+                dimensions: dimensions, normalized: true)
+        default:
+            // Cosine similarity (metric 0). Full cosine is correct whether or not
+            // the inputs are pre-normalized.
+            return await tensorSimilarityMatrix(
+                queries: queries, keys: keys,
+                queryBatchSize: queryBatchSize, keyBatchSize: keyBatchSize,
+                dimensions: dimensions, normalized: false)
+        }
+    }
 
-        // For normalized inputs using matmul2d, we need to use MTLTensor resources
-        // The V2 kernels use tensor_handle binding which requires MTLTensor
-        //
-        // MTLTensor creation flow:
-        // 1. Create MTLTensorDescriptor with shape and element type
-        // 2. Create MTLTensor from device using descriptor
-        // 3. Copy data to tensor backing buffer
-        // 4. Bind tensor to compute encoder
-        //
-        // For now, we use the buffer-based approach since MTLTensor API
-        // requires Xcode 26 SDK which may not be universally available yet.
-        // The kernels will still execute but using buffer binding fallback.
-
-        // Create buffers
-        let queryBytes = queries.count * MemoryLayout<Float>.size
-        let keyBytes = keys.count * MemoryLayout<Float>.size
-        let outputBytes = queryBatchSize * keyBatchSize * MemoryLayout<Float>.size
-
-        guard let queryBuf = dev.makeBuffer(bytes: queries, length: queryBytes),
-              let keyBuf = dev.makeBuffer(bytes: keys, length: keyBytes),
-              let outputBuf = dev.makeBuffer(length: outputBytes)
-        else { return nil }
-
-        // Create params with metric field
-        var params = TensorSimilarityParams(
-            queryBatchSize: queryBatchSize,
-            keyBatchSize: keyBatchSize,
-            dimensions: dimensions,
-            metric: metric
-        )
-        guard let paramsBuf = dev.makeBuffer(bytes: &params, length: MemoryLayout<TensorSimilarityParams>.size)
-        else { return nil }
-
-        // Dispatch
-        guard let cmd = queue.makeCommandBuffer(),
-              let enc = cmd.makeComputeCommandEncoder()
-        else { return nil }
-
-        enc.setComputePipelineState(pso)
-        enc.setBuffer(queryBuf, offset: 0, index: 0)
-        enc.setBuffer(keyBuf, offset: 0, index: 1)
-        enc.setBuffer(outputBuf, offset: 0, index: 2)
-        enc.setBuffer(paramsBuf, offset: 0, index: 3)
-
-        // For the matmul2d-based kernel, dispatch configuration depends on the kernel design
-        // The V2 kernel uses execution_simdgroups<4> which processes full matrices
-        // Dispatch single threadgroup for now - the kernel handles tiling internally
-        let threadgroupSize = MTLSize(width: pso.threadExecutionWidth * 4, height: 1, depth: 1)
-        let gridSize = MTLSize(width: 1, height: 1, depth: 1)
-
-        enc.dispatchThreadgroups(gridSize, threadsPerThreadgroup: threadgroupSize)
-        enc.endEncoding()
-
-        cmd.commit()
-        await cmd.completed()
-
-        // Read results
-        let outPtr = outputBuf.contents().bindMemory(to: Float.self, capacity: queryBatchSize * keyBatchSize)
+    /// Exact all-pairs Euclidean distance matrix on CPU.
+    ///
+    /// Each pair is computed with a shared scale S = max|component| factored out
+    /// (distance = S·√Σ((qᵈ−kᵈ)/S)²) so the squared accumulation cannot overflow
+    /// Float32 for high-magnitude unnormalized inputs — mirroring the stable GPU
+    /// kernel. Returns `[queryBatchSize][keyBatchSize]`.
+    static func euclideanDistanceMatrix(
+        queries: [Float],
+        keys: [Float],
+        queryBatchSize: Int,
+        keyBatchSize: Int,
+        dimensions: Int
+    ) -> [[Float]] {
+        let eps: Float = 1e-20
         var result: [[Float]] = []
         result.reserveCapacity(queryBatchSize)
-        for q in 0..<queryBatchSize {
-            let start = q * keyBatchSize
-            result.append(Array(UnsafeBufferPointer(start: outPtr + start, count: keyBatchSize)))
+        queries.withUnsafeBufferPointer { qb in
+            keys.withUnsafeBufferPointer { kb in
+                for q in 0..<queryBatchSize {
+                    let qOff = q * dimensions
+                    var row = [Float](repeating: 0, count: keyBatchSize)
+                    for k in 0..<keyBatchSize {
+                        let kOff = k * dimensions
+                        // Pass 1: shared scale for this pair.
+                        var scale: Float = 0
+                        for d in 0..<dimensions {
+                            scale = max(scale, max(abs(qb[qOff + d]), abs(kb[kOff + d])))
+                        }
+                        if scale < eps {
+                            row[k] = 0
+                            continue
+                        }
+                        // Pass 2: scaled squared-difference accumulation.
+                        let inv = 1 / scale
+                        var acc: Float = 0
+                        for d in 0..<dimensions {
+                            let diff = (qb[qOff + d] - kb[kOff + d]) * inv
+                            acc += diff * diff
+                        }
+                        row[k] = scale * acc.squareRoot()
+                    }
+                    result.append(row)
+                }
+            }
         }
         return result
     }

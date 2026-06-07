@@ -209,34 +209,104 @@ public struct BPETokenizer: Tokenizer {
     // MARK: - BPE Merge Algorithm (Priority-Queue)
 
     /// Applies BPE merges to a list of tokens using a priority-queue algorithm.
-    /// O(n log n) per word, where n is the token count.
+    ///
+    /// Semantics match a left-to-right greedy BPE: each step merges the single
+    /// lowest-rank adjacent pair (leftmost on ties), then re-evaluates. This is
+    /// implemented over a doubly-linked list (O(1) merges) with a lazy-deletion
+    /// min-heap of candidate pairs, giving O(n log n) per word instead of the
+    /// O(n²) of a rescan-and-`remove(at:)` loop, and reducing the merge-key
+    /// string construction from O(n²) to O(n).
     private func bpeMerge(_ tokens: [String], ranks: [String: Int]) -> [String] {
         guard tokens.count >= 2 else { return tokens }
 
-        // Use a doubly-linked list for efficient merge operations
-        var list = tokens
-        while list.count >= 2 {
-            // Find the pair with the lowest merge rank
-            var bestRank = Int.max
-            var bestIndex = -1
+        let n = tokens.count
+        // Doubly-linked list over stable node indices [0, n). `token` accumulates
+        // merged text; `prev`/`next` track adjacency; a node absorbed as the right
+        // operand of a merge is marked dead via `next[r] = r` (self-loop sentinel).
+        var token = tokens
+        var prev = [Int](repeating: -1, count: n)
+        var next = [Int](repeating: -1, count: n)
+        var dead = [Bool](repeating: false, count: n)
+        for i in 0..<n {
+            prev[i] = i - 1
+            next[i] = (i + 1 < n) ? (i + 1) : -1
+        }
 
-            for i in 0..<(list.count - 1) {
-                let pair = "\(list[i]) \(list[i + 1])"
-                if let rank = ranks[pair], rank < bestRank {
-                    bestRank = rank
-                    bestIndex = i
+        // Min-heap entries: (rank, left, right). Ordered by rank then left index,
+        // so the lowest-rank, leftmost pair pops first — matching the original
+        // left-to-right scan's tie-breaking. Stale entries are filtered on pop.
+        typealias PairEntry = (rank: Int, left: Int, right: Int)
+        var heap: [PairEntry] = []
+        heap.reserveCapacity(n)
+
+        func rankOf(_ l: Int, _ r: Int) -> Int? {
+            ranks[token[l] + " " + token[r]]
+        }
+        func less(_ a: PairEntry, _ b: PairEntry) -> Bool {
+            a.rank != b.rank ? a.rank < b.rank : a.left < b.left
+        }
+        func push(_ e: PairEntry) {
+            heap.append(e)
+            var c = heap.count - 1
+            while c > 0 {
+                let p = (c - 1) / 2
+                if less(heap[c], heap[p]) { heap.swapAt(c, p); c = p } else { break }
+            }
+        }
+        func pop() -> PairEntry? {
+            guard !heap.isEmpty else { return nil }
+            let top = heap[0]
+            let last = heap.removeLast()
+            if !heap.isEmpty {
+                heap[0] = last
+                var c = 0
+                let cnt = heap.count
+                while true {
+                    let l = 2 * c + 1, r = 2 * c + 2
+                    var m = c
+                    if l < cnt && less(heap[l], heap[m]) { m = l }
+                    if r < cnt && less(heap[r], heap[m]) { m = r }
+                    if m == c { break }
+                    heap.swapAt(c, m); c = m
                 }
             }
-
-            // No more merges possible
-            if bestIndex == -1 { break }
-
-            // Apply the merge
-            let merged = list[bestIndex] + list[bestIndex + 1]
-            list[bestIndex] = merged
-            list.remove(at: bestIndex + 1)
+            return top
         }
-        return list
+
+        // Seed with every initial adjacent pair that has a merge rank.
+        for i in 0..<(n - 1) {
+            if let rk = rankOf(i, i + 1) { push((rk, i, i + 1)) }
+        }
+
+        while let best = pop() {
+            let l = best.left, r = best.right
+            // Validate: both endpoints live, still adjacent, and rank unchanged.
+            if dead[l] || dead[r] || next[l] != r { continue }
+            guard let rk = rankOf(l, r), rk == best.rank else { continue }
+
+            // Merge r into l.
+            token[l] += token[r]
+            dead[r] = true
+            let rn = next[r]
+            next[l] = rn
+            if rn != -1 { prev[rn] = l }
+
+            // Re-evaluate the two pairs newly adjacent to the merged node.
+            let lp = prev[l]
+            if lp != -1, let rk2 = rankOf(lp, l) { push((rk2, lp, l)) }
+            if rn != -1, let rk3 = rankOf(l, rn) { push((rk3, l, rn)) }
+        }
+
+        // Walk surviving nodes from the head (index 0 is never absorbed as a
+        // right operand, so it remains the live head).
+        var result: [String] = []
+        result.reserveCapacity(n)
+        var i = 0
+        while i != -1 {
+            result.append(token[i])
+            i = next[i]
+        }
+        return result
     }
 
     // MARK: - Byte-Level Unicode Mapping

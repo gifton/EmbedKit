@@ -55,6 +55,12 @@ kernel void fused_mean_pool_normalize(
     const int dims = params.dimensions;
     const bool shouldNormalize = params.normalize != 0;
 
+    // Bound dims to the static threadgroup capacity below. Writing shared[d] for
+    // d >= 1024 would overrun the allocation and page-fault. Callers must keep
+    // dimensions <= 1024 (host guards this and falls back to CPU otherwise);
+    // this is defense-in-depth matching the V2 kernels' FUSED_MAX_DIMS guard.
+    if (dims > 1024) return;
+
     const int batchInputOffset = b * seqLen * dims;
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
@@ -167,6 +173,11 @@ kernel void fused_max_pool_normalize(
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
 
+    // Bound dims to the threadgroup capacity (shared[1024+33] below); writing
+    // shared[d] for d >= 1024 would overrun the allocation and page-fault. The
+    // host guards dims <= 1024 and falls back to CPU; this is defense-in-depth.
+    if (dims > 1024) return;
+
     threadgroup float shared[1024 + 33];  // Support up to 1024 dims + norm reduction workspace
 
     // ========================================================================
@@ -264,6 +275,11 @@ kernel void fused_pool_normalize_unified(
     const int batchInputOffset = b * seqLen * dims;
     const int batchMaskOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
+
+    // Bound dims to the threadgroup capacity (shared[1024+33] below); writing
+    // shared[d] for d >= 1024 would overrun the allocation and page-fault. The
+    // host guards dims <= 1024 and falls back to CPU; this is defense-in-depth.
+    if (dims > 1024) return;
 
     // Shared memory: dims for pooled values + 33 for norm reduction workspace
     // Support up to 768-dim (BERT large) or 1024-dim (large models)
@@ -400,6 +416,11 @@ kernel void fused_attention_pool_normalize(
     const int batchInputOffset = b * seqLen * dims;
     const int batchWeightOffset = b * seqLen;
     const int batchOutputOffset = b * dims;
+
+    // Bound dims to the threadgroup capacity (shared[1024+33] below); writing
+    // shared[d] for d >= 1024 would overrun the allocation and page-fault. The
+    // host guards dims <= 1024 and falls back to CPU; this is defense-in-depth.
+    if (dims > 1024) return;
 
     // Shared memory for pooled vector and normalization (up to 1024 dims + 33 workspace)
     threadgroup float shared[1024 + 33];
