@@ -1,5 +1,5 @@
 {
-  "originHash" : "a06f4d4ee124e3dadb19e7619d7155ebd9626d188f73ad4eb754505d2f0477a3",
+  "originHash" : "f6063f0de2741dd48dc7e3eb92533cee9f76a7cb0131b38df7586132fe6d5baa",
   "pins" : [
     {
       "identity" : "metalcompilerplugin",
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gifton/VectorCore.git",
       "state" : {
-        "revision" : "c602b2e912b2adb053db36300343402862a3f968",
-        "version" : "0.2.1"
+        "revision" : "7ac62d40ac8e02cb3afa35c9918890814d92de92",
+        "version" : "0.2.2"
       }
     }
   ],
