@@ -585,18 +585,52 @@ public enum CPUQuantizer {
 
     public static func quantizeToInt8(_ vector: [Float]) -> QuantizedVector {
         let count = vector.count
-        var minVal: Float = 0
-        var maxVal: Float = 0
-        vDSP_minv(vector, 1, &minVal, vDSP_Length(count))
-        vDSP_maxv(vector, 1, &maxVal, vDSP_Length(count))
-        
+
+        // Compute the value range over FINITE elements only. Non-finite inputs
+        // (NaN or ±Inf — e.g. from an upstream FP16 overflow) must not be allowed
+        // to inflate the global scale: a single Inf would push `scale` toward
+        // 1e36 and collapse every valid embedding value to 0 after rounding.
+        var minVal: Float = .greatestFiniteMagnitude
+        var maxVal: Float = -.greatestFiniteMagnitude
+        var hasFinite = false
+        var hasNonFinite = false
+        for v in vector {
+            if v.isFinite {
+                hasFinite = true
+                if v < minVal { minVal = v }
+                if v > maxVal { maxVal = v }
+            } else {
+                hasNonFinite = true
+            }
+        }
+        if !hasFinite {
+            // Degenerate input (empty or all non-finite): emit a zero vector.
+            minVal = 0
+            maxVal = 0
+        }
+
         let maxAbs = max(abs(minVal), abs(maxVal))
         let scale = maxAbs > 0 ? maxAbs / 127.0 : 1.0
         var invScale = 1.0 / scale
-        
+
+        // Clamp non-finite values into the finite range so they saturate to the
+        // quantization bounds instead of poisoning the scale. NaN → 0,
+        // +Inf → finite max, -Inf → finite min.
+        let source: [Float]
+        if hasNonFinite {
+            source = vector.map { v in
+                if v.isNaN { return 0 }
+                if v == .infinity { return maxVal }
+                if v == -.infinity { return minVal }
+                return v
+            }
+        } else {
+            source = vector
+        }
+
         var scaledValues = [Float](repeating: 0, count: count)
-        vDSP_vsmul(vector, 1, &invScale, &scaledValues, 1, vDSP_Length(count))
-        
+        vDSP_vsmul(source, 1, &invScale, &scaledValues, 1, vDSP_Length(count))
+
         var int8Data = Data(count: count)
         int8Data.withUnsafeMutableBytes { buffer in
             let ptr = buffer.bindMemory(to: Int8.self)

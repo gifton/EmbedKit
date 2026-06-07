@@ -767,20 +767,79 @@ public actor CoreMLBackend: ModelBackend {
 
     private func flattenFloatArray(_ array: MLMultiArray) throws -> [Float] {
         let count = array.count
+        // CoreML does not guarantee a densely packed backing buffer: outputs from
+        // the ANE/GPU may be padded or otherwise strided. Reading `dataPointer`
+        // linearly is only valid when the strides describe a C-contiguous layout;
+        // otherwise we must gather elements through `array.strides` or padding
+        // garbage corrupts the embedding.
         switch array.dataType {
         case .float32:
-            let ptr = UnsafePointer<Float>(OpaquePointer(array.dataPointer))
-            return Array(UnsafeBufferPointer(start: ptr, count: count))
-        case .double:
-            let src = UnsafePointer<Double>(OpaquePointer(array.dataPointer))
-            let result = [Float](unsafeUninitializedCapacity: count) { buf, initializedCount in
-                vDSP_vdpsp(src, 1, buf.baseAddress!, 1, vDSP_Length(count))
-                initializedCount = count
+            let base = UnsafePointer<Float>(OpaquePointer(array.dataPointer))
+            if Self.isDenselyContiguous(array) {
+                return Array(UnsafeBufferPointer(start: base, count: count))
             }
-            return result
+            return Self.gatherStrided(base: base, array: array, count: count) { $0 }
+        case .double:
+            let base = UnsafePointer<Double>(OpaquePointer(array.dataPointer))
+            if Self.isDenselyContiguous(array) {
+                return [Float](unsafeUninitializedCapacity: count) { buf, initializedCount in
+                    vDSP_vdpsp(base, 1, buf.baseAddress!, 1, vDSP_Length(count))
+                    initializedCount = count
+                }
+            }
+            return Self.gatherStrided(base: base, array: array, count: count) { Float($0) }
         default:
             throw EmbedKitError.modelLoadFailed("Unsupported output data type \(array.dataType)")
         }
+    }
+
+    /// True when `array.strides` match a C-contiguous (row-major, densely
+    /// packed) layout, allowing the backing buffer to be read linearly.
+    static func isDenselyContiguous(_ array: MLMultiArray) -> Bool {
+        let shape = array.shape
+        let strides = array.strides
+        guard shape.count == strides.count else { return false }
+        var expected = 1
+        var d = shape.count - 1
+        while d >= 0 {
+            if strides[d].intValue != expected { return false }
+            expected *= shape[d].intValue
+            d -= 1
+        }
+        return true
+    }
+
+    /// Gathers every logical element honoring `array.strides` (element units),
+    /// converting each through `transform`. Used for non-contiguous CoreML
+    /// outputs where a linear read would ingest padding.
+    static func gatherStrided<T>(
+        base: UnsafePointer<T>,
+        array: MLMultiArray,
+        count: Int,
+        transform: (T) -> Float
+    ) -> [Float] {
+        let shape = array.shape.map { $0.intValue }
+        let strides = array.strides.map { $0.intValue }
+        let rank = shape.count
+        guard rank > 0 else {
+            return count > 0 ? [transform(base[0])] : []
+        }
+        var result = [Float](repeating: 0, count: count)
+        var index = [Int](repeating: 0, count: rank)
+        for flat in 0..<count {
+            var offset = 0
+            for d in 0..<rank { offset += index[d] * strides[d] }
+            result[flat] = transform(base[offset])
+            // Row-major odometer increment of the multi-index.
+            var d = rank - 1
+            while d >= 0 {
+                index[d] += 1
+                if index[d] < shape[d] { break }
+                index[d] = 0
+                d -= 1
+            }
+        }
+        return result
     }
     private func mapComputeUnits(_ device: ComputeDevice) -> MLComputeUnits {
         switch device {

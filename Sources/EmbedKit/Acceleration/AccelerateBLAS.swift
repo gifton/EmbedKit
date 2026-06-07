@@ -650,18 +650,20 @@ public enum AccelerateBLAS {
         var weightSum: Float = 0
 
         sequence.withUnsafeBufferPointer { seqBuf in
-            for t in 0..<tokens {
-                let weight = weights[t]
-                weightSum += weight
+            acc.withUnsafeMutableBufferPointer { accBuf in
+                let accPtr = accBuf.baseAddress!
+                for t in 0..<tokens {
+                    var w = weights[t]
+                    weightSum += w
 
-                let base = seqBuf.baseAddress! + t * dim
+                    let base = seqBuf.baseAddress! + t * dim
 
-                // Scale row by weight and add to accumulator
-                // acc += weight * row
-                var w = weight
-                var scaled = [Float](repeating: 0, count: dim)
-                vDSP_vsmul(base, 1, &w, &scaled, 1, vDSP_Length(dim))
-                vDSP_vadd(acc, 1, scaled, 1, &acc, 1, vDSP_Length(dim))
+                    // Fused scale-and-accumulate: acc += weight * row, in place.
+                    // vDSP_vsma computes D = A*B + C; with C == D it updates the
+                    // accumulator directly, eliminating the per-token temporary
+                    // array (previously one heap allocation per sequence token).
+                    vDSP_vsma(base, 1, &w, accPtr, 1, accPtr, 1, vDSP_Length(dim))
+                }
             }
         }
 

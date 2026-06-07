@@ -199,12 +199,23 @@ kernel void tensor_similarity_matrix_full_v2(
         // dot_original = dotScaled * maxQ * maxK
         result = dotScaled * maxQ * maxK;
     } else if (metric == 2) {
-        // Euclidean distance: ||a - b|| = sqrt(||a||² + ||b||² - 2·dot(a,b))
-        const float dotOriginal = dotScaled * maxQ * maxK;
-        const float sqNormQ = sumQ * maxQ * maxQ;
-        const float sqNormK = sumK * maxK * maxK;
-        const float sqDist = max(sqNormQ + sqNormK - 2.0f * dotOriginal, 0.0f);
-        result = sqrt(sqDist);
+        // Euclidean distance: ||a - b|| = sqrt(||a||² + ||b||² - 2·dot(a,b)).
+        //
+        // Reconstructing the unscaled squared norms as sumQ·maxQ² would
+        // reintroduce the very Float32 overflow the per-vector scaling was
+        // designed to prevent (maxQ² overflows for maxQ ≳ 1e19). Instead factor
+        // out a shared scale S = max(maxQ, maxK) so every reconstructed factor
+        // stays ≤ 1, then restore the scale once after the sqrt:
+        //   ||a-b||² = S²·(rq²·sumQ + rk²·sumK - 2·rq·rk·dotScaled),  rq,rk ≤ 1
+        //   ||a-b||  = S·sqrt(...)
+        // Algebraically identical, but overflows only when the true distance
+        // itself is not representable in Float32.
+        const float S = max(maxQ, maxK);
+        const float rq = maxQ / S;   // in (0, 1]
+        const float rk = maxK / S;   // in (0, 1]
+        const float inner = max(rq * rq * sumQ + rk * rk * sumK
+                                - 2.0f * rq * rk * dotScaled, 0.0f);
+        result = S * sqrt(inner);
     } else {
         // Cosine similarity (default, metric == 0)
         // cos = dotScaled / sqrt(sumQ * sumK)

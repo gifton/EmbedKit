@@ -98,6 +98,39 @@ struct Int8QuantizationTests {
         #expect(restored[5] > restored[4])
         #expect(restored[6] > restored[5])  // Most positive
     }
+
+    // Regression for audit 4.1: a single non-finite element must not collapse
+    // the global scale and zero out every valid value.
+    @Test("CPU Int8 quantization survives a single Inf without destroying resolution")
+    func int8NonFiniteDoesNotPoisonScale() {
+        // Valid embedding values in [-0.6, 0.6] plus one rogue +Inf.
+        var original: [Float] = (0..<64).map { Float($0) / 64.0 - 0.5 }
+        original[10] = .infinity
+
+        let quantized = CPUQuantizer.quantizeToInt8(original)
+        let restored = CPUQuantizer.dequantize(quantized)
+
+        // The scale must reflect the finite range (~0.6), not Inf. With a
+        // poisoned scale every quantized byte would be 0; assert the valid
+        // values retain resolution and rough order.
+        let nonZero = restored.enumerated().filter { $0.offset != 10 && abs($0.element) > 1e-4 }
+        #expect(nonZero.count > 40, "Valid values collapsed to ~0 (scale was poisoned by Inf)")
+        #expect(restored[0] < restored[63], "Monotonic ordering of valid values lost")
+        // The +Inf element saturates to the finite max, staying finite.
+        #expect(restored[10].isFinite)
+    }
+
+    @Test("CPU Int8 quantization sanitizes NaN to zero")
+    func int8NaNSanitized() {
+        var original: [Float] = [Float](repeating: 0.25, count: 32)
+        original[5] = .nan
+
+        let quantized = CPUQuantizer.quantizeToInt8(original)
+        let restored = CPUQuantizer.dequantize(quantized)
+
+        #expect(restored.allSatisfy { $0.isFinite }, "NaN propagated through quantization")
+        #expect(abs(restored[5]) < 0.1, "NaN should sanitize toward 0")
+    }
 }
 
 // MARK: - Float16 Quantization Tests
